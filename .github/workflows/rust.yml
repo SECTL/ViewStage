@@ -35,8 +35,8 @@ jobs:
           workspaces: './src-tauri -> target'
 
       # 5. 执行和本地完全一致的编译命令（核心步骤）
-      - name: Build Tauri app with cargo tauri build --release
-        run: cargo tauri build --release
+      - name: Build Tauri app with cargo tauri build
+        run: cargo tauri build
         working-directory: . # 确保在项目根目录执行，和本地一致
 
       # 6. 上传Windows编译产物（和本地target目录输出一致）
