@@ -277,6 +277,10 @@ async function loadAppState() {
 }
 
 async function loadPdfFromPath(filePath) {
+    if (state.isCameraOpen) {
+        closeCamera();
+    }
+    
     showLoadingOverlay('正在导入文件...');
     
     try {
@@ -378,6 +382,7 @@ async function loadPdfFromPath(filePath) {
                 state.currentFolderPageIndex = 0;
                 drawImageToCenter(img);
                 updatePhotoButtonState();
+                updateEnhanceButtonState();
             };
             img.src = firstPage.full;
         }
@@ -1598,6 +1603,20 @@ function selectImage(index) {
     
     const imgData = state.imageList[index];
     
+    if (imgData.viewState) {
+        state.scale = imgData.viewState.scale;
+        state.canvasX = imgData.viewState.canvasX;
+        state.canvasY = imgData.viewState.canvasY;
+        updateMoveBound();
+        updateCanvasTransform();
+    } else {
+        state.scale = 1;
+        state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
+        state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
+        updateMoveBound();
+        updateCanvasTransform();
+    }
+    
     const img = new Image();
     img.onload = () => {
         state.currentImage = img;
@@ -1629,6 +1648,11 @@ function saveCurrentDrawData() {
             DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr
         );
         state.imageList[state.currentImageIndex].drawData = drawData;
+        state.imageList[state.currentImageIndex].viewState = {
+            scale: state.scale,
+            canvasX: state.canvasX,
+            canvasY: state.canvasY
+        };
     }
 }
 
@@ -1810,7 +1834,6 @@ function expandFileSidebar() {
 function openFolder(folderIndex) {
     if (folderIndex < 0 || folderIndex >= state.fileList.length) return;
     
-    state.currentFolderIndex = folderIndex;
     const folder = state.fileList[folderIndex];
     
     const sidebarContent = document.querySelector('.file-sidebar .sidebar-content');
@@ -1878,6 +1901,20 @@ function selectFolderPage(folderIndex, pageIndex) {
     
     const page = folder.pages[pageIndex];
     
+    if (page.viewState) {
+        state.scale = page.viewState.scale;
+        state.canvasX = page.viewState.canvasX;
+        state.canvasY = page.viewState.canvasY;
+        updateMoveBound();
+        updateCanvasTransform();
+    } else {
+        state.scale = 1;
+        state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
+        state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
+        updateMoveBound();
+        updateCanvasTransform();
+    }
+    
     const img = new Image();
     img.onload = () => {
         state.currentImage = img;
@@ -1923,6 +1960,11 @@ function saveCurrentFolderPageDrawData() {
                     DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr
                 );
                 folder.pages[state.currentFolderPageIndex].drawData = drawData;
+                folder.pages[state.currentFolderPageIndex].viewState = {
+                    scale: state.scale,
+                    canvasX: state.canvasX,
+                    canvasY: state.canvasY
+                };
             }
         }
     }
@@ -1979,6 +2021,10 @@ function importPDF() {
     input.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        
+        if (state.isCameraOpen) {
+            closeCamera();
+        }
         
         showLoadingOverlay('正在导入文件...');
         
@@ -2045,6 +2091,20 @@ function importPDF() {
             const existingFileSidebar = document.querySelector('.file-sidebar');
             if (!existingFileSidebar) {
                 expandFileSidebar();
+            }
+            
+            if (folder.pages.length > 0) {
+                const firstPage = folder.pages[0];
+                const img = new Image();
+                img.onload = () => {
+                    state.currentImage = img;
+                    state.currentFolderIndex = state.fileList.length - 1;
+                    state.currentFolderPageIndex = 0;
+                    drawImageToCenter(img);
+                    updatePhotoButtonState();
+                    updateEnhanceButtonState();
+                };
+                img.src = firstPage.full;
             }
             
             hideLoadingOverlay();
