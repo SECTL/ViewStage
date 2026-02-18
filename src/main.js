@@ -345,25 +345,12 @@ async function loadPdfFromPath(filePath) {
                 viewport: viewport
             }).promise;
             
-            const maxSize = 150;
-            let thumbW, thumbH;
-            if (viewport.width > viewport.height) {
-                thumbW = maxSize;
-                thumbH = (viewport.height / viewport.width) * maxSize;
-            } else {
-                thumbH = maxSize;
-                thumbW = (viewport.width / viewport.height) * maxSize;
-            }
-            
-            const thumbCanvas = document.createElement('canvas');
-            thumbCanvas.width = thumbW;
-            thumbCanvas.height = thumbH;
-            const thumbCtx = thumbCanvas.getContext('2d');
-            thumbCtx.drawImage(canvas, 0, 0, thumbW, thumbH);
+            const fullImage = canvas.toDataURL('image/png');
+            const thumbnail = await generateThumbnail(fullImage, 150);
             
             folder.pages.push({
-                full: canvas.toDataURL('image/png'),
-                thumbnail: thumbCanvas.toDataURL('image/jpeg', 0.7),
+                full: fullImage,
+                thumbnail: thumbnail,
                 pageNum: i,
                 drawData: null
             });
@@ -1368,28 +1355,14 @@ function rotateImage(direction) {
     }
     
     const rotatedImg = new Image();
-    rotatedImg.onload = () => {
+    rotatedImg.onload = async () => {
         state.currentImage = rotatedImg;
         
         if (state.currentImageIndex >= 0 && state.currentImageIndex < state.imageList.length) {
-            const maxSize = 150;
-            let thumbW, thumbH;
-            if (rotatedImg.width > rotatedImg.height) {
-                thumbW = maxSize;
-                thumbH = (rotatedImg.height / rotatedImg.width) * maxSize;
-            } else {
-                thumbH = maxSize;
-                thumbW = (rotatedImg.width / rotatedImg.height) * maxSize;
-            }
-            
-            const thumbCanvas = document.createElement('canvas');
-            thumbCanvas.width = thumbW;
-            thumbCanvas.height = thumbH;
-            const thumbCtx = thumbCanvas.getContext('2d');
-            thumbCtx.drawImage(rotatedImg, 0, 0, thumbW, thumbH);
+            const thumbnail = await generateThumbnail(rotatedImg.src, 150);
             
             state.imageList[state.currentImageIndex].full = rotatedImg.src;
-            state.imageList[state.currentImageIndex].thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.7);
+            state.imageList[state.currentImageIndex].thumbnail = thumbnail;
             state.imageList[state.currentImageIndex].width = rotatedImg.width;
             state.imageList[state.currentImageIndex].height = rotatedImg.height;
             
@@ -1484,6 +1457,46 @@ function enhanceCanvas(sourceCanvas) {
     ctx.putImageData(enhancedData, 0, 0);
     
     return canvas;
+}
+
+async function generateThumbnail(imageData, maxSize = 150) {
+    if (window.__TAURI__) {
+        try {
+            const { invoke } = window.__TAURI__.core;
+            const thumbnail = await invoke('generate_thumbnail', { 
+                imageData: imageData, 
+                maxSize: maxSize 
+            });
+            return thumbnail;
+        } catch (error) {
+            console.error('Rust 缩略图生成失败，使用前端降级方案:', error);
+        }
+    }
+    
+    return generateThumbnailFallback(imageData, maxSize);
+}
+
+function generateThumbnailFallback(imageData, maxSize = 150) {
+    const img = new Image();
+    img.src = imageData;
+    
+    const thumbCanvas = document.createElement('canvas');
+    let thumbW, thumbH;
+    
+    if (img.width > img.height) {
+        thumbW = maxSize;
+        thumbH = (img.height / img.width) * maxSize;
+    } else {
+        thumbH = maxSize;
+        thumbW = (img.width / img.height) * maxSize;
+    }
+    
+    thumbCanvas.width = thumbW;
+    thumbCanvas.height = thumbH;
+    const thumbCtx = thumbCanvas.getContext('2d');
+    thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
+    
+    return thumbCanvas.toDataURL('image/jpeg', 0.7);
 }
 
 // 保存画布
@@ -2061,25 +2074,12 @@ function importPDF() {
                     viewport: viewport
                 }).promise;
                 
-                const maxSize = 150;
-                let thumbW, thumbH;
-                if (viewport.width > viewport.height) {
-                    thumbW = maxSize;
-                    thumbH = (viewport.height / viewport.width) * maxSize;
-                } else {
-                    thumbH = maxSize;
-                    thumbW = (viewport.width / viewport.height) * maxSize;
-                }
-                
-                const thumbCanvas = document.createElement('canvas');
-                thumbCanvas.width = thumbW;
-                thumbCanvas.height = thumbH;
-                const thumbCtx = thumbCanvas.getContext('2d');
-                thumbCtx.drawImage(canvas, 0, 0, thumbW, thumbH);
+                const fullImage = canvas.toDataURL('image/png');
+                const thumbnail = await generateThumbnail(fullImage, 150);
                 
                 folder.pages.push({
-                    full: canvas.toDataURL('image/png'),
-                    thumbnail: thumbCanvas.toDataURL('image/jpeg', 0.7),
+                    full: fullImage,
+                    thumbnail: thumbnail,
                     pageNum: i,
                     drawData: null
                 });
@@ -2504,31 +2504,12 @@ function importImage() {
     input.click();
 }
 
-function addImageToList(img, name) {
-    const maxSize = 150;
-    let thumbW, thumbH;
-    
-    if (img.width > img.height) {
-        thumbW = maxSize;
-        thumbH = (img.height / img.width) * maxSize;
-    } else {
-        thumbH = maxSize;
-        thumbW = (img.width / img.height) * maxSize;
-    }
-    
-    const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = thumbW;
-    thumbCanvas.height = thumbH;
-    const thumbCtx = thumbCanvas.getContext('2d');
-    thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
-    
-    const drawCanvas = document.createElement('canvas');
-    drawCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
-    drawCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
+async function addImageToList(img, name) {
+    const thumbnail = await generateThumbnail(img.src, 150);
     
     const imgData = {
         full: img.src,
-        thumbnail: thumbCanvas.toDataURL('image/jpeg', 0.7),
+        thumbnail: thumbnail,
         name: name,
         width: img.width,
         height: img.height,
@@ -2546,27 +2527,12 @@ function addImageToList(img, name) {
     updateSidebarContent();
 }
 
-function addImageToListNoHighlight(img, name) {
-    const maxSize = 150;
-    let thumbW, thumbH;
-    
-    if (img.width > img.height) {
-        thumbW = maxSize;
-        thumbH = (img.height / img.width) * maxSize;
-    } else {
-        thumbH = maxSize;
-        thumbW = (img.width / img.height) * maxSize;
-    }
-    
-    const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = thumbW;
-    thumbCanvas.height = thumbH;
-    const thumbCtx = thumbCanvas.getContext('2d');
-    thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
+async function addImageToListNoHighlight(img, name) {
+    const thumbnail = await generateThumbnail(img.src, 150);
     
     const imgData = {
         full: img.src,
-        thumbnail: thumbCanvas.toDataURL('image/jpeg', 0.7),
+        thumbnail: thumbnail,
         name: name,
         width: img.width,
         height: img.height,

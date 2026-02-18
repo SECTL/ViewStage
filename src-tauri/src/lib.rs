@@ -69,6 +69,44 @@ fn apply_enhance_filter(img: &DynamicImage) -> DynamicImage {
 }
 
 #[tauri::command]
+fn generate_thumbnail(image_data: String, max_size: u32) -> Result<String, String> {
+    let base64_data = if image_data.starts_with("data:image") {
+        image_data.split(',')
+            .nth(1)
+            .ok_or("Invalid base64 image data")?
+            .to_string()
+    } else {
+        image_data
+    };
+    
+    let decoded = general_purpose::STANDARD
+        .decode(&base64_data)
+        .map_err(|e| format!("Failed to decode base64: {}", e))?;
+    
+    let img = image::load_from_memory(&decoded)
+        .map_err(|e| format!("Failed to load image: {}", e))?;
+    
+    let (width, height) = (img.width(), img.height());
+    
+    let (thumb_w, thumb_h) = if width > height {
+        (max_size, (height as f32 * max_size as f32 / width as f32) as u32)
+    } else {
+        ((width as f32 * max_size as f32 / height as f32) as u32, max_size)
+    };
+    
+    let thumbnail = img.thumbnail(thumb_w, thumb_h);
+    
+    let mut buffer = Vec::new();
+    thumbnail
+        .write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Jpeg)
+        .map_err(|e| format!("Failed to encode thumbnail: {}", e))?;
+    
+    let result = format!("data:image/jpeg;base64,{}", general_purpose::STANDARD.encode(&buffer));
+    
+    Ok(result)
+}
+
+#[tauri::command]
 fn get_cache_dir(app: tauri::AppHandle) -> Result<String, String> {
     let cache_dir = app.path().app_cache_dir()
         .map_err(|e| format!("Failed to get cache dir: {}", e))?;
@@ -162,7 +200,7 @@ pub fn run() {
             
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, get_cache_dir, get_config_dir, get_cds_dir, enhance_image])
+        .invoke_handler(tauri::generate_handler![greet, get_cache_dir, get_config_dir, get_cds_dir, enhance_image, generate_thumbnail])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
