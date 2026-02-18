@@ -50,3 +50,18 @@ jobs:
             src-tauri/target/release/bundle/exe/*.exe
             # 单独的可执行文件（本地target/release下的产物）
             src-tauri/target/release/ViewStage.exe
+
+      # 7. 创建 GitHub Release 并上传构建产物
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/exe/*.exe
+            src-tauri/target/release/ViewStage.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

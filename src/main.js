@@ -47,7 +47,7 @@ async function initCacheDir() {
             cdsDir = await invoke('get_cds_dir');
             console.log('缓存目录:', cacheDir);
             console.log('配置目录:', configDir);
-            console.log('CDS目录:', cdsDir);
+            console.log('ViewStage目录:', cdsDir);
         } catch (error) {
             console.error('获取缓存目录失败:', error);
         }
@@ -111,7 +111,9 @@ let state = {
     currentImageIndex: -1,
     fileList: [],
     currentFolderIndex: -1,
-    currentFolderPageIndex: -1
+    currentFolderPageIndex: -1,
+    enhanceRequestQueue: [],
+    lastEnhanceTime: 0
 };
 
 // DOM 元素引用
@@ -1657,6 +1659,7 @@ function deleteImage(index) {
             clearImageLayer();
             clearDrawCanvas();
             updatePhotoButtonState();
+            openCamera();
         }
     } else if (state.currentImageIndex > index) {
         state.currentImageIndex--;
@@ -2319,14 +2322,47 @@ async function captureCamera() {
         tempCtx.setTransform(1, 0, 0, 1, 0, 0);
     }
     
-    let finalCanvas = tempCanvas;
-    if (state.enhanceEnabled) {
+    let dataUrl = tempCanvas.toDataURL('image/png');
+    
+    if (state.enhanceEnabled && window.__TAURI__) {
+        const currentTime = Date.now();
+        const timeSinceLastEnhance = currentTime - state.lastEnhanceTime;
+        const shouldShowLoading = timeSinceLastEnhance < 2000 || state.enhanceRequestQueue.length > 0;
+        
+        const requestId = Date.now() + Math.random();
+        state.enhanceRequestQueue.push(requestId);
+        state.lastEnhanceTime = currentTime;
+        
+        if (shouldShowLoading) {
+            showLoadingOverlay('正在处理图像...');
+        }
+        
+        try {
+            const { invoke } = window.__TAURI__.core;
+            dataUrl = await invoke('enhance_image', { imageData: dataUrl });
+            console.log('Rust 图像增强完成');
+        } catch (error) {
+            console.error('Rust 图像增强失败，使用前端降级方案:', error);
+            const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            const enhancedData = applyEnhanceFilter(imageData);
+            tempCtx.putImageData(enhancedData, 0, 0);
+            dataUrl = tempCanvas.toDataURL('image/png');
+        } finally {
+            const index = state.enhanceRequestQueue.indexOf(requestId);
+            if (index > -1) {
+                state.enhanceRequestQueue.splice(index, 1);
+            }
+            
+            if (state.enhanceRequestQueue.length === 0) {
+                hideLoadingOverlay();
+            }
+        }
+    } else if (state.enhanceEnabled) {
         const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
         const enhancedData = applyEnhanceFilter(imageData);
         tempCtx.putImageData(enhancedData, 0, 0);
+        dataUrl = tempCanvas.toDataURL('image/png');
     }
-    
-    const dataUrl = finalCanvas.toDataURL('image/png');
     
     if (window.__TAURI__ && cdsDir) {
         try {
