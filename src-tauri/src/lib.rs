@@ -5,23 +5,27 @@ use image::{DynamicImage, ImageBuffer, Rgba, GenericImageView};
 use base64::{Engine as _, engine::general_purpose};
 use rayon::prelude::*;
 
-#[tauri::command]
-fn enhance_image(image_data: String) -> Result<String, String> {
+fn decode_base64_image(image_data: &str) -> Result<DynamicImage, String> {
     let base64_data = if image_data.starts_with("data:image") {
         image_data.split(',')
             .nth(1)
             .ok_or("Invalid base64 image data")?
             .to_string()
     } else {
-        image_data
+        image_data.to_string()
     };
     
     let decoded = general_purpose::STANDARD
         .decode(&base64_data)
         .map_err(|e| format!("Failed to decode base64: {}", e))?;
     
-    let img = image::load_from_memory(&decoded)
-        .map_err(|e| format!("Failed to load image: {}", e))?;
+    image::load_from_memory(&decoded)
+        .map_err(|e| format!("Failed to load image: {}", e))
+}
+
+#[tauri::command]
+fn enhance_image(image_data: String) -> Result<String, String> {
+    let img = decode_base64_image(&image_data)?;
     
     let enhanced = apply_enhance_filter(&img);
     
@@ -78,21 +82,7 @@ fn apply_enhance_filter(img: &DynamicImage) -> DynamicImage {
 
 #[tauri::command]
 fn generate_thumbnail(image_data: String, max_size: u32, fixed_ratio: bool) -> Result<String, String> {
-    let base64_data = if image_data.starts_with("data:image") {
-        image_data.split(',')
-            .nth(1)
-            .ok_or("Invalid base64 image data")?
-            .to_string()
-    } else {
-        image_data
-    };
-    
-    let decoded = general_purpose::STANDARD
-        .decode(&base64_data)
-        .map_err(|e| format!("Failed to decode base64: {}", e))?;
-    
-    let img = image::load_from_memory(&decoded)
-        .map_err(|e| format!("Failed to load image: {}", e))?;
+    let img = decode_base64_image(&image_data)?;
     
     let (width, height) = (img.width(), img.height());
     
@@ -157,21 +147,7 @@ fn generate_thumbnail(image_data: String, max_size: u32, fixed_ratio: bool) -> R
 
 #[tauri::command]
 fn rotate_image(image_data: String, direction: String) -> Result<String, String> {
-    let base64_data = if image_data.starts_with("data:image") {
-        image_data.split(',')
-            .nth(1)
-            .ok_or("Invalid base64 image data")?
-            .to_string()
-    } else {
-        image_data
-    };
-    
-    let decoded = general_purpose::STANDARD
-        .decode(&base64_data)
-        .map_err(|e| format!("Failed to decode base64: {}", e))?;
-    
-    let img = image::load_from_memory(&decoded)
-        .map_err(|e| format!("Failed to load image: {}", e))?;
+    let img = decode_base64_image(&image_data)?;
     
     let rotated = if direction == "left" {
         img.rotate270()
@@ -230,11 +206,6 @@ fn get_cds_dir() -> Result<String, String> {
     Ok(cds_dir.to_string_lossy().to_string())
 }
 
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -283,7 +254,7 @@ pub fn run() {
             
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, get_cache_dir, get_config_dir, get_cds_dir, enhance_image, generate_thumbnail, rotate_image])
+        .invoke_handler(tauri::generate_handler![get_cache_dir, get_config_dir, get_cds_dir, enhance_image, generate_thumbnail, rotate_image])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

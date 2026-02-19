@@ -1125,6 +1125,38 @@ function endStroke() {
 
 let compactIdleId = null;
 
+function drawStrokes(ctx, strokes) {
+    for (const stroke of strokes) {
+        if (stroke.type === 'draw') {
+            ctx.strokeStyle = stroke.color;
+            ctx.lineWidth = stroke.lineWidth;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.globalCompositeOperation = 'source-over';
+            
+            ctx.beginPath();
+            for (const point of stroke.points) {
+                ctx.moveTo(point.fromX, point.fromY);
+                ctx.lineTo(point.toX, point.toY);
+            }
+            ctx.stroke();
+        } else if (stroke.type === 'erase') {
+            ctx.lineWidth = stroke.eraserSize;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.globalCompositeOperation = 'destination-out';
+            
+            ctx.beginPath();
+            for (const point of stroke.points) {
+                ctx.moveTo(point.fromX, point.fromY);
+                ctx.lineTo(point.toX, point.toY);
+            }
+            ctx.stroke();
+        }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+}
+
 function scheduleCompact() {
     if (state.strokeHistory.length <= state.MAX_UNDO_STEPS) return;
     if (compactIdleId !== null) return;
@@ -1151,34 +1183,7 @@ function doCompactStrokes(strokesToCompact) {
         tempCtx.drawImage(state.baseImageObj, 0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
     }
     
-    for (const stroke of strokesToCompact) {
-        if (stroke.type === 'draw') {
-            tempCtx.strokeStyle = stroke.color;
-            tempCtx.lineWidth = stroke.lineWidth;
-            tempCtx.lineCap = 'round';
-            tempCtx.lineJoin = 'round';
-            tempCtx.globalCompositeOperation = 'source-over';
-            
-            tempCtx.beginPath();
-            for (const point of stroke.points) {
-                tempCtx.moveTo(point.fromX, point.fromY);
-                tempCtx.lineTo(point.toX, point.toY);
-            }
-            tempCtx.stroke();
-        } else if (stroke.type === 'erase') {
-            tempCtx.lineWidth = stroke.eraserSize;
-            tempCtx.lineCap = 'round';
-            tempCtx.lineJoin = 'round';
-            tempCtx.globalCompositeOperation = 'destination-out';
-            
-            tempCtx.beginPath();
-            for (const point of stroke.points) {
-                tempCtx.moveTo(point.fromX, point.fromY);
-                tempCtx.lineTo(point.toX, point.toY);
-            }
-            tempCtx.stroke();
-        }
-    }
+    drawStrokes(tempCtx, strokesToCompact);
     
     state.baseImageURL = tempCanvas.toDataURL('image/png');
     state.baseImageObj = null;
@@ -1215,36 +1220,7 @@ function redrawAllStrokes() {
         dom.drawCtx.drawImage(state.baseImageObj, 0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
     }
     
-    for (const stroke of state.strokeHistory) {
-        if (stroke.type === 'draw') {
-            dom.drawCtx.strokeStyle = stroke.color;
-            dom.drawCtx.lineWidth = stroke.lineWidth;
-            dom.drawCtx.lineCap = 'round';
-            dom.drawCtx.lineJoin = 'round';
-            dom.drawCtx.globalCompositeOperation = 'source-over';
-            
-            dom.drawCtx.beginPath();
-            for (const point of stroke.points) {
-                dom.drawCtx.moveTo(point.fromX, point.fromY);
-                dom.drawCtx.lineTo(point.toX, point.toY);
-            }
-            dom.drawCtx.stroke();
-        } else if (stroke.type === 'erase') {
-            dom.drawCtx.lineWidth = stroke.eraserSize;
-            dom.drawCtx.lineCap = 'round';
-            dom.drawCtx.lineJoin = 'round';
-            dom.drawCtx.globalCompositeOperation = 'destination-out';
-            
-            dom.drawCtx.beginPath();
-            for (const point of stroke.points) {
-                dom.drawCtx.moveTo(point.fromX, point.fromY);
-                dom.drawCtx.lineTo(point.toX, point.toY);
-            }
-            dom.drawCtx.stroke();
-        }
-    }
-    
-    dom.drawCtx.globalCompositeOperation = 'source-over';
+    drawStrokes(dom.drawCtx, state.strokeHistory);
 }
 
 function updateUndoBtnStatus() {
@@ -2589,11 +2565,6 @@ function expandSidebarIfCollapsed() {
         sidebar.remove();
         expandSidebar();
     }
-}
-
-function toggleMirror() {
-    state.isMirrored = !state.isMirrored;
-    console.log(state.isMirrored ? '已启用镜像' : '已取消镜像');
 }
 
 // 图像层功能
