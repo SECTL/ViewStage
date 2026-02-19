@@ -74,7 +74,7 @@ const DRAW_CONFIG = {
     screenW: 0,                    // 屏幕宽度
     screenH: 0,                    // 屏幕高度
     canvasScale: 2,                // 画布相对屏幕的缩放倍数
-    dpr: window.devicePixelRatio || 1,  // 设备像素比 (Retina适配)
+    dpr: Math.min(window.devicePixelRatio || 1, 2),  // 设备像素比 (限制最大为2，减少GPU负担)
     cameraFrameInterval: 33,       // 摄像头帧间隔 (ms) - 30fps
     cameraFrameIntervalLow: 100    // 低帧率模式 (绘制时)
 };
@@ -516,8 +516,22 @@ function resizeCanvas(newScreenW, newScreenH) {
     
     DRAW_CONFIG.screenW = newScreenW;
     DRAW_CONFIG.screenH = newScreenH;
-    DRAW_CONFIG.canvasW = Math.floor(newScreenW * DRAW_CONFIG.canvasScale);
-    DRAW_CONFIG.canvasH = Math.floor(newScreenH * DRAW_CONFIG.canvasScale);
+    
+    // 动态调整画布缩放倍数，根据屏幕尺寸和性能状态
+    let adaptiveCanvasScale = DRAW_CONFIG.canvasScale;
+    if (newScreenW > 1920 || newScreenH > 1080) {
+        // 大屏幕，减少画布缩放
+        adaptiveCanvasScale = Math.max(1.5, DRAW_CONFIG.canvasScale * 0.8);
+    } else if (newScreenW > 1366 || newScreenH > 768) {
+        // 中等屏幕，保持默认缩放
+        adaptiveCanvasScale = DRAW_CONFIG.canvasScale;
+    } else {
+        // 小屏幕，适当增加缩放
+        adaptiveCanvasScale = Math.min(2.5, DRAW_CONFIG.canvasScale * 1.2);
+    }
+    
+    DRAW_CONFIG.canvasW = Math.floor(newScreenW * adaptiveCanvasScale);
+    DRAW_CONFIG.canvasH = Math.floor(newScreenH * adaptiveCanvasScale);
     
     updateMoveBound();
     
@@ -3076,7 +3090,12 @@ function startCameraPreview() {
             return;
         }
         
-        const currentInterval = DRAW_CONFIG.cameraFrameInterval;
+        // 根据性能状态调整摄像头帧率
+        const currentInterval = smartDrawScheduler ? 
+            (smartDrawScheduler.getPerformanceState().status === 'poor' ? 
+                DRAW_CONFIG.cameraFrameIntervalLow : 
+                DRAW_CONFIG.cameraFrameInterval) : 
+            DRAW_CONFIG.cameraFrameInterval;
         
         if (currentTime - lastFrameTime >= currentInterval) {
             lastFrameTime = currentTime;
@@ -3088,7 +3107,8 @@ function startCameraPreview() {
             if (cachedDrawParams) {
                 const { canvasW, canvasH, drawW, drawH, drawX, drawY, centerX, centerY, rotation, isRotated } = cachedDrawParams;
                 
-                dom.imageCtx.clearRect(drawX - 1, drawY - 1, drawW + 2, drawH + 2);
+                // 只清除需要更新的区域，减少绘制操作
+                dom.imageCtx.clearRect(drawX, drawY, drawW, drawH);
                 
                 dom.imageCtx.save();
                 dom.imageCtx.translate(centerX, centerY);
@@ -3099,12 +3119,17 @@ function startCameraPreview() {
                 
                 dom.imageCtx.rotate(rotation * Math.PI / 180);
                 
+                // 降低摄像头画面的绘制质量，减少GPU负担
+                const originalQuality = dom.imageCtx.imageSmoothingQuality;
+                dom.imageCtx.imageSmoothingQuality = 'low';
+                
                 if (isRotated) {
                     dom.imageCtx.drawImage(video, -drawH / 2, -drawW / 2, drawH, drawW);
                 } else {
                     dom.imageCtx.drawImage(video, -drawW / 2, -drawH / 2, drawW, drawH);
                 }
                 
+                dom.imageCtx.imageSmoothingQuality = originalQuality;
                 dom.imageCtx.restore();
             }
         }
