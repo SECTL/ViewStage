@@ -381,7 +381,7 @@ function resizeCanvas(newScreenW, newScreenH) {
     dom.bgCtx.imageSmoothingEnabled = true;
     dom.bgCtx.imageSmoothingQuality = 'high';
     dom.imageCtx.imageSmoothingEnabled = true;
-    dom.imageCtx.imageSmoothingQuality = 'high';
+    dom.imageCtx.imageSmoothingQuality = 'medium';
     dom.drawCtx.imageSmoothingEnabled = true;
     dom.drawCtx.imageSmoothingQuality = 'high';
     dom.drawCtx.lineCap = 'round';
@@ -429,7 +429,7 @@ function initDOM() {
     dom.btnEnhance = document.getElementById('btnEnhance');
     
     dom.bgCtx = dom.bgCanvas.getContext('2d');
-    dom.imageCtx = dom.imageCanvas.getContext('2d');
+    dom.imageCtx = dom.imageCanvas.getContext('2d', { desynchronized: true });
     dom.drawCtx = dom.drawCanvas.getContext('2d', { willReadFrequently: true });
 }
 
@@ -468,7 +468,7 @@ function initCanvas() {
     dom.drawCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
     
     dom.imageCtx.imageSmoothingEnabled = true;
-    dom.imageCtx.imageSmoothingQuality = 'high';
+    dom.imageCtx.imageSmoothingQuality = 'medium';
     
     const dc = dom.drawCtx;
     dc.imageSmoothingEnabled = true;
@@ -2265,7 +2265,48 @@ function startCameraPreview() {
     if (!video) return;
     
     let lastFrameTime = 0;
-    const frameInterval = DRAW_CONFIG.cameraFrameInterval;
+    let cachedDrawParams = null;
+    
+    function updateDrawParams() {
+        const screenW = DRAW_CONFIG.screenW;
+        const screenH = DRAW_CONFIG.screenH;
+        const videoW = video.videoWidth;
+        const videoH = video.videoHeight;
+        
+        if (!videoW || !videoH) return null;
+        
+        const canvasW = DRAW_CONFIG.canvasW;
+        const canvasH = DRAW_CONFIG.canvasH;
+        
+        const rotation = state.cameraRotation;
+        const isRotated = rotation === 90 || rotation === 270;
+        
+        const effectiveVideoW = isRotated ? videoH : videoW;
+        const effectiveVideoH = isRotated ? videoW : videoH;
+        
+        const videoRatio = effectiveVideoW / effectiveVideoH;
+        const screenRatio = screenW / screenH;
+        
+        let drawW, drawH;
+        if (videoRatio > screenRatio) {
+            drawW = screenW;
+            drawH = screenW / videoRatio;
+        } else {
+            drawH = screenH;
+            drawW = screenH * videoRatio;
+        }
+        
+        const drawX = (canvasW - drawW) / 2;
+        const drawY = (canvasH - drawH) / 2;
+        
+        return {
+            canvasW, canvasH, drawW, drawH, drawX, drawY,
+            centerX: canvasW / 2,
+            centerY: canvasH / 2,
+            rotation,
+            isRotated
+        };
+    }
     
     function renderFrame(currentTime) {
         if (!state.isCameraOpen) return;
@@ -2277,41 +2318,17 @@ function startCameraPreview() {
         if (currentTime - lastFrameTime >= currentInterval) {
             lastFrameTime = currentTime;
             
-            clearImageLayer();
+            if (!cachedDrawParams || cachedDrawParams.rotation !== state.cameraRotation) {
+                cachedDrawParams = updateDrawParams();
+            }
             
-            const screenW = DRAW_CONFIG.screenW;
-            const screenH = DRAW_CONFIG.screenH;
-            const videoW = video.videoWidth;
-            const videoH = video.videoHeight;
-            
-            if (videoW && videoH) {
-                const canvasW = DRAW_CONFIG.canvasW;
-                const canvasH = DRAW_CONFIG.canvasH;
+            if (cachedDrawParams) {
+                const { canvasW, canvasH, drawW, drawH, drawX, drawY, centerX, centerY, rotation, isRotated } = cachedDrawParams;
                 
-                const rotation = state.cameraRotation;
-                const isRotated = rotation === 90 || rotation === 270;
-                
-                let effectiveVideoW = isRotated ? videoH : videoW;
-                let effectiveVideoH = isRotated ? videoW : videoH;
-                
-                const videoRatio = effectiveVideoW / effectiveVideoH;
-                const screenRatio = screenW / screenH;
-                
-                let drawW, drawH;
-                
-                if (videoRatio > screenRatio) {
-                    drawW = screenW;
-                    drawH = screenW / videoRatio;
-                } else {
-                    drawH = screenH;
-                    drawW = screenH * videoRatio;
-                }
-                
-                const drawX = (canvasW - drawW) / 2;
-                const drawY = (canvasH - drawH) / 2;
+                dom.imageCtx.clearRect(drawX - 1, drawY - 1, drawW + 2, drawH + 2);
                 
                 dom.imageCtx.save();
-                dom.imageCtx.translate(canvasW / 2, canvasH / 2);
+                dom.imageCtx.translate(centerX, centerY);
                 
                 if (state.isMirrored) {
                     dom.imageCtx.scale(-1, 1);
