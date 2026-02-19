@@ -11,7 +11,7 @@
 
 function initPdfJs() {
     if (window.pdfjsLib) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'assets/pdf.worker.min.js';
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'JS/pdf.worker.min.js';
         console.log('PDF.js Worker 已配置');
         return true;
     }
