@@ -197,6 +197,54 @@ function listenForPdfFileOpen() {
     });
 }
 
+async function processPdfPagesParallel(pdf, totalPages, batchSize = 4) {
+    const pages = [];
+    let processedCount = 0;
+    
+    async function processPage(pageNum) {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.5 });
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+        
+        await page.render({
+            canvasContext: ctx,
+            viewport: viewport
+        }).promise;
+        
+        const fullImage = canvas.toDataURL('image/jpeg', 0.85);
+        const thumbnail = await generateThumbnail(fullImage, 150, false);
+        
+        processedCount++;
+        updateLoadingProgress(`正在处理 ${processedCount}/${totalPages} 页`);
+        
+        return {
+            full: fullImage,
+            thumbnail: thumbnail,
+            pageNum: pageNum,
+            drawData: null
+        };
+    }
+    
+    for (let i = 1; i <= totalPages; i += batchSize) {
+        const batch = [];
+        for (let j = i; j <= Math.min(i + batchSize - 1, totalPages); j++) {
+            batch.push(processPage(j));
+        }
+        const batchResults = await Promise.all(batch);
+        pages.push(...batchResults);
+        
+        await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    
+    pages.sort((a, b) => a.pageNum - b.pageNum);
+    
+    return pages;
+}
+
 async function loadPdfFromPath(filePath) {
     if (state.isCameraOpen) {
         closeCamera();
@@ -250,32 +298,8 @@ async function loadPdfFromPath(filePath) {
             pages: []
         };
         
-        for (let i = 1; i <= totalPages; i++) {
-            updateLoadingProgress(`正在处理第 ${i}/${totalPages} 页`);
-            
-            const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale: 1.5 });
-            
-            const canvas = document.createElement('canvas');
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            const ctx = canvas.getContext('2d');
-            
-            await page.render({
-                canvasContext: ctx,
-                viewport: viewport
-            }).promise;
-            
-            const fullImage = canvas.toDataURL('image/png');
-            const thumbnail = await generateThumbnail(fullImage, 150, false);
-            
-            folder.pages.push({
-                full: fullImage,
-                thumbnail: thumbnail,
-                pageNum: i,
-                drawData: null
-            });
-        }
+        const processedPages = await processPdfPagesParallel(pdf, totalPages);
+        folder.pages = processedPages;
         
         state.fileList.push(folder);
         updateFileSidebarContent();
@@ -2040,32 +2064,7 @@ function importPDF() {
                 pages: []
             };
             
-            for (let i = 1; i <= totalPages; i++) {
-                updateLoadingProgress(`正在处理第 ${i}/${totalPages} 页`);
-                
-                const page = await pdf.getPage(i);
-                const viewport = page.getViewport({ scale: 1.5 });
-                
-                const canvas = document.createElement('canvas');
-                canvas.width = viewport.width;
-                canvas.height = viewport.height;
-                const ctx = canvas.getContext('2d');
-                
-                await page.render({
-                    canvasContext: ctx,
-                    viewport: viewport
-                }).promise;
-                
-                const fullImage = canvas.toDataURL('image/png');
-                const thumbnail = await generateThumbnail(fullImage, 150, false);
-                
-                folder.pages.push({
-                    full: fullImage,
-                    thumbnail: thumbnail,
-                    pageNum: i,
-                    drawData: null
-                });
-            }
+            folder.pages = await processPdfPagesParallel(pdf, totalPages);
             
             state.fileList.push(folder);
             updateFileSidebarContent();
