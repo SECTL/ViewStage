@@ -848,13 +848,22 @@ function showMenu() {
     menuPopup.id = 'menuPopup';
     menuPopup.className = 'menu-popup';
     menuPopup.innerHTML = `
+        <button class="menu-item" id="menuSettings">
+            <img src="assets/icon/gear.svg" width="16" height="16" alt="设置" style="filter: invert(1);">
+            设置
+        </button>
         <button class="menu-item menu-item-danger" id="menuClose">
-            <img src="assets/javascript.svg" width="16" height="16" alt="关闭" style="filter: invert(1);">
+            <img src="assets/icon/arrow-bar-left.svg" width="16" height="16" alt="关闭" style="filter: invert(1);">
             关闭
         </button>
     `;
     
     dom.canvasContainer.appendChild(menuPopup);
+    
+    document.getElementById('menuSettings').addEventListener('click', () => {
+        closeMenu();
+        openSettings();
+    });
     
     document.getElementById('menuClose').addEventListener('click', () => {
         closeMenu();
@@ -2016,7 +2025,7 @@ function updatePhotoButtonState() {
     if (state.isCameraOpen) {
         btnPhoto.classList.add('camera-active');
         btnPhoto.innerHTML = `
-            <img src="assets/tauri.svg" width="16" height="16" alt="拍照" style="filter: invert(1);">
+            <img src="assets/icon/camera.svg" width="16" height="16" alt="拍照" style="filter: invert(1);">
             拍照
         `;
         btnPhoto.title = '捕获摄像头画面';
@@ -2024,34 +2033,17 @@ function updatePhotoButtonState() {
                (state.currentFolderIndex >= 0 && state.currentFolderPageIndex >= 0)) {
         btnPhoto.classList.remove('camera-active');
         btnPhoto.innerHTML = `
-            <img src="assets/javascript.svg" width="16" height="16" alt="切换到摄像头" style="filter: invert(1);">
+            <img src="assets/icon/camera-fill.svg" width="16" height="16" alt="切换到摄像头" style="filter: invert(1);">
             切换到摄像头
         `;
         btnPhoto.title = '返回摄像头';
     } else {
         btnPhoto.classList.remove('camera-active');
         btnPhoto.innerHTML = `
-            <img src="assets/tauri.svg" width="16" height="16" alt="拍照" style="filter: invert(1);">
+            <img src="assets/icon/camera.svg" width="16" height="16" alt="拍照" style="filter: invert(1);">
             拍照
         `;
         btnPhoto.title = '保存画布截图';
-    }
-    
-    const btnCamera = document.getElementById('btnCamera');
-    if (btnCamera) {
-        if (state.isCameraOpen) {
-            btnCamera.classList.add('camera-active');
-            btnCamera.innerHTML = `
-                <img src="assets/javascript.svg" width="16" height="16" alt="关闭摄像头" style="filter: invert(1);">
-                关闭
-            `;
-        } else {
-            btnCamera.classList.remove('camera-active');
-            btnCamera.innerHTML = `
-                <img src="assets/javascript.svg" width="16" height="16" alt="摄像头" style="filter: invert(1);">
-                摄像头
-            `;
-        }
     }
 }
 
@@ -2323,7 +2315,7 @@ function expandSidebar() {
             ${imageListHTML}
         </div>
         <button class="sidebar-import-btn" id="btnImportImageSidebar">
-            <img src="assets/javascript.svg" width="16" height="16" alt="导入" style="filter: invert(1);">
+            <img src="assets/icon/file-earmark-medical.svg" width="16" height="16" alt="导入" style="filter: invert(1);">
             导入图片
         </button>
     `;
@@ -2343,7 +2335,7 @@ function expandSidebar() {
     });
     
     dom.btnExpand.innerHTML = `
-        <img src="assets/move.svg" width="16" height="16" alt="收起" style="filter: invert(1);">
+        <img src="assets/icon/caret-down-fill.svg" width="16" height="16" alt="收起" style="filter: invert(1);">
         收起
     `;
     console.log('展开侧边栏');
@@ -2547,7 +2539,7 @@ function collapseSidebar() {
     }
     
     dom.btnExpand.innerHTML = `
-        <img src="assets/move.svg" width="16" height="16" alt="图片" style="filter: invert(1);">
+        <img src="assets/icon/file-earmark-medical.svg" width="16" height="16" alt="图片" style="filter: invert(1);">
         图片
     `;
     console.log('收起侧边栏');
@@ -2580,7 +2572,7 @@ function expandFileSidebar() {
         state.fileList.forEach((folder, index) => {
             contentHTML += `
                 <div class="sidebar-folder-item" data-index="${index}">
-                    <img src="assets/javascript.svg" width="16" height="16" alt="文件夹" style="filter: invert(1);">
+                    <img src="assets/icon/file.svg" width="16" height="16" alt="文件夹" style="filter: invert(1);">
                     <span class="folder-name">${folder.name}</span>
                     <span class="folder-count">${folder.pages.length}页</span>
                 </div>
@@ -2594,7 +2586,7 @@ function expandFileSidebar() {
             ${contentHTML}
         </div>
         <button class="sidebar-import-btn" id="btnAddFile">
-            <img src="assets/javascript.svg" width="16" height="16" alt="添加" style="filter: invert(1);">
+            <img src="assets/icon/file-earmark.svg" width="16" height="16" alt="添加" style="filter: invert(1);">
             添加文件
         </button>
     `;
@@ -2613,7 +2605,7 @@ function expandFileSidebar() {
     });
     
     dom.btnSave.innerHTML = `
-        <img src="assets/javascript.svg" width="16" height="16" alt="收起" style="filter: invert(1);">
+        <img src="assets/icon/caret-down-fill.svg" width="16" height="16" alt="收起" style="filter: invert(1);">
         收起
     `;
     console.log('展开文件侧边栏');
@@ -2803,7 +2795,7 @@ function updateFileSidebarContent() {
         state.fileList.forEach((folder, index) => {
             contentHTML += `
                 <div class="sidebar-folder-item" data-index="${index}">
-                    <img src="assets/javascript.svg" width="16" height="16" alt="文件夹" style="filter: invert(1);">
+                    <img src="assets/icon/File.svg" width="16" height="16" alt="文件夹" style="filter: invert(1);">
                     <span class="folder-name">${folder.name}</span>
                     <span class="folder-count">${folder.pages.length}页</span>
                 </div>
@@ -2926,7 +2918,7 @@ function collapseFileSidebar() {
     }
     
     dom.btnSave.innerHTML = `
-        <img src="assets/javascript.svg" width="16" height="16" alt="文件" style="filter: invert(1);">
+        <img src="assets/icon/File.svg" width="16" height="16" alt="文件" style="filter: invert(1);">
         文件
     `;
     console.log('收起文件侧边栏');
