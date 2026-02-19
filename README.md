@@ -36,7 +36,7 @@
 
 ## 项目进展
 项目还在施工，很多功能可能还没有写完，很多图标都是随便搞的，后面还会换
- - ✅批注（✳️准备从canvas2D迁移到PixiJS以提升性能）
+ - ✅批注
  - ✅触控
  - ✅PDF打开
  - ✅允许PDF以ViewStage为默认打开程序
@@ -49,4 +49,5 @@
 
 ## 许可证
 本项目采用开源许可证，详见 [LICENSE](https://github.com/ospneam/ViewStage/blob/main/LICENSE) 文件。
+
 
