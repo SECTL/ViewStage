@@ -113,7 +113,9 @@ let state = {
     currentFolderIndex: -1,
     currentFolderPageIndex: -1,
     enhanceRequestQueue: [],
-    lastEnhanceTime: 0
+    lastEnhanceTime: 0,
+    pendingDrawPoints: [],
+    drawRafId: null
 };
 
 // DOM 元素引用
@@ -842,14 +844,10 @@ function handleMouseDown(e) {
         state.isDrawing = true;
         state.lastX = (e.clientX - rect.left) / state.scale;
         state.lastY = (e.clientY - rect.top) / state.scale;
-        dom.drawCtx.beginPath();
-        dom.drawCtx.moveTo(state.lastX, state.lastY);
     } else if (state.drawMode === 'eraser') {
         state.isDrawing = true;
         state.lastX = (e.clientX - rect.left) / state.scale;
         state.lastY = (e.clientY - rect.top) / state.scale;
-        dom.drawCtx.beginPath();
-        dom.drawCtx.moveTo(state.lastX, state.lastY);
     }
 }
 
@@ -870,14 +868,31 @@ function handleMouseMove(e) {
         const x = (e.clientX - rect.left) / state.scale;
         const y = (e.clientY - rect.top) / state.scale;
         
-        dom.drawCtx.beginPath();
-        dom.drawCtx.moveTo(state.lastX, state.lastY);
-        dom.drawCtx.lineTo(x, y);
-        dom.drawCtx.stroke();
-        
+        state.pendingDrawPoints.push({ fromX: state.lastX, fromY: state.lastY, toX: x, toY: y });
         state.lastX = x;
         state.lastY = y;
+        
+        if (!state.drawRafId) {
+            state.drawRafId = requestAnimationFrame(flushDrawPoints);
+        }
     }
+}
+
+function flushDrawPoints() {
+    if (state.pendingDrawPoints.length === 0) {
+        state.drawRafId = null;
+        return;
+    }
+    
+    dom.drawCtx.beginPath();
+    for (const point of state.pendingDrawPoints) {
+        dom.drawCtx.moveTo(point.fromX, point.fromY);
+        dom.drawCtx.lineTo(point.toX, point.toY);
+    }
+    dom.drawCtx.stroke();
+    
+    state.pendingDrawPoints = [];
+    state.drawRafId = null;
 }
 
 function handleMouseUp(e) {
@@ -887,6 +902,11 @@ function handleMouseUp(e) {
     }
     if (state.isDrawing) {
         state.isDrawing = false;
+        if (state.drawRafId) {
+            cancelAnimationFrame(state.drawRafId);
+            state.drawRafId = null;
+        }
+        flushDrawPoints();
         saveSnapshot();
     }
 }
@@ -898,6 +918,11 @@ function handleMouseLeave(e) {
     }
     if (state.isDrawing) {
         state.isDrawing = false;
+        if (state.drawRafId) {
+            cancelAnimationFrame(state.drawRafId);
+            state.drawRafId = null;
+        }
+        flushDrawPoints();
         saveSnapshot();
     }
 }
@@ -949,15 +974,11 @@ function handleTouchStart(e) {
             state.isDrawing = true;
             state.lastX = (touch.clientX - rect.left) / state.scale;
             state.lastY = (touch.clientY - rect.top) / state.scale;
-            dom.drawCtx.beginPath();
-            dom.drawCtx.moveTo(state.lastX, state.lastY);
         } else if (state.drawMode === 'eraser') {
             state.isDrawing = true;
             updateEraserHintPos(touch.clientX, touch.clientY);
             state.lastX = (touch.clientX - rect.left) / state.scale;
             state.lastY = (touch.clientY - rect.top) / state.scale;
-            dom.drawCtx.beginPath();
-            dom.drawCtx.moveTo(state.lastX, state.lastY);
         }
     } else if (touches.length === 2) {
         state.isScaling = true;
@@ -992,13 +1013,13 @@ function handleTouchMove(e) {
         const x = (touch.clientX - rect.left) / state.scale;
         const y = (touch.clientY - rect.top) / state.scale;
         
-        dom.drawCtx.beginPath();
-        dom.drawCtx.moveTo(state.lastX, state.lastY);
-        dom.drawCtx.lineTo(x, y);
-        dom.drawCtx.stroke();
-        
+        state.pendingDrawPoints.push({ fromX: state.lastX, fromY: state.lastY, toX: x, toY: y });
         state.lastX = x;
         state.lastY = y;
+        
+        if (!state.drawRafId) {
+            state.drawRafId = requestAnimationFrame(flushDrawPoints);
+        }
     } else if (touches.length === 2 && state.isScaling) {
         const currentDistance = getTouchDistance(touches[0], touches[1]);
         const scaleRatio = currentDistance / state.startDistance;
@@ -1027,6 +1048,11 @@ function handleTouchEnd(e) {
         
         if (state.isDrawing) {
             state.isDrawing = false;
+            if (state.drawRafId) {
+                cancelAnimationFrame(state.drawRafId);
+                state.drawRafId = null;
+            }
+            flushDrawPoints();
             saveSnapshot();
         }
     } else if (e.touches.length === 1) {
