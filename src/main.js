@@ -90,9 +90,11 @@ let state = {
     startScaleY: 0,
     startCanvasX: 0,
     startCanvasY: 0,
-    historyStack: [],
-    currentStep: -1,
-    MAX_UNDO_STEPS: 16,
+    strokeHistory: [],
+    baseImageData: null,
+    currentStroke: null,
+    MAX_UNDO_STEPS: 10,
+    STROKE_COMPACT_THRESHOLD: 30,
     moveBound: {
         minX: 0,
         maxX: 0,
@@ -227,7 +229,8 @@ async function processPdfPagesParallel(pdf, totalPages, batchSize = 4) {
             full: fullImage,
             thumbnail: thumbnail,
             pageNum: pageNum,
-            drawData: null
+            strokeHistory: null,
+            baseImageData: null
         };
     }
     
@@ -844,10 +847,12 @@ function handleMouseDown(e) {
         state.isDrawing = true;
         state.lastX = (e.clientX - rect.left) / state.scale;
         state.lastY = (e.clientY - rect.top) / state.scale;
+        startStroke('draw');
     } else if (state.drawMode === 'eraser') {
         state.isDrawing = true;
         state.lastX = (e.clientX - rect.left) / state.scale;
         state.lastY = (e.clientY - rect.top) / state.scale;
+        startStroke('erase');
     }
 }
 
@@ -869,6 +874,7 @@ function handleMouseMove(e) {
         const y = (e.clientY - rect.top) / state.scale;
         
         state.pendingDrawPoints.push({ fromX: state.lastX, fromY: state.lastY, toX: x, toY: y });
+        addStrokePoint(state.lastX, state.lastY, x, y);
         state.lastX = x;
         state.lastY = y;
         
@@ -907,7 +913,7 @@ function handleMouseUp(e) {
             state.drawRafId = null;
         }
         flushDrawPoints();
-        saveSnapshot();
+        endStroke();
     }
 }
 
@@ -923,7 +929,7 @@ function handleMouseLeave(e) {
             state.drawRafId = null;
         }
         flushDrawPoints();
-        saveSnapshot();
+        endStroke();
     }
 }
 
@@ -974,11 +980,13 @@ function handleTouchStart(e) {
             state.isDrawing = true;
             state.lastX = (touch.clientX - rect.left) / state.scale;
             state.lastY = (touch.clientY - rect.top) / state.scale;
+            startStroke('draw');
         } else if (state.drawMode === 'eraser') {
             state.isDrawing = true;
             updateEraserHintPos(touch.clientX, touch.clientY);
             state.lastX = (touch.clientX - rect.left) / state.scale;
             state.lastY = (touch.clientY - rect.top) / state.scale;
+            startStroke('erase');
         }
     } else if (touches.length === 2) {
         state.isScaling = true;
@@ -1014,6 +1022,7 @@ function handleTouchMove(e) {
         const y = (touch.clientY - rect.top) / state.scale;
         
         state.pendingDrawPoints.push({ fromX: state.lastX, fromY: state.lastY, toX: x, toY: y });
+        addStrokePoint(state.lastX, state.lastY, x, y);
         state.lastX = x;
         state.lastY = y;
         
@@ -1053,7 +1062,7 @@ function handleTouchEnd(e) {
                 state.drawRafId = null;
             }
             flushDrawPoints();
-            saveSnapshot();
+            endStroke();
         }
     } else if (e.touches.length === 1) {
         state.isScaling = false;
@@ -1083,41 +1092,142 @@ function updateCanvasTransform() {
     dom.drawCanvas.style.transformOrigin = '0 0';
 }
 
-// 撤销功能
-function saveSnapshot() {
-    const snapshot = dom.drawCtx.getImageData(
-        0, 0,
-        DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr,
-        DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr
-    );
-    if (state.currentStep < state.historyStack.length - 1) {
-        state.historyStack = state.historyStack.slice(0, state.currentStep + 1);
-    }
-    state.historyStack.push(snapshot);
-    state.currentStep++;
-    if (state.historyStack.length > state.MAX_UNDO_STEPS) {
-        state.historyStack.shift();
-        state.currentStep--;
-    }
-    updateUndoBtnStatus();
+// 撤销功能 - 混合方案：路径记录 + ImageData压缩
+function startStroke(type) {
+    state.currentStroke = {
+        type: type,
+        points: [],
+        color: DRAW_CONFIG.penColor,
+        lineWidth: DRAW_CONFIG.penWidth,
+        eraserSize: DRAW_CONFIG.eraserSize
+    };
 }
 
-function restoreSnapshot(step) {
-    if (step < 0 || step >= state.historyStack.length) return;
-    const snapshot = state.historyStack[step];
-    dom.drawCtx.putImageData(snapshot, 0, 0);
-    state.currentStep = step;
-    updateUndoBtnStatus();
+function addStrokePoint(fromX, fromY, toX, toY) {
+    if (state.currentStroke) {
+        state.currentStroke.points.push({ fromX, fromY, toX, toY });
+    }
+}
+
+function endStroke() {
+    if (state.currentStroke && state.currentStroke.points.length > 0) {
+        state.strokeHistory.push(state.currentStroke);
+        
+        if (state.strokeHistory.length > state.STROKE_COMPACT_THRESHOLD) {
+            compactStrokes();
+        }
+        
+        updateUndoBtnStatus();
+    }
+    state.currentStroke = null;
+}
+
+function compactStrokes() {
+    if (state.strokeHistory.length === 0 && !state.baseImageData) return;
+    
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
+    tempCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
+    
+    if (state.baseImageData) {
+        const tempImgData = new ImageData(
+            new Uint8ClampedArray(state.baseImageData.data),
+            state.baseImageData.width,
+            state.baseImageData.height
+        );
+        tempCtx.putImageData(tempImgData, 0, 0);
+    }
+    
+    for (const stroke of state.strokeHistory) {
+        if (stroke.type === 'draw') {
+            tempCtx.strokeStyle = stroke.color;
+            tempCtx.lineWidth = stroke.lineWidth;
+            tempCtx.lineCap = 'round';
+            tempCtx.lineJoin = 'round';
+            tempCtx.globalCompositeOperation = 'source-over';
+            
+            tempCtx.beginPath();
+            for (const point of stroke.points) {
+                tempCtx.moveTo(point.fromX, point.fromY);
+                tempCtx.lineTo(point.toX, point.toY);
+            }
+            tempCtx.stroke();
+        } else if (stroke.type === 'erase') {
+            tempCtx.lineWidth = stroke.eraserSize;
+            tempCtx.lineCap = 'round';
+            tempCtx.lineJoin = 'round';
+            tempCtx.globalCompositeOperation = 'destination-out';
+            
+            tempCtx.beginPath();
+            for (const point of stroke.points) {
+                tempCtx.moveTo(point.fromX, point.fromY);
+                tempCtx.lineTo(point.toX, point.toY);
+            }
+            tempCtx.stroke();
+        }
+    }
+    
+    state.baseImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+    state.strokeHistory = [];
+    console.log('笔画已压缩并清空历史');
+}
+
+function saveSnapshot() {
+    endStroke();
 }
 
 function undo() {
-    if (state.currentStep <= 0) return;
-    restoreSnapshot(state.currentStep - 1);
+    if (state.strokeHistory.length === 0) return;
+    
+    state.strokeHistory.pop();
+    redrawAllStrokes();
+    updateUndoBtnStatus();
     console.log('撤销操作');
 }
 
+function redrawAllStrokes() {
+    clearDrawCanvas();
+    
+    if (state.baseImageData) {
+        dom.drawCtx.putImageData(state.baseImageData, 0, 0);
+    }
+    
+    for (const stroke of state.strokeHistory) {
+        if (stroke.type === 'draw') {
+            dom.drawCtx.strokeStyle = stroke.color;
+            dom.drawCtx.lineWidth = stroke.lineWidth;
+            dom.drawCtx.lineCap = 'round';
+            dom.drawCtx.lineJoin = 'round';
+            dom.drawCtx.globalCompositeOperation = 'source-over';
+            
+            dom.drawCtx.beginPath();
+            for (const point of stroke.points) {
+                dom.drawCtx.moveTo(point.fromX, point.fromY);
+                dom.drawCtx.lineTo(point.toX, point.toY);
+            }
+            dom.drawCtx.stroke();
+        } else if (stroke.type === 'erase') {
+            dom.drawCtx.lineWidth = stroke.eraserSize;
+            dom.drawCtx.lineCap = 'round';
+            dom.drawCtx.lineJoin = 'round';
+            dom.drawCtx.globalCompositeOperation = 'destination-out';
+            
+            dom.drawCtx.beginPath();
+            for (const point of stroke.points) {
+                dom.drawCtx.moveTo(point.fromX, point.fromY);
+                dom.drawCtx.lineTo(point.toX, point.toY);
+            }
+            dom.drawCtx.stroke();
+        }
+    }
+    
+    dom.drawCtx.globalCompositeOperation = 'source-over';
+}
+
 function updateUndoBtnStatus() {
-    dom.btnUndo.disabled = state.currentStep <= 0;
+    dom.btnUndo.disabled = state.strokeHistory.length === 0;
 }
 
 // 清空画布
@@ -1128,21 +1238,24 @@ function clearDrawCanvas() {
 
 function clearAllDrawings() {
     clearDrawCanvas();
+    state.strokeHistory = [];
+    state.baseImageData = null;
+    updateUndoBtnStatus();
     
     if (state.currentImageIndex >= 0 && state.currentImageIndex < state.imageList.length) {
-        state.imageList[state.currentImageIndex].drawData = null;
+        state.imageList[state.currentImageIndex].strokeHistory = null;
+        state.imageList[state.currentImageIndex].baseImageData = null;
     }
     
     if (state.currentFolderIndex >= 0 && state.currentFolderPageIndex >= 0) {
         if (state.currentFolderIndex < state.fileList.length) {
             const folder = state.fileList[state.currentFolderIndex];
             if (state.currentFolderPageIndex < folder.pages.length) {
-                folder.pages[state.currentFolderPageIndex].drawData = null;
+                folder.pages[state.currentFolderPageIndex].strokeHistory = null;
+                folder.pages[state.currentFolderPageIndex].baseImageData = null;
             }
         }
     }
-    
-    saveSnapshot();
     
     if (state.drawMode === 'eraser') {
         switchMode('comment');
@@ -1649,50 +1762,43 @@ function selectImage(index) {
 
 function saveCurrentDrawData() {
     if (state.currentImageIndex >= 0 && state.currentImageIndex < state.imageList.length) {
-        const drawData = dom.drawCtx.getImageData(
-            0, 0, 
-            DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr, 
-            DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr
-        );
-        state.imageList[state.currentImageIndex].drawData = drawData;
+        state.imageList[state.currentImageIndex].strokeHistory = [...state.strokeHistory];
+        state.imageList[state.currentImageIndex].baseImageData = state.baseImageData ? {
+            data: Array.from(state.baseImageData.data),
+            width: state.baseImageData.width,
+            height: state.baseImageData.height
+        } : null;
         state.imageList[state.currentImageIndex].viewState = {
             scale: state.scale,
             canvasX: state.canvasX,
             canvasY: state.canvasY
         };
-        
-        const trimmedHistory = trimHistoryStack(state.historyStack, state.currentStep, 5);
-        state.imageList[state.currentImageIndex].historyStack = trimmedHistory.stack;
-        state.imageList[state.currentImageIndex].currentStep = trimmedHistory.step;
     }
-}
-
-function trimHistoryStack(stack, step, maxSize) {
-    if (stack.length <= maxSize) {
-        return { stack: [...stack], step };
-    }
-    const startIdx = stack.length - maxSize;
-    const newStack = stack.slice(startIdx);
-    const newStep = step - startIdx;
-    return { stack: newStack, step: Math.max(0, newStep) };
 }
 
 function restoreDrawData(index) {
     if (index >= 0 && index < state.imageList.length) {
         const imgData = state.imageList[index];
-        if (imgData.drawData) {
-            dom.drawCtx.putImageData(imgData.drawData, 0, 0);
+        if (imgData.strokeHistory && imgData.strokeHistory.length > 0) {
+            state.strokeHistory = [...imgData.strokeHistory];
         } else {
-            clearDrawCanvas();
+            state.strokeHistory = [];
         }
         
-        if (imgData.historyStack) {
-            state.historyStack = [...imgData.historyStack];
-            state.currentStep = imgData.currentStep ?? state.historyStack.length - 1;
+        if (imgData.baseImageData) {
+            state.baseImageData = new ImageData(
+                new Uint8ClampedArray(imgData.baseImageData.data),
+                imgData.baseImageData.width,
+                imgData.baseImageData.height
+            );
         } else {
-            state.historyStack = [];
-            state.currentStep = -1;
-            saveSnapshot();
+            state.baseImageData = null;
+        }
+        
+        if (state.strokeHistory.length > 0 || state.baseImageData) {
+            redrawAllStrokes();
+        } else {
+            clearDrawCanvas();
         }
         updateUndoBtnStatus();
     }
@@ -1985,21 +2091,17 @@ function saveCurrentFolderPageDrawData() {
         if (state.currentFolderIndex < state.fileList.length) {
             const folder = state.fileList[state.currentFolderIndex];
             if (state.currentFolderPageIndex < folder.pages.length) {
-                const drawData = dom.drawCtx.getImageData(
-                    0, 0,
-                    DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr,
-                    DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr
-                );
-                folder.pages[state.currentFolderPageIndex].drawData = drawData;
+                folder.pages[state.currentFolderPageIndex].strokeHistory = [...state.strokeHistory];
+                folder.pages[state.currentFolderPageIndex].baseImageData = state.baseImageData ? {
+                    data: Array.from(state.baseImageData.data),
+                    width: state.baseImageData.width,
+                    height: state.baseImageData.height
+                } : null;
                 folder.pages[state.currentFolderPageIndex].viewState = {
                     scale: state.scale,
                     canvasX: state.canvasX,
                     canvasY: state.canvasY
                 };
-                
-                const trimmedHistory = trimHistoryStack(state.historyStack, state.currentStep, 5);
-                folder.pages[state.currentFolderPageIndex].historyStack = trimmedHistory.stack;
-                folder.pages[state.currentFolderPageIndex].currentStep = trimmedHistory.step;
             }
         }
     }
@@ -2010,19 +2112,26 @@ function restoreFolderPageDrawData(folderIndex, pageIndex) {
         const folder = state.fileList[folderIndex];
         if (pageIndex >= 0 && pageIndex < folder.pages.length) {
             const page = folder.pages[pageIndex];
-            if (page.drawData) {
-                dom.drawCtx.putImageData(page.drawData, 0, 0);
+            if (page.strokeHistory && page.strokeHistory.length > 0) {
+                state.strokeHistory = [...page.strokeHistory];
             } else {
-                clearDrawCanvas();
+                state.strokeHistory = [];
             }
             
-            if (page.historyStack) {
-                state.historyStack = [...page.historyStack];
-                state.currentStep = page.currentStep ?? state.historyStack.length - 1;
+            if (page.baseImageData) {
+                state.baseImageData = new ImageData(
+                    new Uint8ClampedArray(page.baseImageData.data),
+                    page.baseImageData.width,
+                    page.baseImageData.height
+                );
             } else {
-                state.historyStack = [];
-                state.currentStep = -1;
-                saveSnapshot();
+                state.baseImageData = null;
+            }
+            
+            if (state.strokeHistory.length > 0 || state.baseImageData) {
+                redrawAllStrokes();
+            } else {
+                clearDrawCanvas();
             }
             updateUndoBtnStatus();
         }
@@ -2574,7 +2683,8 @@ async function addImageToList(img, name, isLast = true) {
         name: name,
         width: img.width,
         height: img.height,
-        drawData: null
+        strokeHistory: null,
+        baseImageData: null
     };
     
     state.imageList.push(imgData);
@@ -2585,9 +2695,9 @@ async function addImageToList(img, name, isLast = true) {
     
     if (isLast) {
         clearDrawCanvas();
-        state.historyStack = [];
-        state.currentStep = -1;
-        saveSnapshot();
+        state.strokeHistory = [];
+        state.baseImageData = null;
+        updateUndoBtnStatus();
         
         if (state.isCameraOpen) {
             closeCamera();
@@ -2610,7 +2720,8 @@ async function addImageToListNoHighlight(img, name) {
         name: name,
         width: img.width,
         height: img.height,
-        drawData: null
+        strokeHistory: null,
+        baseImageData: null
     };
     
     state.imageList.push(imgData);
