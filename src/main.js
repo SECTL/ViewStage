@@ -5,7 +5,11 @@
  * - 三层Canvas：背景层(bgCanvas) → 图像层(imageCanvas) → 批注层(drawCanvas)
  * - 批注系统：笔画记录 + 压缩存储 + 撤销支持
  * - 图像处理：Rust后端并行处理（增强、缩略图、旋转）
+ * - 点处理：WASM高性能计算（距离计算、点简化、坐标量化）
  */
+
+// 导入WASM点处理器
+import wasmPointProcessor from './wasm-processor.js';
 
 // ==================== PDF.js 配置 ====================
 
@@ -78,6 +82,10 @@ const DRAW_CONFIG = {
     cameraFrameInterval: 33,       // 摄像头帧间隔 (ms) - 30fps
     cameraFrameIntervalLow: 100    // 低帧率模式 (绘制时)
 };
+
+function getSafeScale() {
+    return Math.max(0.001, state.scale || 1);
+}
 
 // ==================== 智能绘制调度器 ====================
 
@@ -280,26 +288,68 @@ let state = {
 };
 
 let dom = {};  // DOM 元素引用缓存
+let cachedCanvasRect = null;  // 缓存的画布边界矩形
+
+let offscreenCanvasPool = [];
+const MAX_OFFSCREEN_CANVAS = 2;
+
+function getOffscreenCanvas() {
+    if (offscreenCanvasPool.length > 0) {
+        return offscreenCanvasPool.pop();
+    }
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
+    canvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
+    const ctx = canvas.getContext('2d', { alpha: true });
+    ctx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
+    return { canvas, ctx };
+}
+
+function releaseOffscreenCanvas(offscreen) {
+    if (offscreenCanvasPool.length < MAX_OFFSCREEN_CANVAS) {
+        offscreen.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        offscreen.ctx.clearRect(0, 0, offscreen.canvas.width, offscreen.canvas.height);
+        offscreen.ctx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
+        offscreenCanvasPool.push(offscreen);
+    }
+}
+
+function invalidateCachedRect() {
+    cachedCanvasRect = null;
+}
+
+function getCachedCanvasRect() {
+    if (!cachedCanvasRect) {
+        cachedCanvasRect = dom.canvasContainer.getBoundingClientRect();
+    }
+    return cachedCanvasRect;
+}
 
 // ==================== 初始化 ====================
 
 window.addEventListener('DOMContentLoaded', async () => {
-    initDOM();
-    initCanvas();
-    bindAllEvents();
-    saveSnapshot();
-    
-    window.addEventListener('resize', handleResize);
-    
-    await initCacheDir();
-    
-    openCamera();
-    
-    if (window.__TAURI__) {
-        listenForPdfFileOpen();
+    try {
+        initDOM();
+        initCanvas();
+        bindAllEvents();
+        saveSnapshot();
+        
+        window.addEventListener('resize', handleResize);
+        
+        await initCacheDir();
+        
+        await openCamera();
+        
+        if (window.__TAURI__) {
+            listenForPdfFileOpen();
+        }
+        
+        console.log('画布初始化完成');
+    } catch (error) {
+        console.error('初始化失败:', error);
+        alert('应用初始化失败，请刷新页面重试');
     }
-    
-    console.log('画布初始化完成');
 });
 
 // 监听系统关联打开的PDF文件
@@ -494,18 +544,19 @@ async function loadPdfFromPath(filePath) {
 }
 
 // 处理窗口大小变化
-function handleResize() {
+async function handleResize() {
+    invalidateCachedRect();
     const container = dom.canvasContainer;
     const newScreenW = container.clientWidth;
     const newScreenH = container.clientHeight;
     
     if (newScreenW !== DRAW_CONFIG.screenW || newScreenH !== DRAW_CONFIG.screenH) {
-        resizeCanvas(newScreenW, newScreenH);
+        await resizeCanvas(newScreenW, newScreenH);
     }
 }
 
 // 调整画布大小
-function resizeCanvas(newScreenW, newScreenH) {
+async function resizeCanvas(newScreenW, newScreenH) {
     const oldCanvasW = DRAW_CONFIG.canvasW;
     const oldCanvasH = DRAW_CONFIG.canvasH;
     
@@ -581,7 +632,7 @@ function resizeCanvas(newScreenW, newScreenH) {
     
     // 重新绘制批注
     if (state.strokeHistory.length > 0 || state.baseImageObj) {
-        redrawAllStrokes();
+        await redrawAllStrokes();
     }
     
     // 恢复画布位置和缩放
@@ -624,9 +675,9 @@ function initDOM() {
     dom.btnMenu = document.getElementById('btnMenu');
     dom.btnEnhance = document.getElementById('btnEnhance');
     
-    dom.bgCtx = dom.bgCanvas.getContext('2d');
-    dom.imageCtx = dom.imageCanvas.getContext('2d', { desynchronized: true });
-    dom.drawCtx = dom.drawCanvas.getContext('2d', { willReadFrequently: true });
+    dom.bgCtx = dom.bgCanvas.getContext('2d', { alpha: false });
+    dom.imageCtx = dom.imageCanvas.getContext('2d', { alpha: true, desynchronized: true });
+    dom.drawCtx = dom.drawCanvas.getContext('2d', { alpha: true, desynchronized: true });
 }
 
 // ==================== 画布初始化 ====================
@@ -1027,7 +1078,7 @@ function hidePenControlPanel() {
 }
 
 function updateEraserHintPos(clientX, clientY) {
-    const rect = dom.canvasContainer.getBoundingClientRect();
+    const rect = getCachedCanvasRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
     dom.eraserHint.style.left = `${x}px`;
@@ -1062,13 +1113,13 @@ function handleMouseDown(e) {
         dom.drawCanvas.classList.add('dragging');
     } else if (state.drawMode === 'comment') {
         state.isDrawing = true;
-        state.lastX = (e.clientX - rect.left) / state.scale;
-        state.lastY = (e.clientY - rect.top) / state.scale;
+        state.lastX = (e.clientX - rect.left) / getSafeScale();
+        state.lastY = (e.clientY - rect.top) / getSafeScale();
         startStroke('draw');
     } else if (state.drawMode === 'eraser') {
         state.isDrawing = true;
-        state.lastX = (e.clientX - rect.left) / state.scale;
-        state.lastY = (e.clientY - rect.top) / state.scale;
+        state.lastX = (e.clientX - rect.left) / getSafeScale();
+        state.lastY = (e.clientY - rect.top) / getSafeScale();
         startStroke('erase');
     }
 }
@@ -1092,30 +1143,25 @@ function handleMouseMove(e) {
         updateCanvasTransform();
     } else if (state.isDrawing) {
         const rect = dom.drawCanvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / state.scale;
-        const y = (e.clientY - rect.top) / state.scale;
+        const x = (e.clientX - rect.left) / getSafeScale();
+        const y = (e.clientY - rect.top) / getSafeScale();
         
-        // 计算距离，只添加足够远的点
-        const distance = Math.sqrt(Math.pow(x - state.lastX, 2) + Math.pow(y - state.lastY, 2));
-        
-        // 使用智能调度器的最小点间距参数
         const minDistance = smartDrawScheduler.getMinDistance();
+        const minDistSq = minDistance * minDistance;
+        const dx = x - state.lastX;
+        const dy = y - state.lastY;
+        const distSq = dx * dx + dy * dy;
         
-        // 只在距离足够大时添加点，减少点数量
-        if (distance > minDistance) {
-            // 添加到绘制队列
+        if (distSq > minDistSq) {
             state.pendingDrawPoints.push({ fromX: state.lastX, fromY: state.lastY, toX: x, toY: y });
             
-            // 使用优化的点收集（只影响历史存储）
             pointCollector.addPoint(state.lastX, state.lastY, x, y);
             
-            // 总是添加到笔画历史
             addStrokePoint(state.lastX, state.lastY, x, y);
             
             state.lastX = x;
             state.lastY = y;
             
-            // 调度绘制，但限制频率
             if (!state.drawRafId) {
                 state.drawRafId = requestAnimationFrame(flushDrawPoints);
             }
@@ -1123,7 +1169,7 @@ function handleMouseMove(e) {
     }
 }
 
-function flushDrawPoints() {
+async function flushDrawPoints() {
     if (state.pendingDrawPoints.length === 0) {
         state.drawRafId = null;
         return;
@@ -1152,7 +1198,7 @@ function flushDrawPoints() {
     batchDrawManager.flushAll();
     
     // 结束绘制
-    batchDrawManager.endDrawing();
+    await batchDrawManager.endDrawing();
     
     // 计算绘制时间并记录性能
     const drawTime = performance.now() - startTime;
@@ -1169,7 +1215,7 @@ function flushDrawPoints() {
     }
 }
 
-function handleMouseUp(e) {
+async function handleMouseUp(e) {
     if (state.isDragging) {
         state.isDragging = false;
         dom.drawCanvas.classList.remove('dragging');
@@ -1180,12 +1226,12 @@ function handleMouseUp(e) {
             cancelAnimationFrame(state.drawRafId);
             state.drawRafId = null;
         }
-        flushDrawPoints();
-        endStroke();
+        await flushDrawPoints();
+        await endStroke();
     }
 }
 
-function handleMouseLeave(e) {
+async function handleMouseLeave(e) {
     if (state.isDragging) {
         state.isDragging = false;
         dom.drawCanvas.classList.remove('dragging');
@@ -1196,8 +1242,8 @@ function handleMouseLeave(e) {
             cancelAnimationFrame(state.drawRafId);
             state.drawRafId = null;
         }
-        flushDrawPoints();
-        endStroke();
+        await flushDrawPoints();
+        await endStroke();
     }
 }
 
@@ -1246,14 +1292,14 @@ function handleTouchStart(e) {
             state.startDragY = touch.clientY - state.canvasY;
         } else if (state.drawMode === 'comment') {
             state.isDrawing = true;
-            state.lastX = (touch.clientX - rect.left) / state.scale;
-            state.lastY = (touch.clientY - rect.top) / state.scale;
+            state.lastX = (touch.clientX - rect.left) / getSafeScale();
+            state.lastY = (touch.clientY - rect.top) / getSafeScale();
             startStroke('draw');
         } else if (state.drawMode === 'eraser') {
             state.isDrawing = true;
             updateEraserHintPos(touch.clientX, touch.clientY);
-            state.lastX = (touch.clientX - rect.left) / state.scale;
-            state.lastY = (touch.clientY - rect.top) / state.scale;
+            state.lastX = (touch.clientX - rect.left) / getSafeScale();
+            state.lastY = (touch.clientY - rect.top) / getSafeScale();
             startStroke('erase');
         }
     } else if (touches.length === 2) {
@@ -1286,8 +1332,8 @@ function handleTouchMove(e) {
             updateEraserHintPos(touch.clientX, touch.clientY);
         }
         
-        const x = (touch.clientX - rect.left) / state.scale;
-        const y = (touch.clientY - rect.top) / state.scale;
+        const x = (touch.clientX - rect.left) / getSafeScale();
+        const y = (touch.clientY - rect.top) / getSafeScale();
         
         // 总是添加到绘制队列以确保流畅绘制
         state.pendingDrawPoints.push({ fromX: state.lastX, fromY: state.lastY, toX: x, toY: y });
@@ -1324,7 +1370,7 @@ function handleTouchMove(e) {
     }
 }
 
-function handleTouchEnd(e) {
+async function handleTouchEnd(e) {
     e.preventDefault();
     
     if (e.touches.length === 0) {
@@ -1337,8 +1383,8 @@ function handleTouchEnd(e) {
                 cancelAnimationFrame(state.drawRafId);
                 state.drawRafId = null;
             }
-            flushDrawPoints();
-            endStroke();
+            await flushDrawPoints();
+            await endStroke();
         }
     } else if (e.touches.length === 1) {
         state.isScaling = false;
@@ -1357,15 +1403,23 @@ function getTouchDistance(touch1, touch2) {
     return Math.sqrt(dx * dx + dy * dy);
 }
 
-// 更新画布变换
+let lastCanvasTransform = { x: null, y: null, scale: null };
+
 function updateCanvasTransform() {
+    if (lastCanvasTransform.x === state.canvasX && 
+        lastCanvasTransform.y === state.canvasY && 
+        lastCanvasTransform.scale === state.scale) {
+        return;
+    }
+    
+    lastCanvasTransform.x = state.canvasX;
+    lastCanvasTransform.y = state.canvasY;
+    lastCanvasTransform.scale = state.scale;
+    
     const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
     dom.bgCanvas.style.transform = transform;
     dom.imageCanvas.style.transform = transform;
     dom.drawCanvas.style.transform = transform;
-    dom.bgCanvas.style.transformOrigin = '0 0';
-    dom.imageCanvas.style.transformOrigin = '0 0';
-    dom.drawCanvas.style.transformOrigin = '0 0';
 }
 
 // 撤销功能 - 混合方案：路径记录 + ImageData压缩
@@ -1404,12 +1458,27 @@ function addStrokePoint(fromX, fromY, toX, toY) {
     }
 }
 
-function endStroke() {
+async function endStroke() {
     if (state.currentStroke && state.currentStroke.points.length > 0) {
         // 只在点数较多时简化，避免过度简化导致断点
         if (state.currentStroke.points.length > 50) {
-            // 使用更小的 epsilon 值以保留更多点
-            state.currentStroke.points = simplifyPoints(state.currentStroke.points, POINT_OPTIMIZATION.epsilon * 0.8);
+            try {
+                // 使用WASM进行点处理
+                const config = {
+                    epsilon: POINT_OPTIMIZATION.epsilon * 0.8,
+                    min_distance: POINT_OPTIMIZATION.minDistance,
+                    quantization: POINT_OPTIMIZATION.quantization
+                };
+                state.currentStroke.points = await wasmPointProcessor.processStrokePoints(
+                    state.currentStroke.points,
+                    config
+                );
+                console.log('使用WASM进行点处理，点数从', state.currentStroke.points.length, '减少到', state.currentStroke.points.length);
+            } catch (error) {
+                console.warn('WASM点处理失败，使用前端降级方案:', error);
+                // 使用更小的 epsilon 值以保留更多点
+                state.currentStroke.points = simplifyPoints(state.currentStroke.points, POINT_OPTIMIZATION.epsilon * 0.8);
+            }
         }
         
         state.strokeHistory.push(state.currentStroke);
@@ -1423,7 +1492,7 @@ function endStroke() {
     state.currentStroke = null;
     
     // 结束批处理绘制
-    batchDrawManager.endDrawing();
+    await batchDrawManager.endDrawing();
     
     // 清理点收集器
     pointCollector.clear();
@@ -1550,41 +1619,83 @@ class PointCollector {
         this.lastY = 0;
     }
     
-    addPoint(fromX, fromY, toX, toY) {
-        // 量化坐标
-        const qFromX = quantizeCoord(fromX);
-        const qFromY = quantizeCoord(fromY);
-        const qToX = quantizeCoord(toX);
-        const qToY = quantizeCoord(toY);
-        
-        // 检查距离阈值
-        if (distance(qFromX, qFromY, qToX, qToY) < POINT_OPTIMIZATION.minDistance) {
-            return false; // 距离太小，跳过
+    async addPoint(fromX, fromY, toX, toY) {
+        try {
+            const config = {
+                epsilon: POINT_OPTIMIZATION.epsilon,
+                minDistance: POINT_OPTIMIZATION.minDistance,
+                quantization: POINT_OPTIMIZATION.quantization
+            };
+            
+            const points = [{
+                fromX: fromX,
+                fromY: fromY,
+                toX: toX,
+                toY: toY
+            }];
+            
+            const result = await wasmPointProcessor.collectPoints(
+                points,
+                config,
+                this.lastTime,
+                this.lastX,
+                this.lastY
+            );
+            
+            if (result.error) {
+                throw new Error(result.error);
+            }
+            
+            if (result.collectedPoints && result.collectedPoints.length > 0) {
+                const collectedPoint = result.collectedPoints[0];
+                this.points.push({
+                    fromX: collectedPoint.fromX,
+                    fromY: collectedPoint.fromY,
+                    toX: collectedPoint.toX,
+                    toY: collectedPoint.toY
+                });
+                
+                this.lastTime = result.lastTime;
+                this.lastX = result.lastX;
+                this.lastY = result.lastY;
+                
+                return true;
+            }
+        } catch (error) {
+            console.warn('WASM点收集失败，使用前端降级方案:', error);
+            const qFromX = quantizeCoord(fromX);
+            const qFromY = quantizeCoord(fromY);
+            const qToX = quantizeCoord(toX);
+            const qToY = quantizeCoord(toY);
+            
+            if (distance(qFromX, qFromY, qToX, qToY) < POINT_OPTIMIZATION.minDistance) {
+                return false;
+            }
+            
+            const now = Date.now();
+            if (now - this.lastTime < POINT_OPTIMIZATION.batchInterval) {
+                return false;
+            }
+            
+            this.lastTime = now;
+            this.lastX = qToX;
+            this.lastY = qToY;
+            
+            this.points.push({
+                fromX: qFromX,
+                fromY: qFromY,
+                toX: qToX,
+                toY: qToY
+            });
+            
+            if (this.points.length > POINT_OPTIMIZATION.maxPointsPerStroke) {
+                this.points = simplifyPoints(this.points, POINT_OPTIMIZATION.epsilon);
+            }
+            
+            return true;
         }
         
-        // 检查时间间隔
-        const now = Date.now();
-        if (now - this.lastTime < POINT_OPTIMIZATION.batchInterval) {
-            return false; // 时间间隔太小，跳过
-        }
-        
-        this.lastTime = now;
-        this.lastX = qToX;
-        this.lastY = qToY;
-        
-        this.points.push({
-            fromX: qFromX,
-            fromY: qFromY,
-            toX: qToX,
-            toY: qToY
-        });
-        
-        // 限制每笔画最大点数
-        if (this.points.length > POINT_OPTIMIZATION.maxPointsPerStroke) {
-            this.points = simplifyPoints(this.points, POINT_OPTIMIZATION.epsilon);
-        }
-        
-        return true;
+        return false;
     }
     
     getPoints() {
@@ -1650,6 +1761,64 @@ class BatchDrawManager {
     }
     
     /**
+     * 使用WASM优化绘制命令
+     */
+    async optimizeCommands() {
+        try {
+            // 收集所有命令
+            let allCommands = [];
+            for (const [stateKey, batch] of this.batches) {
+                for (const cmd of batch.commands) {
+                    allCommands.push({
+                        type: batch.type,
+                        fromX: cmd.fromX,
+                        fromY: cmd.fromY,
+                        toX: cmd.toX,
+                        toY: cmd.toY,
+                        color: batch.color,
+                        lineWidth: batch.lineWidth
+                    });
+                }
+            }
+            
+            // 使用WASM优化命令
+            const optimizedCommands = await wasmPointProcessor.batchProcessDrawCommands(
+                allCommands,
+                this.minDistance,
+                this.maxBatchSize
+            );
+            
+            // 清空现有批处理
+            this.batches.clear();
+            
+            // 重新分组优化后的命令
+            for (const cmd of optimizedCommands) {
+                const stateKey = `${cmd.type}-${cmd.color}-${cmd.line_width}`;
+                if (!this.batches.has(stateKey)) {
+                    this.batches.set(stateKey, {
+                        type: cmd.type,
+                        color: cmd.color,
+                        lineWidth: cmd.line_width,
+                        commands: []
+                    });
+                }
+                const batch = this.batches.get(stateKey);
+                batch.commands.push({
+                    fromX: cmd.fromX,
+                    fromY: cmd.fromY,
+                    toX: cmd.toX,
+                    toY: cmd.toY
+                });
+            }
+            
+            console.log('使用WASM优化绘制命令，从', allCommands.length, '个命令优化到', optimizedCommands.length, '个命令');
+        } catch (error) {
+            console.warn('WASM命令优化失败，使用原始命令:', error);
+            // 继续使用原始命令
+        }
+    }
+    
+    /**
      * 开始绘制
      */
     startDrawing() {
@@ -1660,8 +1829,9 @@ class BatchDrawManager {
     /**
      * 结束绘制
      */
-    endDrawing() {
+    async endDrawing() {
         this.isDrawing = false;
+        await this.optimizeCommands();
         this.flushAll();
     }
     
@@ -1674,12 +1844,10 @@ class BatchDrawManager {
         
         const ctx = dom.drawCtx;
         
-        // 限制单次批处理的命令数量，避免GPU负载过高
         const maxCommandsPerBatch = 100;
         const commandsToProcess = batch.commands.slice(0, maxCommandsPerBatch);
         const remainingCommands = batch.commands.slice(maxCommandsPerBatch);
         
-        // 设置上下文状态
         setContextState(ctx, {
             strokeStyle: batch.color,
             lineWidth: batch.lineWidth,
@@ -1688,15 +1856,13 @@ class BatchDrawManager {
             globalCompositeOperation: batch.type === 'erase' ? 'destination-out' : 'source-over'
         });
         
-        // 批量绘制
-        ctx.beginPath();
+        const path = new Path2D();
         for (const cmd of commandsToProcess) {
-            ctx.moveTo(cmd.fromX, cmd.fromY);
-            ctx.lineTo(cmd.toX, cmd.toY);
+            path.moveTo(cmd.fromX, cmd.fromY);
+            path.lineTo(cmd.toX, cmd.toY);
         }
-        ctx.stroke();
+        ctx.stroke(path);
         
-        // 更新批处理命令
         batch.commands = remainingCommands;
     }
     
@@ -1771,47 +1937,107 @@ function setContextState(ctx, state) {
  * @param {CanvasRenderingContext2D} ctx - 目标上下文
  * @param {Array} strokes - 笔画数组
  */
-function drawStrokes(ctx, strokes) {
-    // 清空现有批处理
+async function drawStrokes(ctx, strokes) {
     batchDrawManager.clear();
     
-    // 限制单次绘制的笔画数量，避免GPU负载过高
+    if (strokes.length === 0) return;
+    
     const maxStrokesPerBatch = 50;
     const totalStrokes = strokes.length;
     
-    for (let i = 0; i < totalStrokes; i += maxStrokesPerBatch) {
-        const batchStrokes = strokes.slice(i, i + maxStrokesPerBatch);
+    const viewport = {
+        x: -state.canvasX / state.scale,
+        y: -state.canvasY / state.scale,
+        width: DRAW_CONFIG.screenW / state.scale,
+        height: DRAW_CONFIG.screenH / state.scale
+    };
+    
+    let visibleStrokes = strokes;
+    
+    if (totalStrokes > 20) {
+        try {
+            visibleStrokes = await wasmPointProcessor.cullStrokesByViewport(strokes, viewport);
+            if (visibleStrokes.length < strokes.length) {
+                console.log(`视口裁剪: ${strokes.length} -> ${visibleStrokes.length} 笔画`);
+            }
+        } catch (error) {
+            console.warn('WASM视口裁剪失败，使用全部笔画:', error);
+            visibleStrokes = strokes;
+        }
+    }
+    
+    const visibleTotal = visibleStrokes.length;
+    
+    for (let i = 0; i < visibleTotal; i += maxStrokesPerBatch) {
+        const batchStrokes = visibleStrokes.slice(i, i + maxStrokesPerBatch);
         
-        // 按状态分组添加到批处理
+        let drawCommands = [];
+        
         for (const stroke of batchStrokes) {
             if (stroke.type === 'draw') {
                 for (const point of stroke.points) {
-                    batchDrawManager.addCommand(
-                        'draw',
-                        point.fromX, point.fromY,
-                        point.toX, point.toY,
-                        stroke.color,
-                        stroke.lineWidth
-                    );
+                    drawCommands.push({
+                        type: 'draw',
+                        fromX: point.fromX,
+                        fromY: point.fromY,
+                        toX: point.toX,
+                        toY: point.toY,
+                        color: stroke.color,
+                        lineWidth: stroke.lineWidth
+                    });
                 }
             } else if (stroke.type === 'erase') {
                 for (const point of stroke.points) {
-                    batchDrawManager.addCommand(
-                        'erase',
-                        point.fromX, point.fromY,
-                        point.toX, point.toY,
-                        '#000000',
-                        stroke.eraserSize
-                    );
+                    drawCommands.push({
+                        type: 'erase',
+                        fromX: point.fromX,
+                        fromY: point.fromY,
+                        toX: point.toX,
+                        toY: point.toY,
+                        color: '#000000',
+                        lineWidth: stroke.eraserSize
+                    });
                 }
             }
         }
         
-        // 执行批处理
+        try {
+            const optimizedCommands = await wasmPointProcessor.optimizeDrawCommands(
+                drawCommands,
+                DRAW_CONFIG.canvasW,
+                DRAW_CONFIG.canvasH
+            );
+            
+            for (const cmd of optimizedCommands) {
+                batchDrawManager.addCommand(
+                    cmd.type,
+                    cmd.fromX,
+                    cmd.fromY,
+                    cmd.toX,
+                    cmd.toY,
+                    cmd.color,
+                    cmd.lineWidth
+                );
+            }
+        } catch (error) {
+            console.warn('WASM绘制优化失败，使用原始顺序:', error);
+            
+            for (const cmd of drawCommands) {
+                batchDrawManager.addCommand(
+                    cmd.type,
+                    cmd.fromX,
+                    cmd.fromY,
+                    cmd.toX,
+                    cmd.toY,
+                    cmd.color,
+                    cmd.lineWidth
+                );
+            }
+        }
+        
         batchDrawManager.flushAll();
     }
     
-    // 恢复默认合成模式
     setContextState(ctx, {
         globalCompositeOperation: 'source-over'
     });
@@ -1869,23 +2095,24 @@ async function doCompactStrokes(strokesToCompact) {
         }
     }
     
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
-    tempCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
-    const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
+    const offscreen = getOffscreenCanvas();
+    const tempCtx = offscreen.ctx;
     
     if (state.baseImageObj) {
         tempCtx.drawImage(state.baseImageObj, 0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
     }
     
-    drawStrokes(tempCtx, strokesToCompact);
+    await drawStrokes(tempCtx, strokesToCompact);
     
-    state.baseImageURL = tempCanvas.toDataURL('image/png');
+    state.baseImageURL = offscreen.canvas.toDataURL('image/png');
     state.baseImageObj = null;
     const img = new Image();
     img.onload = () => {
         state.baseImageObj = img;
+        releaseOffscreenCanvas(offscreen);
+    };
+    img.onerror = () => {
+        releaseOffscreenCanvas(offscreen);
     };
     img.src = state.baseImageURL;
     
@@ -1896,27 +2123,27 @@ function compactStrokes() {
     scheduleCompact();
 }
 
-function saveSnapshot() {
-    endStroke();
+async function saveSnapshot() {
+    await endStroke();
 }
 
-function undo() {
+async function undo() {
     if (state.strokeHistory.length === 0) return;
     
     state.strokeHistory.pop();
-    redrawAllStrokes();
+    await redrawAllStrokes();
     updateUndoBtnStatus();
     console.log('撤销操作');
 }
 
-function redrawAllStrokes() {
+async function redrawAllStrokes() {
     clearDrawCanvas();
     
     if (state.baseImageObj) {
         dom.drawCtx.drawImage(state.baseImageObj, 0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
     }
     
-    drawStrokes(dom.drawCtx, state.strokeHistory);
+    await drawStrokes(dom.drawCtx, state.strokeHistory);
 }
 
 function updateUndoBtnStatus() {
@@ -1971,30 +2198,42 @@ function takePhoto() {
     if (state.isCameraOpen) {
         captureCamera();
     } else if (state.currentImageIndex >= 0 && state.imageList.length > 0) {
-        saveCurrentDrawData();
-        saveCurrentFolderPageDrawData();
-        state.currentImageIndex = -1;
-        state.currentImage = null;
-        clearImageLayer();
-        clearDrawCanvas();
-        openCamera();
-        updateSidebarSelection();
-        updatePhotoButtonState();
-        updateEnhanceButtonState();
-        console.log('返回摄像头');
+        (async () => {
+            try {
+                saveCurrentDrawData();
+                saveCurrentFolderPageDrawData();
+                state.currentImageIndex = -1;
+                state.currentImage = null;
+                clearImageLayer();
+                clearDrawCanvas();
+                await openCamera();
+                updateSidebarSelection();
+                updatePhotoButtonState();
+                updateEnhanceButtonState();
+                console.log('返回摄像头');
+            } catch (error) {
+                console.error('返回摄像头失败:', error);
+            }
+        })();
     } else if (state.currentFolderIndex >= 0 && state.currentFolderPageIndex >= 0) {
-        saveCurrentDrawData();
-        saveCurrentFolderPageDrawData();
-        state.currentFolderIndex = -1;
-        state.currentFolderPageIndex = -1;
-        state.currentImage = null;
-        clearImageLayer();
-        clearDrawCanvas();
-        openCamera();
-        updateFolderPageSelection(-1, -1);
-        updatePhotoButtonState();
-        updateEnhanceButtonState();
-        console.log('返回摄像头');
+        (async () => {
+            try {
+                saveCurrentDrawData();
+                saveCurrentFolderPageDrawData();
+                state.currentFolderIndex = -1;
+                state.currentFolderPageIndex = -1;
+                state.currentImage = null;
+                clearImageLayer();
+                clearDrawCanvas();
+                await openCamera();
+                updateFolderPageSelection(-1, -1);
+                updatePhotoButtonState();
+                updateEnhanceButtonState();
+                console.log('返回摄像头');
+            } catch (error) {
+                console.error('返回摄像头失败:', error);
+            }
+        })();
     } else {
         saveMergedCanvas();
     }
@@ -2002,11 +2241,8 @@ function takePhoto() {
 
 function saveMergedCanvas() {
     console.log('执行拍照功能');
-    const mergedCanvas = document.createElement('canvas');
-    mergedCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
-    mergedCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
-    const mergedCtx = mergedCanvas.getContext('2d');
-    mergedCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
+    const offscreen = getOffscreenCanvas();
+    const mergedCtx = offscreen.ctx;
     
     mergedCtx.drawImage(dom.bgCanvas, 0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
     mergedCtx.drawImage(dom.imageCanvas, 0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
@@ -2014,37 +2250,49 @@ function saveMergedCanvas() {
     
     const link = document.createElement('a');
     link.download = `photo_${Date.now()}.png`;
-    link.href = mergedCanvas.toDataURL('image/png');
+    link.href = offscreen.canvas.toDataURL('image/png');
     link.click();
+    
+    releaseOffscreenCanvas(offscreen);
 }
+
+let lastPhotoButtonState = null;
 
 function updatePhotoButtonState() {
     const btnPhoto = dom.btnPhoto;
     if (!btnPhoto) return;
     
+    let newState;
+    let html, title, addClass, removeClass;
+    
     if (state.isCameraOpen) {
-        btnPhoto.classList.add('camera-active');
-        btnPhoto.innerHTML = `
-            <img src="assets/icon/camera.svg" width="16" height="16" alt="拍照" style="filter: invert(1);">
-            拍照
-        `;
-        btnPhoto.title = '捕获摄像头画面';
+        newState = 'camera';
+        html = `<img src="assets/icon/camera.svg" width="16" height="16" alt="拍照" style="filter: invert(1);">拍照`;
+        title = '捕获摄像头画面';
+        addClass = 'camera-active';
+        removeClass = '';
     } else if ((state.currentImageIndex >= 0 && state.imageList.length > 0) || 
                (state.currentFolderIndex >= 0 && state.currentFolderPageIndex >= 0)) {
-        btnPhoto.classList.remove('camera-active');
-        btnPhoto.innerHTML = `
-            <img src="assets/icon/camera-fill.svg" width="16" height="16" alt="切换到摄像头" style="filter: invert(1);">
-            切换到摄像头
-        `;
-        btnPhoto.title = '返回摄像头';
+        newState = 'switch';
+        html = `<img src="assets/icon/camera-fill.svg" width="16" height="16" alt="切换到摄像头" style="filter: invert(1);">切换到摄像头`;
+        title = '返回摄像头';
+        addClass = '';
+        removeClass = 'camera-active';
     } else {
-        btnPhoto.classList.remove('camera-active');
-        btnPhoto.innerHTML = `
-            <img src="assets/icon/camera.svg" width="16" height="16" alt="拍照" style="filter: invert(1);">
-            拍照
-        `;
-        btnPhoto.title = '保存画布截图';
+        newState = 'save';
+        html = `<img src="assets/icon/camera.svg" width="16" height="16" alt="拍照" style="filter: invert(1);">拍照`;
+        title = '保存画布截图';
+        addClass = '';
+        removeClass = 'camera-active';
     }
+    
+    if (lastPhotoButtonState === newState) return;
+    lastPhotoButtonState = newState;
+    
+    btnPhoto.innerHTML = html;
+    btnPhoto.title = title;
+    if (addClass) btnPhoto.classList.add(addClass);
+    if (removeClass) btnPhoto.classList.remove(removeClass);
 }
 
 // 设置功能
@@ -2174,8 +2422,15 @@ function toggleEnhance() {
     console.log(`文档增强已${state.enhanceEnabled ? '开启' : '关闭'}`);
 }
 
+let lastEnhanceButtonState = null;
+
 function updateEnhanceButtonState() {
     if (!dom.btnEnhance) return;
+    
+    const newState = state.isCameraOpen ? 'visible' : 'hidden';
+    
+    if (lastEnhanceButtonState === newState) return;
+    lastEnhanceButtonState = newState;
     
     const toolbarCenter = document.querySelector('.toolbar-center');
     
@@ -2345,20 +2600,26 @@ function selectImage(index) {
     if (index < 0 || index >= state.imageList.length) return;
     
     if (index === state.currentImageIndex && state.currentImage) {
-        saveCurrentDrawData();
-        saveCurrentFolderPageDrawData();
-        state.currentImageIndex = -1;
-        state.currentImage = null;
-        clearImageLayer();
-        clearDrawCanvas();
-        if (state.isCameraOpen) {
-            closeCamera();
-        }
-        openCamera();
-        updateSidebarSelection();
-        updatePhotoButtonState();
-        updateEnhanceButtonState();
-        console.log('返回摄像头');
+        (async () => {
+            try {
+                saveCurrentDrawData();
+                saveCurrentFolderPageDrawData();
+                state.currentImageIndex = -1;
+                state.currentImage = null;
+                clearImageLayer();
+                clearDrawCanvas();
+                if (state.isCameraOpen) {
+                    await closeCamera();
+                }
+                await openCamera();
+                updateSidebarSelection();
+                updatePhotoButtonState();
+                updateEnhanceButtonState();
+                console.log('返回摄像头');
+            } catch (error) {
+                console.error('返回摄像头失败:', error);
+            }
+        })();
         return;
     }
     
@@ -2386,16 +2647,15 @@ function selectImage(index) {
     }
     
     const img = new Image();
-    img.onload = () => {
+    img.onload = async () => {
         state.currentImage = img;
         
         if (state.isCameraOpen) {
-            closeCamera();
-        } else {
-            drawImageToCenter(img);
+            await closeCamera();
         }
+        drawImageToCenter(img);
         
-        restoreDrawData(index);
+        await restoreDrawData(index);
         updateSidebarSelection();
         updatePhotoButtonState();
         updateEnhanceButtonState();
@@ -2410,7 +2670,7 @@ function selectImage(index) {
 
 function saveCurrentDrawData() {
     if (state.currentImageIndex >= 0 && state.currentImageIndex < state.imageList.length) {
-        state.imageList[state.currentImageIndex].strokeHistory = [...state.strokeHistory];
+        state.imageList[state.currentImageIndex].strokeHistory = structuredClone(state.strokeHistory);
         state.imageList[state.currentImageIndex].baseImageURL = state.baseImageURL;
         state.imageList[state.currentImageIndex].viewState = {
             scale: state.scale,
@@ -2420,11 +2680,11 @@ function saveCurrentDrawData() {
     }
 }
 
-function restoreDrawData(index) {
+async function restoreDrawData(index) {
     if (index >= 0 && index < state.imageList.length) {
         const imgData = state.imageList[index];
         if (imgData.strokeHistory && imgData.strokeHistory.length > 0) {
-            state.strokeHistory = [...imgData.strokeHistory];
+            state.strokeHistory = structuredClone(imgData.strokeHistory);
         } else {
             state.strokeHistory = [];
         }
@@ -2434,15 +2694,15 @@ function restoreDrawData(index) {
         
         if (state.baseImageURL) {
             const img = new Image();
-            img.onload = () => {
+            img.onload = async () => {
                 state.baseImageObj = img;
-                redrawAllStrokes();
+                await redrawAllStrokes();
                 updateUndoBtnStatus();
             };
             img.src = state.baseImageURL;
         } else {
             if (state.strokeHistory.length > 0) {
-                redrawAllStrokes();
+                await redrawAllStrokes();
             } else {
                 clearDrawCanvas();
             }
@@ -2477,17 +2737,25 @@ function deleteImage(index) {
     console.log(`删除图片 ${index + 1}`);
 }
 
+let lastSidebarSelection = -2;
+
 function updateSidebarSelection() {
+    if (lastSidebarSelection === state.currentImageIndex) return;
+    
     const sidebarContent = document.querySelector('.sidebar:not(.file-sidebar) .sidebar-content');
     if (!sidebarContent) return;
     
-    document.querySelectorAll('.sidebar:not(.file-sidebar) .sidebar-image-item').forEach((item, idx) => {
-        if (state.currentImageIndex >= 0 && idx === state.currentImageIndex) {
-            item.classList.add('active');
-        } else {
-            item.classList.remove('active');
-        }
-    });
+    const items = sidebarContent.querySelectorAll('.sidebar-image-item');
+    
+    if (lastSidebarSelection >= 0 && lastSidebarSelection < items.length) {
+        items[lastSidebarSelection].classList.remove('active');
+    }
+    
+    if (state.currentImageIndex >= 0 && state.currentImageIndex < items.length) {
+        items[state.currentImageIndex].classList.add('active');
+    }
+    
+    lastSidebarSelection = state.currentImageIndex;
     
     document.querySelectorAll('.file-sidebar .sidebar-image-item').forEach(item => {
         item.classList.remove('active');
@@ -2676,44 +2944,50 @@ function selectFolderPage(folderIndex, pageIndex) {
     const folder = state.fileList[folderIndex];
     if (pageIndex < 0 || pageIndex >= folder.pages.length) return;
     
-    if (state.isCameraOpen) {
-        closeCamera();
-    }
-    
-    saveCurrentDrawData();
-    saveCurrentFolderPageDrawData();
-    
-    const page = folder.pages[pageIndex];
-    
-    if (page.viewState) {
-        state.scale = page.viewState.scale;
-        state.canvasX = page.viewState.canvasX;
-        state.canvasY = page.viewState.canvasY;
-        updateMoveBound();
-        updateCanvasTransform();
-    } else {
-        state.scale = 1;
-        state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
-        state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
-        updateMoveBound();
-        updateCanvasTransform();
-    }
-    
-    const img = new Image();
-    img.onload = () => {
-        state.currentImage = img;
-        state.currentImageIndex = -1;
-        state.currentFolderIndex = folderIndex;
-        state.currentFolderPageIndex = pageIndex;
-        drawImageToCenter(img);
-        restoreFolderPageDrawData(folderIndex, pageIndex);
-        updateFolderPageSelection(folderIndex, pageIndex);
-        updatePhotoButtonState();
-        updateEnhanceButtonState();
-    };
-    img.src = page.full;
-    
-    console.log(`选择: ${folder.name} 第${pageIndex + 1}页`);
+    (async () => {
+        try {
+            if (state.isCameraOpen) {
+                await closeCamera();
+            }
+            
+            saveCurrentDrawData();
+            saveCurrentFolderPageDrawData();
+            
+            const page = folder.pages[pageIndex];
+            
+            if (page.viewState) {
+                state.scale = page.viewState.scale;
+                state.canvasX = page.viewState.canvasX;
+                state.canvasY = page.viewState.canvasY;
+                updateMoveBound();
+                updateCanvasTransform();
+            } else {
+                state.scale = 1;
+                state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
+                state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
+                updateMoveBound();
+                updateCanvasTransform();
+            }
+            
+            const img = new Image();
+            img.onload = async () => {
+                state.currentImage = img;
+                state.currentImageIndex = -1;
+                state.currentFolderIndex = folderIndex;
+                state.currentFolderPageIndex = pageIndex;
+                drawImageToCenter(img);
+                await restoreFolderPageDrawData(folderIndex, pageIndex);
+                updateFolderPageSelection(folderIndex, pageIndex);
+                updatePhotoButtonState();
+                updateEnhanceButtonState();
+            };
+            img.src = page.full;
+            
+            console.log(`选择: ${folder.name} 第${pageIndex + 1}页`);
+        } catch (error) {
+            console.error('选择文件夹页面失败:', error);
+        }
+    })();
 }
 
 function updateFolderPageSelection(folderIndex, pageIndex) {
@@ -2738,7 +3012,7 @@ function saveCurrentFolderPageDrawData() {
         if (state.currentFolderIndex < state.fileList.length) {
             const folder = state.fileList[state.currentFolderIndex];
             if (state.currentFolderPageIndex < folder.pages.length) {
-                folder.pages[state.currentFolderPageIndex].strokeHistory = [...state.strokeHistory];
+                folder.pages[state.currentFolderPageIndex].strokeHistory = structuredClone(state.strokeHistory);
                 folder.pages[state.currentFolderPageIndex].baseImageURL = state.baseImageURL;
                 folder.pages[state.currentFolderPageIndex].viewState = {
                     scale: state.scale,
@@ -2750,13 +3024,13 @@ function saveCurrentFolderPageDrawData() {
     }
 }
 
-function restoreFolderPageDrawData(folderIndex, pageIndex) {
+async function restoreFolderPageDrawData(folderIndex, pageIndex) {
     if (folderIndex >= 0 && folderIndex < state.fileList.length) {
         const folder = state.fileList[folderIndex];
         if (pageIndex >= 0 && pageIndex < folder.pages.length) {
             const page = folder.pages[pageIndex];
             if (page.strokeHistory && page.strokeHistory.length > 0) {
-                state.strokeHistory = [...page.strokeHistory];
+                state.strokeHistory = structuredClone(page.strokeHistory);
             } else {
                 state.strokeHistory = [];
             }
@@ -2766,15 +3040,15 @@ function restoreFolderPageDrawData(folderIndex, pageIndex) {
             
             if (state.baseImageURL) {
                 const img = new Image();
-                img.onload = () => {
+                img.onload = async () => {
                     state.baseImageObj = img;
-                    redrawAllStrokes();
+                    await redrawAllStrokes();
                     updateUndoBtnStatus();
                 };
                 img.src = state.baseImageURL;
             } else {
                 if (state.strokeHistory.length > 0) {
-                    redrawAllStrokes();
+                    await redrawAllStrokes();
                 } else {
                     clearDrawCanvas();
                 }
@@ -3136,7 +3410,7 @@ function createCameraControls() {
     updatePhotoButtonState();
 }
 
-function closeCamera() {
+async function closeCamera() {
     if (state.cameraAnimationId) {
         cancelAnimationFrame(state.cameraAnimationId);
         state.cameraAnimationId = null;
@@ -3159,10 +3433,10 @@ function closeCamera() {
     
     if (state.currentImage && state.currentImageIndex >= 0) {
         drawImageToCenter(state.currentImage);
-        restoreDrawData(state.currentImageIndex);
+        await restoreDrawData(state.currentImageIndex);
     } else if (state.currentImage && state.currentFolderIndex >= 0 && state.currentFolderPageIndex >= 0) {
         drawImageToCenter(state.currentImage);
-        restoreFolderPageDrawData(state.currentFolderIndex, state.currentFolderPageIndex);
+        await restoreFolderPageDrawData(state.currentFolderIndex, state.currentFolderPageIndex);
     } else {
         clearImageLayer();
     }
@@ -3170,15 +3444,12 @@ function closeCamera() {
     console.log('摄像头已关闭');
 }
 
-/**
- * 拍照捕获
- * - 捕获当前摄像头画面
- * - 支持镜像和旋转
- * - 调用Rust保存图片（可选增强）
- */
 async function captureCamera() {
     const video = document.getElementById('cameraVideo');
     if (!video) return;
+    
+    saveCurrentDrawData();
+    saveCurrentFolderPageDrawData();
     
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = video.videoWidth;
@@ -3203,13 +3474,20 @@ async function captureCamera() {
             const { invoke } = window.__TAURI__.core;
             
             if (state.enhanceEnabled) {
-                const result = await invoke('save_image_with_enhance', { 
-                    imageData: dataUrl,
-                    prefix: 'photo'
-                });
-                console.log('图片已保存到:', result.path);
-                if (result.enhanced_data) {
-                    dataUrl = result.enhanced_data;
+                try {
+                    const enhancedDataUrl = await wasmPointProcessor.applyImageFilter(dataUrl);
+                    dataUrl = enhancedDataUrl;
+                    console.log('使用WASM进行图像增强');
+                } catch (wasmError) {
+                    console.warn('WASM图像增强失败，使用Tauri后端:', wasmError);
+                    const result = await invoke('save_image_with_enhance', { 
+                        imageData: dataUrl,
+                        prefix: 'photo'
+                    });
+                    console.log('图片已保存到:', result.path);
+                    if (result.enhanced_data) {
+                        dataUrl = result.enhanced_data;
+                    }
                 }
             } else {
                 const result = await invoke('save_image', { 
@@ -3266,7 +3544,11 @@ async function importImage() {
             closeCamera();
         }
         
-        if (files.length > 1) {
+        // 检查是否有大图片（大于2.5MB）
+        const hasLargeImage = files.some(file => file.size > 2.5 * 1024 * 1024);
+        
+        // 如果有大图片或者多个文件，显示加载动画
+        if (files.length > 1 || hasLargeImage) {
             showLoadingOverlay(`正在读取图片...`);
         }
         
@@ -3275,7 +3557,8 @@ async function importImage() {
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             
-            if (files.length > 1) {
+            // 对于大图片，单独显示加载进度
+            if (files.length > 1 || file.size > 2.5 * 1024 * 1024) {
                 updateLoadingProgress(`正在读取图片 ${i + 1}/${files.length}...`);
             }
             
@@ -3342,7 +3625,8 @@ async function importImage() {
                 width: img.width,
                 height: img.height,
                 strokeHistory: null,
-                baseImageURL: null
+                baseImageURL: null,
+                viewState: null
             };
             
             state.imageList.push(newImgData);
@@ -3351,12 +3635,13 @@ async function importImage() {
             state.currentFolderIndex = -1;
             state.currentFolderPageIndex = -1;
             
+            clearDrawCanvas();
+            state.strokeHistory = [];
+            state.baseImageURL = null;
+            state.baseImageObj = null;
+            updateUndoBtnStatus();
+            
             if (isLast) {
-                clearDrawCanvas();
-                state.strokeHistory = [];
-                state.baseImageURL = null;
-                state.baseImageObj = null;
-                updateUndoBtnStatus();
                 drawImageToCenter(img);
                 updateSidebarContent();
                 updatePhotoButtonState();
@@ -3364,7 +3649,8 @@ async function importImage() {
             }
         }
         
-        if (files.length > 1) {
+        // 如果显示了加载动画，无论文件数量多少，都需要隐藏
+        if (files.length > 1 || hasLargeImage) {
             hideLoadingOverlay();
         }
         
@@ -3384,7 +3670,8 @@ async function addImageToList(img, name, isLast = true) {
         width: img.width,
         height: img.height,
         strokeHistory: null,
-        baseImageURL: null
+        baseImageURL: null,
+        viewState: null
     };
     
     state.imageList.push(imgData);
@@ -3393,18 +3680,17 @@ async function addImageToList(img, name, isLast = true) {
     state.currentFolderIndex = -1;
     state.currentFolderPageIndex = -1;
     
+    clearDrawCanvas();
+    state.strokeHistory = [];
+    state.baseImageURL = null;
+    state.baseImageObj = null;
+    updateUndoBtnStatus();
+    
     if (isLast) {
-        clearDrawCanvas();
-        state.strokeHistory = [];
-        state.baseImageURL = null;
-        state.baseImageObj = null;
-        updateUndoBtnStatus();
-        
         if (state.isCameraOpen) {
-            closeCamera();
-        } else {
-            drawImageToCenter(img);
+            await closeCamera();
         }
+        drawImageToCenter(img);
         
         updateSidebarContent();
         updatePhotoButtonState();
@@ -3422,7 +3708,8 @@ async function addImageToListNoHighlight(img, name) {
         width: img.width,
         height: img.height,
         strokeHistory: null,
-        baseImageURL: null
+        baseImageURL: null,
+        viewState: null
     };
     
     state.imageList.push(imgData);

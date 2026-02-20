@@ -23,23 +23,48 @@ jobs:
           toolchain: stable
           target: x86_64-pc-windows-msvc # 本地Windows默认编译目标
 
+      # 3. 添加wasm32-unknown-unknown目标
+      - name: Add wasm32-unknown-unknown target
+        run: rustup target add wasm32-unknown-unknown
+
       # 3. 安装cargo-tauri CLI工具
       - name: Install tauri-cli
         run: cargo install tauri-cli --locked
 
+      # 4. 安装wasm-pack
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
 
-      # 4. 缓存Rust依赖
+      # 5. 缓存Rust依赖
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: |
+            './src-tauri -> target'
+            './wasm-viewstage -> wasm-viewstage/target'
 
-      # 5. 编译命令
+      # 6. 编译WASM模块
+      - name: Build WASM module
+        run: wasm-pack build --target web
+        working-directory: ./wasm-viewstage
+
+      # 7. 复制WASM文件到src/wasm目录
+      - name: Copy WASM files to src/wasm directory
+        run: |
+          New-Item -ItemType Directory -Path "src/wasm" -Force
+          Copy-Item -Path "wasm-viewstage/pkg/wasm_viewstage.js" -Destination "src/wasm/" -Force
+          Copy-Item -Path "wasm-viewstage/pkg/wasm_viewstage.d.ts" -Destination "src/wasm/" -Force
+          Copy-Item -Path "wasm-viewstage/pkg/wasm_viewstage_bg.wasm" -Destination "src/wasm/" -Force
+          Copy-Item -Path "wasm-viewstage/pkg/wasm_viewstage_bg.wasm.d.ts" -Destination "src/wasm/" -Force
+          Write-Host "WASM files copied to src/wasm:"
+          Get-ChildItem -Path "src/wasm" -File
+
+      # 8. 编译命令
       - name: Build Tauri app with cargo tauri build
         run: cargo tauri build
         working-directory: . # 确保在项目根目录执行
 
-      # 6. 上传Windows编译产物
+      # 9. 上传Windows编译产物
       - name: Upload Windows build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -51,7 +76,7 @@ jobs:
             # 单独的可执行文件（本地target/release下的产物）
             src-tauri/target/release/ViewStage.exe
 
-      # 7. 创建 GitHub Release 并上传构建产物
+      # 10. 创建 GitHub Release 并上传构建产物
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')

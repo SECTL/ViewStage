@@ -575,6 +575,9 @@ body {
     touch-action: none;
     border: none;
     outline: none;
+    will-change: transform;
+    transform: translateZ(0);
+    backface-visibility: hidden;
 }
 
 .canvas-base {
@@ -615,6 +618,8 @@ body {
     pointer-events: none;
     display: none;
     transform-origin: center center;
+    will-change: transform, left, top;
+    contain: layout style;
 }
 
 .eraser-hint.active {

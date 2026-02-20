@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# WASM compilation artifacts
+wasm-viewstage/target/
+wasm-viewstage/pkg/
+src/wasm/
