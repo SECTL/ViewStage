@@ -144,19 +144,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const cameraResolutionOptionsContainer = document.getElementById('cameraResolutionOptions');
                 
                 if (cameraResolutionSelected && cameraResolutionOptionsContainer) {
+                    let stream = null;
+                    let track = null;
                     try {
-                        // 获取摄像头支持的分辨率
-                        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                        const track = stream.getVideoTracks()[0];
+                        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        track = stream.getVideoTracks()[0];
                         const capabilities = track.getCapabilities();
                         
                         const resolutions = [];
                         if (capabilities.width && capabilities.height) {
-                            // 获取支持的分辨率范围
                             const widths = capabilities.width;
                             const heights = capabilities.height;
                             
-                            // 常见分辨率
                             const commonResolutions = [
                                 { w: 640, h: 480, label: '640 x 480 (VGA)' },
                                 { w: 800, h: 600, label: '800 x 600 (SVGA)' },
@@ -168,14 +167,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 { w: 3840, h: 2160, label: '3840 x 2160 (4K)' }
                             ];
                             
-                            // 筛选支持的分辨率
                             commonResolutions.forEach(res => {
                                 if (widths.max >= res.w && heights.max >= res.h) {
                                     resolutions.push(res);
                                 }
                             });
                             
-                            // 添加最大分辨率
                             if (widths.max && heights.max) {
                                 const maxResLabel = `${widths.max} x ${heights.max}`;
                                 const exists = resolutions.some(r => r.w === widths.max && r.h === heights.max);
@@ -184,8 +181,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 }
                             }
                         }
-                        
-                        track.stop();
                         
                         cameraResolutionOptionsContainer.innerHTML = '';
                         
@@ -229,6 +224,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     } catch (error) {
                         console.error('获取摄像头分辨率失败:', error);
                         cameraResolutionSelected.textContent = '获取失败';
+                    } finally {
+                        if (track) {
+                            track.stop();
+                        }
+                        if (stream) {
+                            stream.getTracks().forEach(t => t.stop());
+                        }
                     }
                 }
                 
@@ -240,16 +242,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 // 获取摄像头最大帧率
                 let maxFps = 30;
+                let fpsStream = null;
+                let fpsTrack = null;
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    const track = stream.getVideoTracks()[0];
-                    const capabilities = track.getCapabilities();
+                    fpsStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    fpsTrack = fpsStream.getVideoTracks()[0];
+                    const capabilities = fpsTrack.getCapabilities();
                     if (capabilities.frameRate && capabilities.frameRate.max) {
                         maxFps = Math.min(capabilities.frameRate.max, 60);
                     }
-                    track.stop();
                 } catch (e) {
                     console.log('无法获取摄像头帧率能力，使用默认值');
+                } finally {
+                    if (fpsTrack) {
+                        fpsTrack.stop();
+                    }
+                    if (fpsStream) {
+                        fpsStream.getTracks().forEach(t => t.stop());
+                    }
                 }
                 
                 // 生成帧率选项

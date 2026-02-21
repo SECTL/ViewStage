@@ -947,11 +947,6 @@ async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Re
     let config_str = serde_json::to_string_pretty(&existing_settings).map_err(|e| e.to_string())?;
     std::fs::write(&config_path, &config_str).map_err(|e| e.to_string())?;
     
-    let saved_content = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
-    if saved_content != config_str {
-        return Err("配置保存验证失败".to_string());
-    }
-    
     Ok(())
 }
 

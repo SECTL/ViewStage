@@ -251,6 +251,7 @@ let state = {
     strokeHistory: [],             // 笔画历史数组
     baseImageURL: null,            // 压缩后的基础图片 (base64)
     baseImageObj: null,            // 基础图片 Image 对象
+    baseImageLoadId: 0,            // 用于跟踪 baseImageObj 加载状态
     currentStroke: null,           // 当前正在绘制的笔画
     MAX_UNDO_STEPS: 10,            // 最大可撤销步数
     STROKE_COMPACT_THRESHOLD: 30,  // 触发压缩的笔画阈值
@@ -334,7 +335,9 @@ function getCachedCanvasRect() {
 
 window.addEventListener('DOMContentLoaded', async () => {
     try {
-        initDOM();
+        if (!initDOM()) {
+            throw new Error('DOM 初始化失败');
+        }
         initCanvas();
         bindAllEvents();
         saveSnapshot();
@@ -499,14 +502,22 @@ async function processPdfPagesParallel(pdf, totalPages, batchSize = 4) {
             viewport: viewport
         }).promise;
         
-        const fullImage = canvas.toDataURL('image/jpeg', 0.85);
-        const thumbnail = await generateThumbnail(fullImage, 150, false);
+        const fullBlob = await new Promise((resolve, reject) => {
+            canvas.toBlob(blob => {
+                if (blob) resolve(blob);
+                else reject(new Error('Failed to create blob'));
+            }, 'image/jpeg', 0.85);
+        });
+        const fullUrl = URL.createObjectURL(fullBlob);
+        
+        const thumbnail = await generateThumbnailFromCanvas(canvas, 150);
         
         processedCount++;
         updateLoadingProgress(`正在处理 ${processedCount}/${totalPages} 页`);
         
         return {
-            full: fullImage,
+            full: fullUrl,
+            fullBlob: fullBlob,
             thumbnail: thumbnail,
             pageNum: pageNum,
             strokeHistory: null,
@@ -528,6 +539,76 @@ async function processPdfPagesParallel(pdf, totalPages, batchSize = 4) {
     pages.sort((a, b) => a.pageNum - b.pageNum);
     
     return pages;
+}
+
+async function generateThumbnailFromCanvas(canvas, maxSize = 150) {
+    const img = new Image();
+    img.src = canvas.toDataURL('image/jpeg', 0.85);
+    await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+    });
+    
+    let thumbW, thumbH;
+    if (img.width > img.height) {
+        thumbW = maxSize;
+        thumbH = (img.height / img.width) * maxSize;
+    } else {
+        thumbH = maxSize;
+        thumbW = (img.width / img.height) * maxSize;
+    }
+    
+    const thumbCanvas = document.createElement('canvas');
+    thumbCanvas.width = thumbW;
+    thumbCanvas.height = thumbH;
+    const thumbCtx = thumbCanvas.getContext('2d');
+    thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
+    
+    const thumbBlob = await new Promise((resolve, reject) => {
+        thumbCanvas.toBlob(blob => {
+            if (blob) resolve(blob);
+            else reject(new Error('Failed to create thumbnail blob'));
+        }, 'image/jpeg', 0.7);
+    });
+    
+    return URL.createObjectURL(thumbBlob);
+}
+
+async function generateThumbnailBlob(blob, maxSize = 150) {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    
+    await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = url;
+    });
+    
+    let thumbW, thumbH;
+    if (img.width > img.height) {
+        thumbW = maxSize;
+        thumbH = (img.height / img.width) * maxSize;
+    } else {
+        thumbH = maxSize;
+        thumbW = (img.width / img.height) * maxSize;
+    }
+    
+    const thumbCanvas = document.createElement('canvas');
+    thumbCanvas.width = thumbW;
+    thumbCanvas.height = thumbH;
+    const thumbCtx = thumbCanvas.getContext('2d');
+    thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
+    
+    URL.revokeObjectURL(url);
+    
+    const thumbBlob = await new Promise((resolve, reject) => {
+        thumbCanvas.toBlob(blob => {
+            if (blob) resolve(blob);
+            else reject(new Error('Failed to create thumbnail blob'));
+        }, 'image/jpeg', 0.7);
+    });
+    
+    return URL.createObjectURL(thumbBlob);
 }
 
 async function loadPdfFromPath(filePath) {
@@ -745,9 +826,16 @@ function initDOM() {
     dom.btnMenu = document.getElementById('btnMenu');
     dom.btnEnhance = document.getElementById('btnEnhance');
     
+    if (!dom.bgCanvas || !dom.imageCanvas || !dom.drawCanvas || !dom.canvasContainer) {
+        console.error('必需的 Canvas 元素未找到');
+        return false;
+    }
+    
     dom.bgCtx = dom.bgCanvas.getContext('2d', { alpha: false });
     dom.imageCtx = dom.imageCanvas.getContext('2d', { alpha: true, desynchronized: true });
     dom.drawCtx = dom.drawCanvas.getContext('2d', { alpha: true, desynchronized: true });
+    
+    return true;
 }
 
 // ==================== 画布初始化 ====================
@@ -1039,23 +1127,23 @@ function setupWindowMinimizeListeners() {
     if (window.__TAURI__) {
         const { getCurrentWindow } = window.__TAURI__.window;
         
-        // 监听窗口恢复
-        getCurrentWindow().listen('tauri://restore', async () => {
-            console.log('窗口已恢复');
-            await restoreCameraIfNeeded();
-        });
+        let isRestoring = false;
         
-        // 监听窗口显示
-        getCurrentWindow().listen('tauri://show', async () => {
-            console.log('窗口已显示');
-            await restoreCameraIfNeeded();
-        });
+        const handleRestore = async () => {
+            if (isRestoring) return;
+            isRestoring = true;
+            try {
+                await restoreCameraIfNeeded();
+            } finally {
+                setTimeout(() => {
+                    isRestoring = false;
+                }, 300);
+            }
+        };
         
-        // 监听窗口获得焦点
-        getCurrentWindow().listen('tauri://focus', async () => {
-            console.log('窗口获得焦点');
-            await restoreCameraIfNeeded();
-        });
+        getCurrentWindow().listen('tauri://restore', handleRestore);
+        getCurrentWindow().listen('tauri://show', handleRestore);
+        getCurrentWindow().listen('tauri://focus', handleRestore);
     }
 }
 
@@ -1521,7 +1609,7 @@ async function handleTouchEnd(e) {
 function getTouchDistance(touch1, touch2) {
     const dx = touch2.clientX - touch1.clientX;
     const dy = touch2.clientY - touch1.clientY;
-    return Math.sqrt(dx * dx + dy * dy);
+    return Math.max(1, Math.sqrt(dx * dx + dy * dy));
 }
 
 let lastCanvasTransform = { x: null, y: null, scale: null };
@@ -2188,6 +2276,8 @@ function scheduleCompact() {
  * 优先使用Rust并行处理，失败时降级到前端Canvas
  */
 async function doCompactStrokes(strokesToCompact) {
+    const loadId = ++state.baseImageLoadId;
+    
     if (window.__TAURI__) {
         try {
             const { invoke } = window.__TAURI__.core;
@@ -2201,11 +2291,15 @@ async function doCompactStrokes(strokesToCompact) {
             
             const result = await invoke('compact_strokes', { request });
             
+            if (loadId !== state.baseImageLoadId) return;
+            
             state.baseImageURL = result;
             state.baseImageObj = null;
             const img = new Image();
             img.onload = () => {
-                state.baseImageObj = img;
+                if (loadId === state.baseImageLoadId) {
+                    state.baseImageObj = img;
+                }
             };
             img.src = result;
             
@@ -2225,11 +2319,18 @@ async function doCompactStrokes(strokesToCompact) {
     
     await drawStrokes(tempCtx, strokesToCompact);
     
+    if (loadId !== state.baseImageLoadId) {
+        releaseOffscreenCanvas(offscreen);
+        return;
+    }
+    
     state.baseImageURL = offscreen.canvas.toDataURL('image/png');
     state.baseImageObj = null;
     const img = new Image();
     img.onload = () => {
-        state.baseImageObj = img;
+        if (loadId === state.baseImageLoadId) {
+            state.baseImageObj = img;
+        }
         releaseOffscreenCanvas(offscreen);
     };
     img.onerror = () => {
@@ -2275,6 +2376,10 @@ function updateUndoBtnStatus() {
 function clearDrawCanvas() {
     dom.drawCtx.clearRect(0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
     setContextState(dom.drawCtx, {
+        strokeStyle: DRAW_CONFIG.penColor,
+        lineWidth: DRAW_CONFIG.penWidth,
+        lineCap: 'round',
+        lineJoin: 'round',
         globalCompositeOperation: 'source-over'
     });
 }
@@ -2843,6 +2948,14 @@ async function restoreDrawData(index) {
 
 function deleteImage(index) {
     if (index < 0 || index >= state.imageList.length) return;
+    
+    const imgData = state.imageList[index];
+    if (imgData.full && imgData.full.startsWith('blob:')) {
+        URL.revokeObjectURL(imgData.full);
+    }
+    if (imgData.thumbnail && imgData.thumbnail.startsWith('blob:')) {
+        URL.revokeObjectURL(imgData.thumbnail);
+    }
     
     state.imageList.splice(index, 1);
     
@@ -3724,27 +3837,17 @@ async function importImage() {
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             
-            // 对于大图片，单独显示加载进度
             if (files.length > 1 || file.size > 2.5 * 1024 * 1024) {
                 updateLoadingProgress(`正在读取图片 ${i + 1}/${files.length}...`);
             }
             
-            const dataUrl = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = (event) => resolve(event.target.result);
-                reader.onerror = () => {
-                    console.error(`读取图片失败: ${file.name}`);
-                    resolve(null);
-                };
-                reader.readAsDataURL(file);
-            });
+            const blobUrl = URL.createObjectURL(file);
             
-            if (dataUrl) {
-                imageDataList.push({
-                    data: dataUrl,
-                    name: file.name || `图片${state.imageList.length + imageDataList.length + 1}`
-                });
-            }
+            imageDataList.push({
+                data: blobUrl,
+                blob: file,
+                name: file.name || `图片${state.imageList.length + imageDataList.length + 1}`
+            });
         }
         
         let thumbnails = [];
@@ -3753,8 +3856,22 @@ async function importImage() {
             try {
                 updateLoadingProgress(`正在并行生成缩略图...`);
                 const { invoke } = window.__TAURI__.core;
+                
+                const base64Promises = imageDataList.map(async (imgData) => {
+                    return await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => resolve(e.target.result);
+                        reader.onerror = () => resolve('');
+                        reader.readAsDataURL(imgData.blob);
+                    });
+                });
+                const base64Images = await Promise.all(base64Promises);
+                
                 thumbnails = await invoke('generate_thumbnails_batch', {
-                    images: imageDataList,
+                    images: base64Images.map((data, i) => ({
+                        data: data,
+                        name: imageDataList[i].name
+                    })),
                     maxSize: 150,
                     fixedRatio: false
                 });
@@ -3780,13 +3897,14 @@ async function importImage() {
             
             let thumbnail;
             if (thumbnails[i] && thumbnails[i].length > 0) {
-                thumbnail = thumbnails[i];
+                const thumbBlob = await fetch(thumbnails[i]).then(r => r.blob());
+                thumbnail = URL.createObjectURL(thumbBlob);
             } else {
-                thumbnail = await generateThumbnail(img.src, 150, false);
+                thumbnail = await generateThumbnailBlob(imgData.blob, 150);
             }
             
             const newImgData = {
-                full: img.src,
+                full: imgData.data,
                 thumbnail: thumbnail,
                 name: imgData.name,
                 width: img.width,
@@ -3833,10 +3951,12 @@ async function importImage() {
 }
 
 async function addImageToList(img, name, isLast = true) {
-    const thumbnail = await generateThumbnail(img.src, 150);
+    const blob = await fetch(img.src).then(r => r.blob());
+    const blobUrl = URL.createObjectURL(blob);
+    const thumbnail = await generateThumbnailBlob(blob, 150);
     
     const imgData = {
-        full: img.src,
+        full: blobUrl,
         thumbnail: thumbnail,
         name: name,
         width: img.width,
@@ -3867,6 +3987,7 @@ async function addImageToList(img, name, isLast = true) {
         if (state.isCameraOpen) {
             await setCameraState(false);
         }
+        img.src = blobUrl;
         drawImageToCenter(img);
         
         updateSidebarContent();
@@ -3876,10 +3997,12 @@ async function addImageToList(img, name, isLast = true) {
 }
 
 async function addImageToListNoHighlight(img, name) {
-    const thumbnail = await generateThumbnail(img.src, 150);
+    const blob = await fetch(img.src).then(r => r.blob());
+    const blobUrl = URL.createObjectURL(blob);
+    const thumbnail = await generateThumbnailBlob(blob, 150);
     
     const imgData = {
-        full: img.src,
+        full: blobUrl,
         thumbnail: thumbnail,
         name: name,
         width: img.width,
