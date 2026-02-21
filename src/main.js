@@ -543,10 +543,18 @@ async function processPdfPagesParallel(pdf, totalPages, batchSize = 4) {
 
 async function generateThumbnailFromCanvas(canvas, maxSize = 150) {
     const img = new Image();
-    img.src = canvas.toDataURL('image/jpeg', 0.85);
+    const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(b => {
+            if (b) resolve(b);
+            else reject(new Error('Failed to create blob'));
+        }, 'image/jpeg', 0.85);
+    });
+    const blobUrl = URL.createObjectURL(blob);
+    
     await new Promise((resolve, reject) => {
         img.onload = resolve;
         img.onerror = reject;
+        img.src = blobUrl;
     });
     
     let thumbW, thumbH;
@@ -563,6 +571,8 @@ async function generateThumbnailFromCanvas(canvas, maxSize = 150) {
     thumbCanvas.height = thumbH;
     const thumbCtx = thumbCanvas.getContext('2d');
     thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
+    
+    URL.revokeObjectURL(blobUrl);
     
     const thumbBlob = await new Promise((resolve, reject) => {
         thumbCanvas.toBlob(blob => {
@@ -3747,7 +3757,12 @@ async function captureCamera() {
         tempCtx.setTransform(1, 0, 0, 1, 0, 0);
     }
     
-    let dataUrl = tempCanvas.toDataURL('image/png');
+    let blob = await new Promise((resolve, reject) => {
+        tempCanvas.toBlob(b => {
+            if (b) resolve(b);
+            else reject(new Error('Failed to create blob'));
+        }, 'image/png');
+    });
     
     if (window.__TAURI__) {
         try {
@@ -3755,21 +3770,30 @@ async function captureCamera() {
             
             if (state.enhanceEnabled) {
                 try {
+                    const dataUrl = await blobToDataUrl(blob);
                     const enhancedDataUrl = await wasmPointProcessor.applyImageFilter(dataUrl);
-                    dataUrl = enhancedDataUrl;
+                    blob = await dataUrlToBlob(enhancedDataUrl);
                     console.log('使用WASM进行图像增强');
+                    
+                    const result = await invoke('save_image_with_enhance', { 
+                        imageData: enhancedDataUrl,
+                        prefix: 'photo'
+                    });
+                    console.log('图片已保存到:', result.path);
                 } catch (wasmError) {
                     console.warn('WASM图像增强失败，使用Tauri后端:', wasmError);
+                    const dataUrl = await blobToDataUrl(blob);
                     const result = await invoke('save_image_with_enhance', { 
                         imageData: dataUrl,
                         prefix: 'photo'
                     });
                     console.log('图片已保存到:', result.path);
                     if (result.enhanced_data) {
-                        dataUrl = result.enhanced_data;
+                        blob = await dataUrlToBlob(result.enhanced_data);
                     }
                 }
             } else {
+                const dataUrl = await blobToDataUrl(blob);
                 const result = await invoke('save_image', { 
                     imageData: dataUrl,
                     prefix: 'photo'
@@ -3781,13 +3805,28 @@ async function captureCamera() {
         }
     }
     
+    const blobUrl = URL.createObjectURL(blob);
     const img = new Image();
-    img.src = dataUrl;
+    img.src = blobUrl;
     img.onload = () => {
         addImageToListNoHighlight(img, `拍摄${state.imageList.length + 1}`);
         expandSidebarIfCollapsed();
         console.log('已捕获摄像头画面并保存到图片列表');
     };
+}
+
+async function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+async function dataUrlToBlob(dataUrl) {
+    const response = await fetch(dataUrl);
+    return response.blob();
 }
 
 function expandSidebarIfCollapsed() {
