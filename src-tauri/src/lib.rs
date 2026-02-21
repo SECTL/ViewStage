@@ -792,8 +792,7 @@ async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     )
     .title("设置")
     .inner_size(600.0, 600.0)
-    .min_inner_size(500.0, 500.0)
-    .resizable(true)
+    .resizable(false)
     .decorations(false)
     .always_on_top(true)
     .center()
@@ -844,6 +843,179 @@ async fn switch_camera(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let config_path = config_dir.join("config.json");
+    
+    if config_path.exists() {
+        if let Ok(config_content) = std::fs::read_to_string(&config_path) {
+            if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_content) {
+                return Ok(config);
+            }
+        }
+    }
+    
+    if !config_dir.exists() {
+        std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
+    }
+    
+    let default_config = serde_json::json!({
+        "width": 1920,
+        "height": 1080,
+        "language": "zh-CN",
+        "defaultCamera": "",
+        "cameraWidth": 1280,
+        "cameraHeight": 720,
+        "moveFps": 30,
+        "drawFps": 10,
+        "fileAssociations": []
+    });
+    
+    let config_str = serde_json::to_string_pretty(&default_config).map_err(|e| e.to_string())?;
+    std::fs::write(&config_path, config_str).map_err(|e| e.to_string())?;
+    
+    Ok(default_config)
+}
+
+#[tauri::command]
+async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Result<(), String> {
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    
+    if !config_dir.exists() {
+        std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
+    }
+    
+    let config_path = config_dir.join("config.json");
+    
+    let existing_settings = if config_path.exists() {
+        if let Ok(config_content) = std::fs::read_to_string(&config_path) {
+            if let Ok(mut existing) = serde_json::from_str::<serde_json::Value>(&config_content) {
+                if let Some(obj) = existing.as_object_mut() {
+                    if let Some(new_obj) = settings.as_object() {
+                        for (key, value) in new_obj {
+                            obj.insert(key.clone(), value.clone());
+                        }
+                    }
+                }
+                existing
+            } else {
+                settings
+            }
+        } else {
+            settings
+        }
+    } else {
+        settings
+    };
+    
+    let config_str = serde_json::to_string_pretty(&existing_settings).map_err(|e| e.to_string())?;
+    std::fs::write(&config_path, &config_str).map_err(|e| e.to_string())?;
+    
+    let saved_content = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+    if saved_content != config_str {
+        return Err("配置保存验证失败".to_string());
+    }
+    
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn check_pdf_default_app() -> Result<bool, String> {
+    use winreg::RegKey;
+    use winreg::enums::*;
+    
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    
+    // 检查用户设置的默认程序
+    if let Ok(prog_id_key) = hkcu.open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.pdf\\UserChoice") {
+        if let Ok(prog_id) = prog_id_key.get_value::<String, _>("ProgId") {
+            // 检查是否是 ViewStage 的 ProgId
+            if prog_id.contains("ViewStage") || prog_id.contains("viewstage") {
+                return Ok(true);
+            }
+        }
+    }
+    
+    // 检查系统默认程序
+    let hkcr = RegKey::predef(HKEY_CLASSES_ROOT);
+    if let Ok(pdf_key) = hkcr.open_subkey(".pdf") {
+        if let Ok(default_prog) = pdf_key.get_value::<String, _>("") {
+            if default_prog.contains("ViewStage") || default_prog.contains("viewstage") {
+                return Ok(true);
+            }
+        }
+    }
+    
+    Ok(false)
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+async fn check_pdf_default_app() -> Result<bool, String> {
+    Ok(false)
+}
+
+fn restart_application(app: &tauri::AppHandle) {
+    app.restart();
+}
+
+#[tauri::command]
+async fn reset_settings(app: tauri::AppHandle) -> Result<(), String> {
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let config_path = config_dir.join("config.json");
+    
+    if config_path.exists() {
+        std::fs::remove_file(&config_path).map_err(|e| e.to_string())?;
+        
+        if config_path.exists() {
+            return Err("配置文件删除失败".to_string());
+        }
+    }
+    
+    restart_application(&app);
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    restart_application(&app);
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_available_resolutions(app: tauri::AppHandle) -> Result<Vec<(u32, u32, String)>, String> {
+    let primary_monitor = app.primary_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or("无法获取主显示器".to_string())?;
+    
+    let max_width = primary_monitor.size().width;
+    let max_height = primary_monitor.size().height;
+    
+    let mut resolutions = Vec::new();
+    
+    let base_resolutions: Vec<(u32, u32)> = vec![
+        (1920, 1080),
+        (1600, 900),
+        (1366, 768),
+        (1280, 720),
+        (1024, 576),
+    ];
+    
+    for (base_width, base_height) in base_resolutions {
+        if base_width <= max_width && base_height <= max_height {
+            resolutions.push((base_width, base_height, format!("{} x {}", base_width, base_height)));
+        }
+    }
+    
+    resolutions.push((max_width, max_height, format!("{} x {} (最大)", max_width, max_height)));
+    
+    Ok(resolutions)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -913,10 +1085,16 @@ pub fn run() {
             rotate_main_image,
             set_mirror_state,
             get_mirror_state,
-            get_enhance_state,
+            set_enhance_state,
             get_enhance_state,
             switch_camera,
-            get_app_version
+            get_app_version,
+            get_settings,
+            save_settings,
+            reset_settings,
+            restart_app,
+            get_available_resolutions,
+            check_pdf_default_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

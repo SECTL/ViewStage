@@ -577,6 +577,7 @@ body {
     outline: none;
     will-change: transform;
     transform: translateZ(0);
+    transform-origin: 0 0;
     backface-visibility: hidden;
 }
 

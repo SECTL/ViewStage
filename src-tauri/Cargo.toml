@@ -29,3 +29,6 @@ base64 = "0.22"
 rayon = "1.10"
 chrono = "0.4"
 
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+

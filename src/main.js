@@ -268,6 +268,10 @@ let state = {
     cameraAnimationId: null,       // requestAnimationFrame ID
     cameraRotation: 0,             // 摄像头旋转角度
     useFrontCamera: false,         // 是否使用前置摄像头
+    defaultCameraId: null,         // 默认摄像头设备ID
+    cameraWidth: 1280,             // 摄像头宽度
+    cameraHeight: 720,             // 摄像头高度
+    wasCameraOpenBeforeMinimize: false, // 最小化前摄像头是否开启
     
     // 图像增强
     enhanceEnabled: false,         // 是否启用文档增强
@@ -339,6 +343,9 @@ window.addEventListener('DOMContentLoaded', async () => {
         
         await initCacheDir();
         
+        // 读取配置中的默认摄像头设置
+        await loadCameraSetting();
+        
         await openCamera();
         
         if (window.__TAURI__) {
@@ -351,6 +358,41 @@ window.addEventListener('DOMContentLoaded', async () => {
         alert('应用初始化失败，请刷新页面重试');
     }
 });
+
+// 加载摄像头设置
+async function loadCameraSetting() {
+    if (window.__TAURI__) {
+        try {
+            const { invoke } = window.__TAURI__.core;
+            const settings = await invoke('get_settings');
+            
+            if (settings.defaultCamera) {
+                state.defaultCameraId = settings.defaultCamera;
+                console.log('已加载摄像头设置:', settings.defaultCamera);
+            }
+            
+            // 加载摄像头分辨率设置
+            if (settings.cameraWidth && settings.cameraHeight) {
+                state.cameraWidth = settings.cameraWidth;
+                state.cameraHeight = settings.cameraHeight;
+                console.log('已加载摄像头分辨率:', settings.cameraWidth, 'x', settings.cameraHeight);
+            }
+            
+            // 加载帧率设置
+            if (settings.moveFps) {
+                DRAW_CONFIG.cameraFrameInterval = Math.round(1000 / settings.moveFps);
+                console.log('已加载移动时帧率:', settings.moveFps, 'FPS');
+            }
+            
+            if (settings.drawFps) {
+                DRAW_CONFIG.cameraFrameIntervalLow = Math.round(1000 / settings.drawFps);
+                console.log('已加载绘画时帧率:', settings.drawFps, 'FPS');
+            }
+        } catch (error) {
+            console.error('加载摄像头设置失败:', error);
+        }
+    }
+}
 
 // 监听系统关联打开的PDF文件
 function listenForPdfFileOpen() {
@@ -490,7 +532,7 @@ async function processPdfPagesParallel(pdf, totalPages, batchSize = 4) {
 
 async function loadPdfFromPath(filePath) {
     if (state.isCameraOpen) {
-        closeCamera();
+        await setCameraState(false);
     }
     
     showLoadingOverlay('正在导入文件...');
@@ -780,16 +822,18 @@ function updateMoveBound() {
         state.moveBound.minX = -(scaledW - screenW);
         state.moveBound.maxX = 0;
     } else {
-        state.moveBound.minX = 0;
-        state.moveBound.maxX = 0;
+        // 画布小于屏幕时，居中显示
+        state.moveBound.minX = (screenW - scaledW) / 2;
+        state.moveBound.maxX = (screenW - scaledW) / 2;
     }
     
     if (scaledH >= screenH) {
         state.moveBound.minY = -(scaledH - screenH);
         state.moveBound.maxY = 0;
     } else {
-        state.moveBound.minY = 0;
-        state.moveBound.maxY = 0;
+        // 画布小于屏幕时，居中显示
+        state.moveBound.minY = (screenH - scaledH) / 2;
+        state.moveBound.maxY = (screenH - scaledH) / 2;
     }
 }
 
@@ -975,10 +1019,59 @@ function handleMenuOutsideClick(e) {
 async function minimizeWindow() {
     if (getCurrentWindow) {
         const appWindow = getCurrentWindow();
+        
+        // 如果摄像头开启，先关闭摄像头
+        if (state.isCameraOpen) {
+            await setCameraState(false);
+            state.wasCameraOpenBeforeMinimize = true;
+            console.log('摄像头已关闭（最小化）');
+        }
+        
         await appWindow.minimize();
         console.log('窗口已最小化');
     } else {
         console.log('Tauri API 不可用');
+    }
+}
+
+// 监听窗口最小化和恢复事件
+function setupWindowMinimizeListeners() {
+    if (window.__TAURI__) {
+        const { getCurrentWindow } = window.__TAURI__.window;
+        
+        // 监听窗口恢复
+        getCurrentWindow().listen('tauri://restore', async () => {
+            console.log('窗口已恢复');
+            await restoreCameraIfNeeded();
+        });
+        
+        // 监听窗口显示
+        getCurrentWindow().listen('tauri://show', async () => {
+            console.log('窗口已显示');
+            await restoreCameraIfNeeded();
+        });
+        
+        // 监听窗口获得焦点
+        getCurrentWindow().listen('tauri://focus', async () => {
+            console.log('窗口获得焦点');
+            await restoreCameraIfNeeded();
+        });
+    }
+}
+
+// 恢复摄像头（如果需要）
+async function restoreCameraIfNeeded() {
+    // 如果之前摄像头是开启的，重新开启摄像头
+    if (state.wasCameraOpenBeforeMinimize && !state.isCameraOpen) {
+        try {
+            await setCameraState(true);
+            console.log('摄像头已重新开启');
+            // 只有在成功开启后才重置状态
+            state.wasCameraOpenBeforeMinimize = false;
+        } catch (error) {
+            console.error('重新开启摄像头失败:', error);
+            // 开启失败时保持状态，以便下次尝试
+        }
     }
 }
 
@@ -2646,9 +2739,9 @@ function selectImage(index) {
                 clearImageLayer();
                 clearDrawCanvas();
                 if (state.isCameraOpen) {
-                    await closeCamera();
+                    await setCameraState(false);
                 }
-                await openCamera();
+                await setCameraState(true);
                 updateSidebarSelection();
                 updatePhotoButtonState();
                 updateEnhanceButtonState();
@@ -2688,7 +2781,7 @@ function selectImage(index) {
         state.currentImage = img;
         
         if (state.isCameraOpen) {
-            await closeCamera();
+            await setCameraState(false);
         }
         drawImageToCenter(img);
         
@@ -2984,7 +3077,7 @@ function selectFolderPage(folderIndex, pageIndex) {
     (async () => {
         try {
             if (state.isCameraOpen) {
-                await closeCamera();
+                await setCameraState(false);
             }
             
             saveCurrentDrawData();
@@ -3134,7 +3227,7 @@ function importPDF() {
         if (!file) return;
         
         if (state.isCameraOpen) {
-            closeCamera();
+            await setCameraState(false);
         }
         
         showLoadingOverlay('正在导入文件...');
@@ -3252,44 +3345,116 @@ document.addEventListener('DOMContentLoaded', function() {
             this.style.transform = '';
         });
     });
+    
+    // 设置窗口最小化监听器
+    setupWindowMinimizeListeners();
 });
 
 // ==================== 摄像头功能 ====================
 
 /**
- * 打开/关闭摄像头
- * - 支持前置/后置摄像头切换
- * - 自动渲染到 imageCanvas
+ * 统一的摄像头状态管理函数
+ * @param {boolean} open - true: 开启摄像头, false: 关闭摄像头
+ * @param {Object} options - 可选参数
+ * @param {boolean} options.forceClose - 强制关闭（不保存状态用于恢复）
+ */
+async function setCameraState(open, options = {}) {
+    const { forceClose = false } = options;
+    
+    if (open) {
+        // 开启摄像头
+        if (state.isCameraOpen) {
+            return;
+        }
+        
+        try {
+            let constraints;
+            
+            // 优先使用指定的摄像头设备ID
+            if (state.defaultCameraId) {
+                constraints = {
+                    video: {
+                        deviceId: { exact: state.defaultCameraId },
+                        width: { ideal: state.cameraWidth || 1280 },
+                        height: { ideal: state.cameraHeight || 720 }
+                    },
+                    audio: false
+                };
+            } else {
+                constraints = {
+                    video: {
+                        width: { ideal: state.cameraWidth || 1280 },
+                        height: { ideal: state.cameraHeight || 720 },
+                        facingMode: state.useFrontCamera ? 'user' : 'environment'
+                    },
+                    audio: false
+                };
+            }
+            
+            state.cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+            state.isCameraOpen = true;
+            
+            // 判断是否需要镜像（前置摄像头）
+            const videoTrack = state.cameraStream.getVideoTracks()[0];
+            const settings = videoTrack.getSettings();
+            const label = videoTrack.label.toLowerCase();
+            state.isMirrored = label.includes('front') || label.includes('user') || label.includes('前置') || settings.facingMode === 'user';
+            
+            createCameraVideo();
+            createCameraControls();
+            clearSidebarSelection();
+            updateEnhanceButtonState();
+            
+            console.log('摄像头已打开:', videoTrack.label || '未知设备');
+        } catch (error) {
+            console.error('无法访问摄像头:', error);
+            alert('无法访问摄像头，请确保已授权摄像头权限');
+            throw error;
+        }
+    } else {
+        // 关闭摄像头
+        if (state.cameraAnimationId) {
+            cancelAnimationFrame(state.cameraAnimationId);
+            state.cameraAnimationId = null;
+        }
+        
+        if (state.cameraStream) {
+            state.cameraStream.getTracks().forEach(track => track.stop());
+            state.cameraStream = null;
+        }
+        
+        state.isCameraOpen = false;
+        
+        const video = document.getElementById('cameraVideo');
+        if (video) {
+            video.remove();
+        }
+        
+        updatePhotoButtonState();
+        updateEnhanceButtonState();
+        
+        if (state.currentImage && state.currentImageIndex >= 0) {
+            drawImageToCenter(state.currentImage);
+            await restoreDrawData(state.currentImageIndex);
+        } else if (state.currentImage && state.currentFolderIndex >= 0 && state.currentFolderPageIndex >= 0) {
+            drawImageToCenter(state.currentImage);
+            await restoreFolderPageDrawData(state.currentFolderIndex, state.currentFolderPageIndex);
+        } else {
+            clearImageLayer();
+        }
+        
+        console.log('摄像头已关闭');
+    }
+}
+
+/**
+ * 打开/关闭摄像头（用户交互入口）
  */
 async function openCamera() {
     if (state.isCameraOpen) {
-        closeCamera();
-        return;
-    }
-    
-    try {
-        const constraints = {
-            video: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                facingMode: state.useFrontCamera ? 'user' : 'environment'
-            },
-            audio: false
-        };
-        
-        state.cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
-        state.isCameraOpen = true;
-        state.isMirrored = state.useFrontCamera;
-        
-        createCameraVideo();
-        createCameraControls();
-        clearSidebarSelection();
-        updateEnhanceButtonState();
-        
-        console.log('摄像头已打开');
-    } catch (error) {
-        console.error('无法访问摄像头:', error);
-        alert('无法访问摄像头，请确保已授权摄像头权限');
+        await setCameraState(false);
+    } else {
+        await setCameraState(true);
     }
 }
 
@@ -3308,8 +3473,8 @@ async function switchCamera() {
     state.useFrontCamera = !state.useFrontCamera;
     
     if (state.isCameraOpen) {
-        closeCamera();
-        await openCamera();
+        await setCameraState(false);
+        await setCameraState(true);
     }
     
     console.log(state.useFrontCamera ? '已切换到前置摄像头' : '已切换到后置摄像头');
@@ -3393,11 +3558,10 @@ function startCameraPreview() {
             return;
         }
         
-        // 根据性能状态调整摄像头帧率
-        const currentInterval = smartDrawScheduler ? 
-            (smartDrawScheduler.getPerformanceState().status === 'poor' ? 
-                DRAW_CONFIG.cameraFrameIntervalLow : 
-                DRAW_CONFIG.cameraFrameInterval) : 
+        // 根据绘制模式选择帧率：绘画时使用低帧率，移动时使用正常帧率
+        const isDrawing = state.drawMode === 'pen' || state.drawMode === 'highlighter';
+        const currentInterval = isDrawing ? 
+            DRAW_CONFIG.cameraFrameIntervalLow : 
             DRAW_CONFIG.cameraFrameInterval;
         
         if (currentTime - lastFrameTime >= currentInterval) {
@@ -3445,40 +3609,6 @@ function startCameraPreview() {
 
 function createCameraControls() {
     updatePhotoButtonState();
-}
-
-async function closeCamera() {
-    if (state.cameraAnimationId) {
-        cancelAnimationFrame(state.cameraAnimationId);
-        state.cameraAnimationId = null;
-    }
-    
-    if (state.cameraStream) {
-        state.cameraStream.getTracks().forEach(track => track.stop());
-        state.cameraStream = null;
-    }
-    
-    state.isCameraOpen = false;
-    
-    const video = document.getElementById('cameraVideo');
-    if (video) {
-        video.remove();
-    }
-    
-    updatePhotoButtonState();
-    updateEnhanceButtonState();
-    
-    if (state.currentImage && state.currentImageIndex >= 0) {
-        drawImageToCenter(state.currentImage);
-        await restoreDrawData(state.currentImageIndex);
-    } else if (state.currentImage && state.currentFolderIndex >= 0 && state.currentFolderPageIndex >= 0) {
-        drawImageToCenter(state.currentImage);
-        await restoreFolderPageDrawData(state.currentFolderIndex, state.currentFolderPageIndex);
-    } else {
-        clearImageLayer();
-    }
-    
-    console.log('摄像头已关闭');
 }
 
 async function captureCamera() {
@@ -3578,7 +3708,7 @@ async function importImage() {
         saveCurrentFolderPageDrawData();
         
         if (state.isCameraOpen) {
-            closeCamera();
+            await setCameraState(false);
         }
         
         // 检查是否有大图片（大于2.5MB）
@@ -3676,6 +3806,11 @@ async function importImage() {
             state.strokeHistory = [];
             state.baseImageURL = null;
             state.baseImageObj = null;
+            state.scale = 1;
+            state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
+            state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
+            updateMoveBound();
+            updateCanvasTransform();
             updateUndoBtnStatus();
             
             if (isLast) {
@@ -3721,11 +3856,16 @@ async function addImageToList(img, name, isLast = true) {
     state.strokeHistory = [];
     state.baseImageURL = null;
     state.baseImageObj = null;
+    state.scale = 1;
+    state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
+    state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
+    updateMoveBound();
+    updateCanvasTransform();
     updateUndoBtnStatus();
     
     if (isLast) {
         if (state.isCameraOpen) {
-            await closeCamera();
+            await setCameraState(false);
         }
         drawImageToCenter(img);
         

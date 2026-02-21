@@ -39,10 +39,23 @@
                     <h2 class="page-title">应用设置</h2>
                     <div class="setting-item">
                         <span class="setting-label">语言</span>
-                        <select class="setting-select">
-                            <option value="zh-CN">简体中文</option>
-                            <option value="en-US">English</option>
-                        </select>
+                        <div class="custom-select" id="languageSelect">
+                            <div class="select-selected" id="selectSelected">简体中文</div>
+                            <div class="select-options" id="selectOptions">
+                                <div class="select-option" data-value="zh-CN">简体中文</div>
+                                <div class="select-option" data-value="en-US">English</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">分辨率</span>
+                        <div class="custom-select" id="resolutionSelect">
+                            <div class="select-selected" id="resolutionSelected">加载中...</div>
+                            <div class="select-options" id="resolutionOptions"></div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <button class="btn-reset" id="btnReset">重置应用</button>
                     </div>
                 </div>
                 
@@ -56,7 +69,41 @@
                 <div class="page" id="pageSource">
                     <h2 class="page-title">信号源调节</h2>
                     <div class="setting-item">
-                        <span class="setting-label">信号源设置</span>
+                        <span class="setting-label">默认摄像头</span>
+                        <div class="custom-select" id="cameraSelect">
+                            <div class="select-selected" id="cameraSelected">加载中...</div>
+                            <div class="select-options" id="cameraOptions"></div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">摄像头分辨率</span>
+                        <div class="custom-select" id="cameraResolutionSelect">
+                            <div class="select-selected" id="cameraResolutionSelected">加载中...</div>
+                            <div class="select-options" id="cameraResolutionOptions"></div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">移动时帧率</span>
+                        <div class="custom-select" id="moveFpsSelect">
+                            <div class="select-selected" id="moveFpsSelected">30 FPS</div>
+                            <div class="select-options" id="moveFpsOptions"></div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">绘画时帧率</span>
+                        <div class="custom-select" id="drawFpsSelect">
+                            <div class="select-selected" id="drawFpsSelected">10 FPS</div>
+                            <div class="select-options" id="drawFpsOptions"></div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">默认打开方式</span>
+                        <div class="file-associations">
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="assocPdf" data-ext="pdf">
+                                <span class="checkbox-label">PDF 文件</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
                 
@@ -102,6 +149,28 @@
                         </div>
                         <button class="btn-back" id="btnBackToAbout">返回</button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="modalOverlay">
+            <div class="modal-dialog">
+                <div class="modal-title">确认重置</div>
+                <div class="modal-message">确定要重置应用吗？这将删除所有设置并重启应用。</div>
+                <div class="modal-buttons">
+                    <button class="modal-btn modal-btn-cancel" id="modalCancel">取消</button>
+                    <button class="modal-btn modal-btn-confirm" id="modalConfirm">确认</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="restartModal">
+            <div class="modal-dialog">
+                <div class="modal-title">重启应用</div>
+                <div class="modal-message">语言设置已更改，需要重启应用才能生效。</div>
+                <div class="modal-buttons">
+                    <button class="modal-btn modal-btn-cancel" id="restartLater">稍后</button>
+                    <button class="modal-btn modal-btn-confirm" id="restartNow">立即重启</button>
                 </div>
             </div>
         </div>
