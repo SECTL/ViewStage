@@ -30,12 +30,12 @@
 >>如果你的屏幕为非16：9的屏幕，且允许此应用出现了异常，你可以尝试将分辨率改成16：9，或在issues中提出问题
 >>在提出问题中请包含你的屏幕比例、屏幕分辨率、应用版本、操作系统版本等信息，以便我能够更好地帮助你
 
--1：我们强烈推荐你在Windows10以上的系统使用本应用，若你使用的是Windows7或Windows8，可能会导致显示异常
+- 1：我们强烈推荐你在Windows10以上的系统使用本应用，若你使用的是Windows7或Windows8，可能会导致显示异常
 >如果你为非Windows10以上的系统，若出现问题，请不要提交到issues中，谢谢
 >>如果你的班班通CPU型号太老了，请尝试使用其他应用，本应用可能在您的设备上无法流畅运行（ps：我已经很努力优化了）
 >>若您的设备为2018年以后的设备，建议使用最新版Windows10以上的系统（推荐使用Windows10LTSC版本）
 
--2:在系统中必须安装有WebView2运行时，若未安装，请前往[Microsoft Edge WebView2 运行时](https://developer.microsoft.com/en-us/microsoft-edge/webview2/#download-section)下载并安装最新版
+- 2:在系统中必须安装有WebView2运行时，若未安装，请前往[Microsoft Edge WebView2 运行时](https://developer.microsoft.com/en-us/microsoft-edge/webview2/#download-section)下载并安装最新版
 
 >若您的设备无法升级Windows10以上的系统，您依旧可以尝试安装本应用，并安装WebView2运行时，但出现未知问题时，我无法提供技术支持
 
