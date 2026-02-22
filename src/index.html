@@ -29,21 +29,30 @@
             
             <!-- 笔触控制面板 -->
             <div class="pen-control-panel" id="penControlPanel">
-                <div class="pen-control-row">
-                    <span class="pen-control-label">笔触:</span>
-                    <input type="range" class="pen-slider" id="penSizeSlider" min="1" max="20" value="2">
-                    <span class="pen-value" id="penSizeValue">2</span>
-                    <span class="pen-unit">px</span>
+                <div class="pen-size-vertical">
+                    <input type="range" class="pen-slider-vertical" id="penSizeSlider" min="1" max="20" value="2">
+                    <span class="pen-size-label" id="penSizeValue">2px</span>
                 </div>
-                <div class="pen-control-row">
-                    <span class="pen-control-label">颜色:</span>
-                    <input type="color" class="pen-color-picker" id="penColorPicker" value="#3498db">
+                <div class="pen-color-buttons" id="penColorButtons">
+                    <button class="pen-color-btn" data-index="0" title="颜色1"></button>
+                    <button class="pen-color-btn" data-index="1" title="颜色2"></button>
+                    <button class="pen-color-btn" data-index="2" title="颜色3"></button>
+                    <button class="pen-color-btn" data-index="3" title="颜色4"></button>
+                    <button class="pen-color-btn" data-index="4" title="颜色5"></button>
+                    <button class="pen-color-btn" data-index="5" title="颜色6"></button>
+                    <button class="pen-color-btn" data-index="6" title="颜色7"></button>
+                    <button class="pen-color-btn" data-index="7" title="颜色8"></button>
+                    <button class="pen-color-btn" data-index="8" title="颜色9"></button>
+                    <button class="pen-color-btn" data-index="9" title="颜色10"></button>
+                    <button class="pen-color-btn" data-index="10" title="颜色11"></button>
+                    <button class="pen-color-btn" data-index="11" title="颜色12"></button>
+                    <button class="pen-color-btn" data-index="12" title="颜色13"></button>
+                    <button class="pen-color-btn" data-index="13" title="颜色14"></button>
+                    <button class="pen-color-btn" data-index="14" title="颜色15"></button>
                 </div>
-                <div class="pen-control-row">
-                    <span class="pen-control-label">橡皮:</span>
-                    <input type="range" class="pen-slider" id="eraserSizeSlider" min="5" max="50" value="15">
-                    <span class="pen-value" id="eraserSizeValue">15</span>
-                    <span class="pen-unit">px</span>
+                <div class="pen-size-vertical">
+                    <input type="range" class="pen-slider-vertical" id="eraserSizeSlider" min="5" max="50" value="15">
+                    <span class="pen-size-label" id="eraserSizeValue">15px</span>
                 </div>
             </div>
             

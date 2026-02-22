@@ -295,6 +295,53 @@ body {
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.setting-item.flex-start {
+    align-items: flex-start;
+}
+
+.color-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.color-editor-row {
+    display: flex;
+    gap: 8px;
+}
+
+.color-edit-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.color-edit-label {
+    font-size: 10px;
+    color: #888;
+}
+
+.color-edit-picker {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    background-color: transparent;
+    padding: 0;
+    overflow: hidden;
+}
+
+.color-edit-picker::-webkit-color-swatch {
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.color-edit-picker::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
 .setting-label {
     font-size: 13px;
     color: #ccc;
@@ -581,6 +628,27 @@ body {
     display: flex;
     align-items: center;
     gap: 12px;
+}
+
+.button-group {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-action {
+    padding: 8px 16px;
+    background: rgba(74, 158, 255, 0.2);
+    border: 1px solid rgba(74, 158, 255, 0.3);
+    border-radius: 6px;
+    color: #4a9eff;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-action:hover {
+    background: rgba(74, 158, 255, 0.3);
+    border-color: rgba(74, 158, 255, 0.5);
 }
 
 .slider {

@@ -94,7 +94,13 @@ const DRAW_CONFIG = {
     enhanceContrast: 1.4,          // 增强对比度
     enhanceBrightness: 10,         // 增强亮度
     enhanceSaturation: 1.2,        // 增强饱和度
-    enhanceSharpen: 0              // 增强锐化 (0-100)
+    enhanceSharpen: 0,             // 增强锐化 (0-100)
+    smoothStrength: 0.5,           // 绘画平滑度 (0-1, 0=无平滑, 1=最大平滑)
+    penColors: [                   // 画笔颜色列表
+        '#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6',
+        '#1abc9c', '#34495e', '#e91e63', '#00bcd4', '#8bc34a',
+        '#ff5722', '#673ab7', '#795548', '#000000', '#ffffff'
+    ]
 };
 
 function getSafeScale() {
@@ -444,6 +450,17 @@ async function loadCameraSetting() {
                 DRAW_CONFIG.enhanceSharpen = settings.sharpen;
                 console.log('已加载增强锐化:', settings.sharpen);
             }
+            
+            if (settings.smoothStrength !== undefined) {
+                DRAW_CONFIG.smoothStrength = Math.max(0, Math.min(1, settings.smoothStrength));
+                console.log('已加载绘画平滑度:', settings.smoothStrength);
+            }
+            
+            if (settings.penColors && Array.isArray(settings.penColors)) {
+                DRAW_CONFIG.penColors = settings.penColors;
+                console.log('已加载画笔颜色:', settings.penColors);
+                updateColorButtons();
+            }
         } catch (error) {
             console.error('加载摄像头设置失败:', error);
         }
@@ -599,6 +616,17 @@ function listenForPdfFileOpen() {
         if (settings.sharpen !== undefined) {
             DRAW_CONFIG.enhanceSharpen = settings.sharpen;
             console.log('增强锐化已更改:', settings.sharpen);
+        }
+        
+        if (settings.smoothStrength !== undefined) {
+            DRAW_CONFIG.smoothStrength = Math.max(0, Math.min(1, settings.smoothStrength));
+            console.log('绘画平滑度已更改:', DRAW_CONFIG.smoothStrength);
+        }
+        
+        if (settings.penColors && Array.isArray(settings.penColors)) {
+            DRAW_CONFIG.penColors = settings.penColors;
+            updateColorButtons();
+            console.log('画笔颜色已更改:', settings.penColors);
         }
         
         if (needRestartCamera && state.isCameraOpen) {
@@ -1319,14 +1347,7 @@ async function closeWindow() {
 function bindPenControlEvents() {
     dom.penSizeSlider.addEventListener('input', (e) => {
         DRAW_CONFIG.penWidth = Number(e.target.value);
-        dom.penSizeValue.textContent = DRAW_CONFIG.penWidth;
-        if (state.drawMode === 'comment') {
-            setPenStyle();
-        }
-    });
-    
-    dom.penColorPicker.addEventListener('input', (e) => {
-        DRAW_CONFIG.penColor = e.target.value;
+        dom.penSizeValue.textContent = DRAW_CONFIG.penWidth + 'px';
         if (state.drawMode === 'comment') {
             setPenStyle();
         }
@@ -1334,10 +1355,62 @@ function bindPenControlEvents() {
     
     dom.eraserSizeSlider.addEventListener('input', (e) => {
         DRAW_CONFIG.eraserSize = Number(e.target.value);
-        dom.eraserSizeValue.textContent = DRAW_CONFIG.eraserSize;
+        dom.eraserSizeValue.textContent = DRAW_CONFIG.eraserSize + 'px';
         updateEraserHintSize();
         if (state.drawMode === 'eraser') {
             setEraserStyle();
+        }
+    });
+    
+    // 颜色按钮点击事件
+    const colorButtons = document.querySelectorAll('.pen-color-btn');
+    colorButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const index = parseInt(btn.dataset.index);
+            const color = DRAW_CONFIG.penColors[index];
+            if (color) {
+                DRAW_CONFIG.penColor = color;
+                
+                // 更新选中状态
+                colorButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                if (state.drawMode === 'comment') {
+                    setPenStyle();
+                }
+            }
+        });
+    });
+    
+    // 初始化颜色按钮
+    updateColorButtons();
+}
+
+function updateColorButtons() {
+    const colorButtons = document.querySelectorAll('.pen-color-btn');
+    colorButtons.forEach((btn, index) => {
+        if (DRAW_CONFIG.penColors[index]) {
+            btn.dataset.color = DRAW_CONFIG.penColors[index];
+            btn.style.backgroundColor = DRAW_CONFIG.penColors[index];
+            
+            // 为黑色和白色添加边框
+            if (DRAW_CONFIG.penColors[index].toLowerCase() === '#000000' || 
+                DRAW_CONFIG.penColors[index].toLowerCase() === '#ffffff') {
+                btn.style.border = '1px solid #555';
+            } else {
+                btn.style.border = 'none';
+            }
+        }
+    });
+    updateColorButtonActive();
+}
+
+function updateColorButtonActive() {
+    const colorButtons = document.querySelectorAll('.pen-color-btn');
+    colorButtons.forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.color === DRAW_CONFIG.penColor) {
+            btn.classList.add('active');
         }
     });
 }
@@ -1383,48 +1456,62 @@ function showPenControlPanel(targetBtn, mode) {
     const btnRect = targetBtn.getBoundingClientRect();
     const containerRect = document.querySelector('.main-function').getBoundingClientRect();
     
-    const penRow = panel.querySelector('.pen-control-row:nth-child(1)');
-    const colorRow = panel.querySelector('.pen-control-row:nth-child(2)');
-    const eraserRow = panel.querySelector('.pen-control-row:nth-child(3)');
+    const penSizeControl = panel.querySelector('.pen-size-vertical:nth-child(1)');
+    const colorButtons = panel.querySelector('.pen-color-buttons');
+    const eraserSizeControl = panel.querySelector('.pen-size-vertical:nth-child(3)');
     
     if (mode === 'comment') {
-        if (penRow) penRow.style.display = 'flex';
-        if (colorRow) colorRow.style.display = 'flex';
-        if (eraserRow) eraserRow.style.display = 'none';
+        if (penSizeControl) penSizeControl.style.display = 'flex';
+        if (colorButtons) colorButtons.style.display = 'grid';
+        if (eraserSizeControl) eraserSizeControl.style.display = 'none';
     } else if (mode === 'eraser') {
-        if (penRow) penRow.style.display = 'none';
-        if (colorRow) colorRow.style.display = 'none';
-        if (eraserRow) eraserRow.style.display = 'flex';
+        if (penSizeControl) penSizeControl.style.display = 'none';
+        if (colorButtons) colorButtons.style.display = 'none';
+        if (eraserSizeControl) eraserSizeControl.style.display = 'flex';
     }
     
+    // 重置面板位置和可见性，确保尺寸计算准确
     panel.style.position = 'absolute';
     panel.style.bottom = 'auto';
     panel.style.top = 'auto';
     panel.style.right = 'auto';
     panel.style.left = 'auto';
+    panel.style.visibility = 'hidden';
+    panel.style.opacity = '0';
+    panel.classList.remove('visible');
     
-    const panelWidth = 180;
-    const panelHeight = panel.offsetHeight || 100;
+    // 强制浏览器重排，确保获取准确的尺寸
+    panel.offsetHeight;
     
+    // 获取实际面板尺寸
+    const panelWidth = panel.offsetWidth || (mode === 'comment' ? 240 : 120);
+    const panelHeight = panel.offsetHeight || 120;
+    
+    // 计算面板位置，确保居中对齐按钮
     let left = btnRect.left - containerRect.left + (btnRect.width / 2) - (panelWidth / 2);
-    let top = btnRect.top - containerRect.top - panelHeight - 10;
+    let top = btnRect.top - containerRect.top - panelHeight - 15;
     
-    if (left < 10) left = 10;
-    if (left + panelWidth > containerRect.width - 10) {
-        left = containerRect.width - panelWidth - 10;
+    // 边界检查，确保面板不超出容器
+    const containerPadding = 10;
+    left = Math.max(containerPadding, Math.min(left, containerRect.width - panelWidth - containerPadding));
+    
+    // 如果面板顶部超出容器，显示在按钮下方
+    if (top < containerPadding) {
+        top = btnRect.bottom - containerRect.top + 15;
     }
     
-    if (top < 10) {
-        top = btnRect.bottom - containerRect.top + 10;
-    }
-    
+    // 设置最终位置并显示面板
     panel.style.left = `${left}px`;
     panel.style.top = `${top}px`;
+    panel.style.visibility = 'visible';
+    panel.style.opacity = '1';
     panel.classList.add('visible');
 }
 
 function hidePenControlPanel() {
     dom.penControlPanel.classList.remove('visible');
+    dom.penControlPanel.style.opacity = '0';
+    dom.penControlPanel.style.visibility = 'hidden';
 }
 
 function updateEraserHintPos(clientX, clientY) {
@@ -1463,11 +1550,15 @@ function handleMouseDown(e) {
         state.startDragY = e.clientY - state.canvasY;
         dom.drawCanvas.classList.add('dragging');
     } else if (state.drawMode === 'comment') {
+        // 开始绘制时隐藏控制面板
+        hidePenControlPanel();
         state.isDrawing = true;
         state.lastX = (e.clientX - rect.left) / getSafeScale();
         state.lastY = (e.clientY - rect.top) / getSafeScale();
         startStroke('draw');
     } else if (state.drawMode === 'eraser') {
+        // 开始擦除时隐藏控制面板
+        hidePenControlPanel();
         state.isDrawing = true;
         state.lastX = (e.clientX - rect.left) / getSafeScale();
         state.lastY = (e.clientY - rect.top) / getSafeScale();
@@ -1818,10 +1909,10 @@ async function endStroke() {
                         state.currentStroke.points = processedPoints;
                     }
                     
-                    if (state.currentStroke.points.length > 3) {
+                    if (state.currentStroke.points.length > 3 && DRAW_CONFIG.smoothStrength > 0) {
                         const smoothedPoints = await wasmPointProcessor.smoothPath(
                             state.currentStroke.points,
-                            0.5,
+                            DRAW_CONFIG.smoothStrength,
                             'bezier'
                         );
                         

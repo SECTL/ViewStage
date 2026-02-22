@@ -374,6 +374,32 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                 }
                 
+                // 绘画平滑度设置
+                const smoothStrengthSlider = document.getElementById('smoothStrengthSlider');
+                const smoothStrengthValue = document.getElementById('smoothStrengthValue');
+                
+                if (smoothStrengthSlider && smoothStrengthValue) {
+                    let savedSmoothStrength = settings.smoothStrength !== undefined ? settings.smoothStrength : 0.5;
+                    savedSmoothStrength = Math.max(0, Math.min(1, savedSmoothStrength));
+                    smoothStrengthSlider.value = savedSmoothStrength;
+                    smoothStrengthValue.textContent = savedSmoothStrength;
+                }
+                
+                // 画笔颜色设置
+                const defaultColors = [
+                    '#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6',
+                    '#1abc9c', '#34495e', '#e91e63', '#00bcd4', '#8bc34a',
+                    '#ff5722', '#673ab7', '#795548', '#000000', '#ffffff'
+                ];
+                const savedColors = settings.penColors || defaultColors;
+                
+                for (let i = 1; i <= 15; i++) {
+                    const picker = document.getElementById(`colorPicker${i}`);
+                    if (picker) {
+                        picker.value = savedColors[i - 1] || defaultColors[i - 1];
+                    }
+                }
+                
                 // 镜像设置
                 const mirrorToggle = document.getElementById('mirrorToggle');
                 if (mirrorToggle) {
@@ -769,6 +795,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     
+    // 绘画平滑度设置
+    const smoothStrengthSlider = document.getElementById('smoothStrengthSlider');
+    const smoothStrengthValue = document.getElementById('smoothStrengthValue');
+    
+    if (smoothStrengthSlider && smoothStrengthValue) {
+        smoothStrengthSlider.addEventListener('input', () => {
+            smoothStrengthValue.textContent = smoothStrengthSlider.value;
+        });
+        
+        smoothStrengthSlider.addEventListener('change', async () => {
+            await saveSettings({ smoothStrength: parseFloat(smoothStrengthSlider.value) });
+        });
+    }
+    
+    // 画笔颜色选择器事件
+    for (let i = 1; i <= 15; i++) {
+        const picker = document.getElementById(`colorPicker${i}`);
+        if (picker) {
+            picker.addEventListener('change', async () => {
+                const colors = [];
+                for (let j = 1; j <= 15; j++) {
+                    const p = document.getElementById(`colorPicker${j}`);
+                    colors.push(p ? p.value : '#000000');
+                }
+                await saveSettings({ penColors: colors });
+            });
+        }
+    }
+    
     // 镜像开关
     const mirrorToggle = document.getElementById('mirrorToggle');
     if (mirrorToggle) {
@@ -848,6 +903,64 @@ document.addEventListener('DOMContentLoaded', async () => {
     const modalCancel = document.getElementById('modalCancel');
     const modalConfirm = document.getElementById('modalConfirm');
     
+    // 导出设置
+    const btnExportSettings = document.getElementById('btnExportSettings');
+    if (btnExportSettings && window.__TAURI__) {
+        btnExportSettings.addEventListener('click', async () => {
+            try {
+                const { invoke } = window.__TAURI__.core;
+                const { save } = window.__TAURI__.dialog;
+                const { writeTextFile } = window.__TAURI__.fs;
+                
+                const settings = await invoke('get_settings');
+                const jsonStr = JSON.stringify(settings, null, 2);
+                
+                const filePath = await save({
+                    defaultPath: 'viewstage-settings.json',
+                    filters: [{ name: 'JSON', extensions: ['json'] }]
+                });
+                
+                if (filePath) {
+                    await writeTextFile(filePath, jsonStr);
+                    console.log('设置已导出:', filePath);
+                }
+            } catch (error) {
+                console.error('导出设置失败:', error);
+                alert('导出失败: ' + error);
+            }
+        });
+    }
+    
+    // 导入设置
+    const btnImportSettings = document.getElementById('btnImportSettings');
+    if (btnImportSettings && window.__TAURI__) {
+        btnImportSettings.addEventListener('click', async () => {
+            try {
+                const { invoke } = window.__TAURI__.core;
+                const { open } = window.__TAURI__.dialog;
+                const { readTextFile } = window.__TAURI__.fs;
+                
+                const filePath = await open({
+                    filters: [{ name: 'JSON', extensions: ['json'] }]
+                });
+                
+                if (filePath) {
+                    const jsonStr = await readTextFile(filePath);
+                    const settings = JSON.parse(jsonStr);
+                    
+                    await invoke('save_settings', { settings });
+                    console.log('设置已导入:', filePath);
+                    
+                    // 重新加载页面以应用新设置
+                    location.reload();
+                }
+            } catch (error) {
+                console.error('导入设置失败:', error);
+                alert('导入失败: ' + error);
+            }
+        });
+    }
+    
     if (btnReset && modalOverlay && window.__TAURI__) {
         btnReset.addEventListener('click', () => {
             modalOverlay.classList.add('active');
@@ -903,13 +1016,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     let blobs = [];
     let animationId = null;
-    let lastTime = 0;
-    const updateInterval = 50;
+    let lastFrameTime = 0;
+    const frameInterval = 33; // ~30 FPS
     
     function generateRandomColor() {
         const hue = Math.floor(Math.random() * 360);
-        const saturation = 60 + Math.floor(Math.random() * 30);
-        const lightness = 50 + Math.floor(Math.random() * 20);
+        const saturation = 55 + Math.floor(Math.random() * 25);
+        const lightness = 45 + Math.floor(Math.random() * 20);
         return `hsla(${hue}, ${saturation}%, ${lightness}%, 0.6)`;
     }
     
@@ -927,61 +1040,55 @@ document.addEventListener('DOMContentLoaded', async () => {
             const blob = document.createElement('div');
             blob.className = 'aurora-blob';
             
-            const size = 350 + Math.random() * 250;
+            const size = 400 + Math.random() * 300;
             blob.style.width = size + 'px';
             blob.style.height = size + 'px';
             blob.style.background = generateRandomColor();
             
+            auroraBg.appendChild(blob);
+            
             const x = Math.random() * width;
             const y = Math.random() * height;
-            blob.style.transform = `translate(${x}px, ${y}px)`;
-            
-            auroraBg.appendChild(blob);
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 0.5 + Math.random() * 1.5;
             
             blobs.push({
                 element: blob,
                 x: x,
                 y: y,
-                vx: 0,
-                vy: 0
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                speed: speed
             });
         }
     }
     
     function updateBlobs(currentTime) {
+        if (currentTime - lastFrameTime < frameInterval) {
+            animationId = requestAnimationFrame(updateBlobs);
+            return;
+        }
+        lastFrameTime = currentTime;
+        
         const width = window.innerWidth;
         const height = window.innerHeight;
         
-        if (currentTime - lastTime >= updateInterval) {
-            lastTime = currentTime;
+        blobs.forEach(blob => {
+            blob.x += blob.vx;
+            blob.y += blob.vy;
             
-            blobs.forEach(blob => {
-                const noise = 0.2;
-                blob.vx += (Math.random() - 0.5) * noise;
-                blob.vy += (Math.random() - 0.5) * noise;
-                
-                blob.vx *= 0.98;
-                blob.vy *= 0.98;
-                
-                const maxSpeed = 1;
-                const speed = Math.sqrt(blob.vx * blob.vx + blob.vy * blob.vy);
-                if (speed > maxSpeed) {
-                    blob.vx = (blob.vx / speed) * maxSpeed;
-                    blob.vy = (blob.vy / speed) * maxSpeed;
-                }
-                
-                blob.x += blob.vx;
-                blob.y += blob.vy;
-                
-                const margin = 100;
-                if (blob.x < -margin) blob.x = width + margin;
-                if (blob.x > width + margin) blob.x = -margin;
-                if (blob.y < -margin) blob.y = height + margin;
-                if (blob.y > height + margin) blob.y = -margin;
-                
-                blob.element.style.transform = `translate(${blob.x}px, ${blob.y}px)`;
-            });
-        }
+            // 边界反弹
+            if (blob.x < -200 || blob.x > width + 200) {
+                blob.vx = -blob.vx;
+                blob.x = Math.max(-200, Math.min(width + 200, blob.x));
+            }
+            if (blob.y < -200 || blob.y > height + 200) {
+                blob.vy = -blob.vy;
+                blob.y = Math.max(-200, Math.min(height + 200, blob.y));
+            }
+            
+            blob.element.style.transform = `translate(${blob.x}px, ${blob.y}px)`;
+        });
         
         animationId = requestAnimationFrame(updateBlobs);
     }
@@ -991,7 +1098,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             createBlobs();
         }
         if (!animationId) {
-            updateBlobs();
+            lastFrameTime = 0;
+            updateBlobs(performance.now());
         }
     }
     

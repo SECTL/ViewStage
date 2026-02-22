@@ -65,6 +65,13 @@
                         </div>
                     </div>
                     <div class="setting-item">
+                        <span class="setting-label">设置管理</span>
+                        <div class="button-group">
+                            <button class="btn-action" id="btnExportSettings">导出设置</button>
+                            <button class="btn-action" id="btnImportSettings">导入设置</button>
+                        </div>
+                    </div>
+                    <div class="setting-item">
                         <button class="btn-reset" id="btnReset">重置应用</button>
                     </div>
                 </div>
@@ -86,6 +93,84 @@
                                 <div class="select-option" data-value="1">1</div>
                                 <div class="select-option" data-value="1.5">1.5</div>
                                 <div class="select-option" data-value="2">2</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">绘画平滑度</span>
+                        <div class="slider-container">
+                            <input type="range" id="smoothStrengthSlider" min="0" max="1" step="0.1" value="0.5" class="slider">
+                            <span class="slider-value" id="smoothStrengthValue">0.5</span>
+                        </div>
+                    </div>
+                    <div class="setting-item flex-start">
+                        <span class="setting-label">画笔颜色</span>
+                        <div class="color-editor" id="colorEditor">
+                            <div class="color-editor-row">
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">1</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker1" value="#3498db">
+                                </div>
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">2</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker2" value="#2ecc71">
+                                </div>
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">3</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker3" value="#e74c3c">
+                                </div>
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">4</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker4" value="#f39c12">
+                                </div>
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">5</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker5" value="#9b59b6">
+                                </div>
+                            </div>
+                            <div class="color-editor-row">
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">6</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker6" value="#1abc9c">
+                                </div>
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">7</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker7" value="#34495e">
+                                </div>
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">8</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker8" value="#e91e63">
+                                </div>
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">9</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker9" value="#00bcd4">
+                                </div>
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">10</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker10" value="#8bc34a">
+                                </div>
+                            </div>
+                            <div class="color-editor-row">
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">11</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker11" value="#ff5722">
+                                </div>
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">12</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker12" value="#673ab7">
+                                </div>
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">13</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker13" value="#795548">
+                                </div>
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">14</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker14" value="#000000">
+                                </div>
+                                <div class="color-edit-item">
+                                    <span class="color-edit-label">15</span>
+                                    <input type="color" class="color-edit-picker" id="colorPicker15" value="#ffffff">
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -1011,6 +1011,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             println!("单实例回调: args={:?}", args);
             if args.len() > 1 {
