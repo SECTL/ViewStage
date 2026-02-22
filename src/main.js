@@ -1798,16 +1798,19 @@ function handleWheel(e) {
         const mouseY = e.clientY - containerRect.top;
         
         const oldScale = state.scale;
-        state.scale = newScale;
         
         updateMoveBound();
         
         const scaleRatio = newScale / oldScale;
-        state.canvasX = mouseX - (mouseX - state.canvasX) * scaleRatio;
-        state.canvasY = mouseY - (mouseY - state.canvasY) * scaleRatio;
+        const targetX = mouseX - (mouseX - state.canvasX) * scaleRatio;
+        const targetY = mouseY - (mouseY - state.canvasY) * scaleRatio;
+        
+        state.scale = newScale;
+        state.canvasX = targetX;
+        state.canvasY = targetY;
         
         clampCanvasPosition();
-        updateCanvasTransform();
+        animateCanvasTransform(state.canvasX, state.canvasY, state.scale, 150);
     }
 }
 
@@ -1960,6 +1963,52 @@ function updateCanvasTransform() {
     dom.bgCanvas.style.transform = transform;
     dom.imageCanvas.style.transform = transform;
     dom.drawCanvas.style.transform = transform;
+}
+
+function animateCanvasTransform(targetX, targetY, targetScale, duration = 250) {
+    const startX = state.canvasX;
+    const startY = state.canvasY;
+    const startScale = state.scale;
+    
+    const deltaX = targetX - startX;
+    const deltaY = targetY - startY;
+    const deltaScale = targetScale - startScale;
+    
+    const startTime = performance.now();
+    
+    dom.bgCanvas.classList.add('smooth-transform');
+    dom.imageCanvas.classList.add('smooth-transform');
+    dom.drawCanvas.classList.add('smooth-transform');
+    
+    function animate(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        const easeProgress = 1 - Math.pow(1 - progress, 3);
+        
+        state.canvasX = startX + deltaX * easeProgress;
+        state.canvasY = startY + deltaY * easeProgress;
+        state.scale = startScale + deltaScale * easeProgress;
+        
+        lastCanvasTransform.x = state.canvasX;
+        lastCanvasTransform.y = state.canvasY;
+        lastCanvasTransform.scale = state.scale;
+        
+        const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
+        dom.bgCanvas.style.transform = transform;
+        dom.imageCanvas.style.transform = transform;
+        dom.drawCanvas.style.transform = transform;
+        
+        if (progress < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            dom.bgCanvas.classList.remove('smooth-transform');
+            dom.imageCanvas.classList.remove('smooth-transform');
+            dom.drawCanvas.classList.remove('smooth-transform');
+        }
+    }
+    
+    requestAnimationFrame(animate);
 }
 
 // 撤销功能 - 混合方案：路径记录 + ImageData压缩
