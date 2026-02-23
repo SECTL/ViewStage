@@ -428,6 +428,28 @@ body {
     justify-content: center;
 }
 
+.setting-group.disabled,
+.setting-item.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.setting-item.disabled .custom-select,
+.setting-item.disabled .select-selected,
+.setting-item.disabled .select-options {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.camera-unavailable-hint {
+    font-size: 11px;
+    color: #e74c3c;
+    margin-top: 4px;
+    padding: 4px 8px;
+    background: rgba(231, 76, 60, 0.1);
+    border-radius: 4px;
+}
+
 .toggle-switch {
     position: relative;
     display: inline-block;

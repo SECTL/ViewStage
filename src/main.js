@@ -382,7 +382,31 @@ window.addEventListener('DOMContentLoaded', async () => {
         
         await loadCameraSetting();
         
-        await openCamera();
+        // 检测摄像头是否存在
+        let hasCamera = false;
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            hasCamera = devices.some(device => device.kind === 'videoinput');
+        } catch (e) {
+            console.log('无法枚举设备:', e.name);
+        }
+        
+        if (hasCamera) {
+            try {
+                await openCamera();
+            } catch (error) {
+                if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                    console.log('摄像头权限被拒绝，跳过摄像头初始化');
+                    showNoCameraMessage('无摄像头权限');
+                } else {
+                    console.error('摄像头初始化失败:', error);
+                    showNoCameraMessage('摄像头初始化失败');
+                }
+            }
+        } else {
+            console.log('未检测到摄像头，跳过摄像头初始化');
+            showNoCameraMessage('未检测到摄像头');
+        }
         
         console.log('画布初始化完成');
     } catch (error) {
@@ -2928,6 +2952,13 @@ function takePhoto() {
                 console.log('返回摄像头');
             } catch (error) {
                 console.error('返回摄像头失败:', error);
+                if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+                    showNoCameraMessage('未检测到摄像头');
+                } else if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                    showNoCameraMessage('无摄像头权限');
+                } else {
+                    showNoCameraMessage('摄像头初始化失败');
+                }
             }
         })();
     } else if (state.currentFolderIndex >= 0 && state.currentFolderPageIndex >= 0) {
@@ -4011,6 +4042,8 @@ async function setCameraState(open, options = {}) {
             
             state.isCameraOpen = true;
             
+            hideNoCameraMessage();
+            
             const videoTrack = state.cameraStream.getVideoTracks()[0];
             const settings = videoTrack.getSettings();
             const label = videoTrack.label.toLowerCase();
@@ -4023,8 +4056,13 @@ async function setCameraState(open, options = {}) {
             
             console.log('摄像头已打开:', videoTrack.label || '未知设备', '分辨率:', settings.width, 'x', settings.height);
         } catch (error) {
-            console.error('无法访问摄像头:', error);
-            alert('无法访问摄像头，请确保已授权摄像头权限');
+            if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+                console.log('未检测到摄像头');
+            } else if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                console.log('摄像头权限被拒绝');
+            } else {
+                console.error('无法访问摄像头:', error);
+            }
             throw error;
         }
     } else {
@@ -4072,6 +4110,49 @@ async function openCamera() {
         await setCameraState(false);
     } else {
         await setCameraState(true);
+    }
+}
+
+/**
+ * 显示无摄像头提示信息（绘制到画布上）
+ */
+function showNoCameraMessage(message) {
+    if (!dom.imageCanvas || !dom.imageCtx) return;
+    
+    const ctx = dom.imageCtx;
+    const width = DRAW_CONFIG.canvasW;
+    const height = DRAW_CONFIG.canvasH;
+    
+    ctx.clearRect(0, 0, width, height);
+    
+    ctx.fillStyle = 'rgba(30, 30, 30, 0.9)';
+    ctx.fillRect(0, 0, width, height);
+    
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    const centerX = width / 2;
+    const centerY = height / 2;
+    
+    ctx.font = `bold ${Math.round(width * 0.035)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('( $ _ $ )', centerX, centerY - height * 0.06);
+    
+    ctx.font = `${Math.round(width * 0.018)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.fillText('找不到展台设备', centerX, centerY + height * 0.015);
+    
+    ctx.font = `${Math.round(width * 0.012)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.fillText(message, centerX, centerY + height * 0.045);
+}
+
+/**
+ * 隐藏无摄像头提示信息
+ */
+function hideNoCameraMessage() {
+    if (dom.imageCtx) {
+        dom.imageCtx.clearRect(0, 0, dom.imageCanvas.width, dom.imageCanvas.height);
     }
 }
 
@@ -4582,6 +4663,7 @@ async function addImageToListNoHighlight(img, name) {
 
 function drawImageToCenter(img) {
     clearImageLayer();
+    hideNoCameraMessage();
     
     const screenW = DRAW_CONFIG.screenW;
     const screenH = DRAW_CONFIG.screenH;

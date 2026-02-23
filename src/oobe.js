@@ -433,6 +433,9 @@ function showPage3FromPage4() {
 async function initCameraSelect() {
     const cameraOptions = document.getElementById('cameraOptions');
     const cameraSelected = document.getElementById('cameraSelected');
+    const cameraResolutionSelected = document.getElementById('cameraResolutionSelected');
+    const moveFpsSelected = document.getElementById('moveFpsSelected');
+    const drawFpsSelected = document.getElementById('drawFpsSelected');
 
     let stream = null;
     let track = null;
@@ -448,6 +451,10 @@ async function initCameraSelect() {
         
         if (videoDevices.length === 0) {
             cameraSelected.textContent = '未检测到摄像头';
+            cameraResolutionSelected.textContent = '-';
+            moveFpsSelected.textContent = '-';
+            drawFpsSelected.textContent = '-';
+            disableCameraSettings();
             return;
         }
 
@@ -466,8 +473,21 @@ async function initCameraSelect() {
         
         setupCustomSelects();
     } catch (error) {
-        console.error('获取摄像头列表失败:', error);
-        cameraSelected.textContent = '获取失败';
+        console.error('摄像头检测失败:', error.name);
+        
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+            cameraSelected.textContent = '无摄像头权限';
+        } else if (error.name === 'NotFoundError') {
+            cameraSelected.textContent = '未检测到摄像头';
+        } else {
+            cameraSelected.textContent = '获取失败';
+        }
+        
+        cameraResolutionSelected.textContent = '-';
+        moveFpsSelected.textContent = '-';
+        drawFpsSelected.textContent = '-';
+        
+        disableCameraSettings();
     } finally {
         if (track) {
             track.stop();
@@ -476,6 +496,21 @@ async function initCameraSelect() {
             stream.getTracks().forEach(t => t.stop());
         }
     }
+}
+
+function disableCameraSettings() {
+    const cameraSettingItems = [
+        document.querySelector('#cameraSelect')?.closest('.setting-item'),
+        document.querySelector('#cameraResolutionSelect')?.closest('.setting-item'),
+        document.querySelector('#moveFpsSelect')?.closest('.setting-item'),
+        document.querySelector('#drawFpsSelect')?.closest('.setting-item'),
+    ];
+    
+    cameraSettingItems.forEach(item => {
+        if (item) {
+            item.classList.add('disabled');
+        }
+    });
 }
 
 async function initCameraResolutionSelect(track) {

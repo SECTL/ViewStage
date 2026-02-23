@@ -841,3 +841,43 @@ body {
 .switch input:checked + .slider:before {
     transform: translateX(1.6em);
 }
+
+.setting-item.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.setting-item.disabled .setting-label {
+    color: #666;
+}
+
+.setting-item.disabled .custom-select,
+.setting-item.disabled .select-selected,
+.setting-item.disabled .select-options {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.setting-item.disabled .slider {
+    cursor: not-allowed;
+}
+
+.setting-item.disabled input[type="range"] {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.setting-item.disabled .toggle-switch,
+.setting-item.disabled .switch {
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+.camera-unavailable-hint {
+    font-size: 11px;
+    color: #e74c3c;
+    margin-top: 4px;
+    padding: 4px 8px;
+    background: rgba(231, 76, 60, 0.1);
+    border-radius: 4px;
+}

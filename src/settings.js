@@ -41,6 +41,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
+    // ==================== 摄像头设置禁用 ====================
+    function disableCameraSettings() {
+        const cameraSettingItems = [
+            document.querySelector('#cameraSelect')?.closest('.setting-item'),
+            document.querySelector('#cameraResolutionSelect')?.closest('.setting-item'),
+            document.querySelector('#moveFpsSelect')?.closest('.setting-item'),
+            document.querySelector('#drawFpsSelect')?.closest('.setting-item'),
+            document.querySelector('#mirrorToggle')?.closest('.setting-item'),
+        ];
+        
+        cameraSettingItems.forEach(item => {
+            if (item) {
+                item.classList.add('disabled');
+            }
+        });
+        
+        const imageProcessHeader = document.getElementById('imageProcessHeader');
+        if (imageProcessHeader) {
+            imageProcessHeader.closest('.setting-group')?.classList.add('disabled');
+        }
+    }
+    
     // ==================== 设置加载 ====================
     /**
      * 从后端加载设置并更新UI
@@ -100,16 +122,43 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 const cameraSelected = document.getElementById('cameraSelected');
                 const cameraOptionsContainer = document.getElementById('cameraOptions');
+                const cameraResolutionSelected = document.getElementById('cameraResolutionSelected');
+                const moveFpsSelected = document.getElementById('moveFpsSelected');
+                const drawFpsSelected = document.getElementById('drawFpsSelected');
+                
+                let hasCameraPermission = false;
+                let hasCamera = false;
+                let cameraStream = null;
+                
+                try {
+                    cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    hasCameraPermission = true;
+                    cameraStream.getTracks().forEach(t => t.stop());
+                } catch (e) {
+                    console.log('摄像头权限检测:', e.name);
+                    hasCameraPermission = false;
+                }
                 
                 if (cameraSelected && cameraOptionsContainer) {
                     try {
                         const devices = await navigator.mediaDevices.enumerateDevices();
                         const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                        hasCamera = videoDevices.length > 0;
                         
                         cameraOptionsContainer.innerHTML = '';
                         
-                        if (videoDevices.length === 0) {
+                        if (!hasCameraPermission) {
+                            cameraSelected.textContent = '无摄像头权限';
+                            cameraResolutionSelected.textContent = '-';
+                            moveFpsSelected.textContent = '-';
+                            drawFpsSelected.textContent = '-';
+                            disableCameraSettings();
+                        } else if (videoDevices.length === 0) {
                             cameraSelected.textContent = '未检测到摄像头';
+                            cameraResolutionSelected.textContent = '-';
+                            moveFpsSelected.textContent = '-';
+                            drawFpsSelected.textContent = '-';
+                            disableCameraSettings();
                         } else {
                             videoDevices.forEach((device, index) => {
                                 const option = document.createElement('div');
@@ -155,14 +204,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                     } catch (error) {
                         console.error('获取摄像头列表失败:', error);
                         cameraSelected.textContent = '获取失败';
+                        cameraResolutionSelected.textContent = '-';
+                        moveFpsSelected.textContent = '-';
+                        drawFpsSelected.textContent = '-';
+                        disableCameraSettings();
                     }
                 }
                 
                 // 摄像头分辨率设置
-                const cameraResolutionSelected = document.getElementById('cameraResolutionSelected');
                 const cameraResolutionOptionsContainer = document.getElementById('cameraResolutionOptions');
                 
-                if (cameraResolutionSelected && cameraResolutionOptionsContainer) {
+                if (cameraResolutionSelected && cameraResolutionOptionsContainer && hasCameraPermission && hasCamera) {
                     let stream = null;
                     let track = null;
                     try {
@@ -216,7 +268,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 cameraResolutionOptionsContainer.appendChild(option);
                             });
                             
-                            // 加载保存的分辨率
                             const savedWidth = settings.cameraWidth || 1280;
                             const savedHeight = settings.cameraHeight || 720;
                             const savedRes = `${savedWidth}x${savedHeight}`;
@@ -232,7 +283,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                             });
                             
                             if (!found && resOptions.length > 0) {
-                                // 默认选择 720p 或第一个
                                 const defaultOption = Array.from(resOptions).find(opt => 
                                     opt.dataset.value === '1280x720'
                                 ) || resOptions[0];
@@ -254,82 +304,82 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 
                 // 帧率设置
-                const moveFpsSelected = document.getElementById('moveFpsSelected');
                 const moveFpsOptionsContainer = document.getElementById('moveFpsOptions');
-                const drawFpsSelected = document.getElementById('drawFpsSelected');
                 const drawFpsOptionsContainer = document.getElementById('drawFpsOptions');
                 
-                // 获取摄像头最大帧率
-                let maxFps = 30;
-                let fpsStream = null;
-                let fpsTrack = null;
-                try {
-                    fpsStream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    fpsTrack = fpsStream.getVideoTracks()[0];
-                    const capabilities = fpsTrack.getCapabilities();
-                    if (capabilities.frameRate && capabilities.frameRate.max) {
-                        maxFps = Math.min(capabilities.frameRate.max, 60);
+                if (hasCameraPermission && hasCamera) {
+                    // 获取摄像头最大帧率
+                    let maxFps = 30;
+                    let fpsStream = null;
+                    let fpsTrack = null;
+                    try {
+                        fpsStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        fpsTrack = fpsStream.getVideoTracks()[0];
+                        const capabilities = fpsTrack.getCapabilities();
+                        if (capabilities.frameRate && capabilities.frameRate.max) {
+                            maxFps = Math.min(capabilities.frameRate.max, 60);
+                        }
+                    } catch (e) {
+                        console.log('无法获取摄像头帧率能力，使用默认值');
+                    } finally {
+                        if (fpsTrack) {
+                            fpsTrack.stop();
+                        }
+                        if (fpsStream) {
+                            fpsStream.getTracks().forEach(t => t.stop());
+                        }
                     }
-                } catch (e) {
-                    console.log('无法获取摄像头帧率能力，使用默认值');
-                } finally {
-                    if (fpsTrack) {
-                        fpsTrack.stop();
-                    }
-                    if (fpsStream) {
-                        fpsStream.getTracks().forEach(t => t.stop());
-                    }
-                }
-                
-                // 生成帧率选项
-                const fpsOptions = [];
-                const fpsValues = [5, 10, 15, 20, 24, 30, 60];
-                fpsValues.forEach(fps => {
-                    if (fps <= maxFps) {
-                        fpsOptions.push(fps);
-                    }
-                });
-                
-                // 移动时帧率选项
-                if (moveFpsSelected && moveFpsOptionsContainer) {
-                    moveFpsOptionsContainer.innerHTML = '';
-                    fpsOptions.forEach(fps => {
-                        const option = document.createElement('div');
-                        option.className = 'select-option';
-                        option.dataset.value = fps;
-                        option.textContent = `${fps} FPS`;
-                        moveFpsOptionsContainer.appendChild(option);
-                    });
                     
-                    const savedMoveFps = settings.moveFps || 30;
-                    const moveFpsOptionElements = moveFpsOptionsContainer.querySelectorAll('.select-option');
-                    moveFpsOptionElements.forEach(option => {
-                        if (parseInt(option.dataset.value) === savedMoveFps) {
-                            moveFpsSelected.textContent = option.textContent;
-                            option.classList.add('selected');
+                    // 生成帧率选项
+                    const fpsOptions = [];
+                    const fpsValues = [5, 10, 15, 20, 24, 30, 60];
+                    fpsValues.forEach(fps => {
+                        if (fps <= maxFps) {
+                            fpsOptions.push(fps);
                         }
                     });
-                }
-                
-                // 绘画时帧率选项
-                if (drawFpsSelected && drawFpsOptionsContainer) {
-                    drawFpsOptionsContainer.innerHTML = '';
-                    fpsOptions.forEach(fps => {
-                        const option = document.createElement('div');
-                        option.className = 'select-option';
-                        option.dataset.value = fps;
-                        option.textContent = `${fps} FPS`;
-                        drawFpsOptionsContainer.appendChild(option);
-                    });
                     
-                    const savedDrawFps = settings.drawFps || 10;
-                    const drawFpsOptionElements = drawFpsOptionsContainer.querySelectorAll('.select-option');
-                    drawFpsOptionElements.forEach(option => {
-                        if (parseInt(option.dataset.value) === savedDrawFps) {
-                            drawFpsSelected.textContent = option.textContent;
-                            option.classList.add('selected');
-                        }
-                    });
+                    // 移动时帧率选项
+                    if (moveFpsSelected && moveFpsOptionsContainer) {
+                        moveFpsOptionsContainer.innerHTML = '';
+                        fpsOptions.forEach(fps => {
+                            const option = document.createElement('div');
+                            option.className = 'select-option';
+                            option.dataset.value = fps;
+                            option.textContent = `${fps} FPS`;
+                            moveFpsOptionsContainer.appendChild(option);
+                        });
+                        
+                        const savedMoveFps = settings.moveFps || 30;
+                        const moveFpsOptionElements = moveFpsOptionsContainer.querySelectorAll('.select-option');
+                        moveFpsOptionElements.forEach(option => {
+                            if (parseInt(option.dataset.value) === savedMoveFps) {
+                                moveFpsSelected.textContent = option.textContent;
+                                option.classList.add('selected');
+                            }
+                        });
+                    }
+                    
+                    // 绘画时帧率选项
+                    if (drawFpsSelected && drawFpsOptionsContainer) {
+                        drawFpsOptionsContainer.innerHTML = '';
+                        fpsOptions.forEach(fps => {
+                            const option = document.createElement('div');
+                            option.className = 'select-option';
+                            option.dataset.value = fps;
+                            option.textContent = `${fps} FPS`;
+                            drawFpsOptionsContainer.appendChild(option);
+                        });
+                        
+                        const savedDrawFps = settings.drawFps || 10;
+                        const drawFpsOptionElements = drawFpsOptionsContainer.querySelectorAll('.select-option');
+                        drawFpsOptionElements.forEach(option => {
+                            if (parseInt(option.dataset.value) === savedDrawFps) {
+                                drawFpsSelected.textContent = option.textContent;
+                                option.classList.add('selected');
+                            }
+                        });
+                    }
                 }
                 
                 // PDF 输出分辨率设置
