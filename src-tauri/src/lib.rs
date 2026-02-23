@@ -69,8 +69,17 @@ pub struct ThumbnailRequest {
     pub name: Option<String>,   // 文件名
 }
 
+/// 缩略图生成结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThumbnailResult {
+    pub thumbnail: Option<String>,  // 缩略图数据 (base64)，失败时为 None
+    pub error: Option<String>,      // 错误信息
+}
+
 // ==================== 工具函数 ====================
 // base64 解码、图像格式转换等辅助函数
+
+const MAX_IMAGE_SIZE: usize = 50 * 1024 * 1024;
 
 /// 解码 base64 图片
 fn decode_base64_image(image_data: &str) -> Result<DynamicImage, String> {
@@ -83,12 +92,22 @@ fn decode_base64_image(image_data: &str) -> Result<DynamicImage, String> {
         image_data.to_string()
     };
     
+    if base64_data.len() > MAX_IMAGE_SIZE * 4 / 3 {
+        return Err("Image data too large (max 50MB)".to_string());
+    }
+    
     let decoded = general_purpose::STANDARD
         .decode(&base64_data)
         .map_err(|e| format!("Failed to decode base64: {}", e))?;
     
-    image::load_from_memory(&decoded)
-        .map_err(|e| format!("Failed to load image: {}", e))
+    let img = image::load_from_memory(&decoded)
+        .map_err(|e| format!("Failed to load image: {}", e))?;
+    
+    if img.width() == 0 || img.height() == 0 {
+        return Err("Invalid image dimensions: width or height is zero".to_string());
+    }
+    
+    Ok(img)
 }
 
 // ==================== 图像增强 ====================
@@ -150,7 +169,7 @@ fn apply_enhance_filter(img: &DynamicImage, contrast: f32, brightness: f32, satu
     }
     
     // 第二步：锐化处理 (USM 锐化)
-    if sharpen > 0.0 {
+    if sharpen > 0.0 && width > 2 && height > 2 {
         let original = enhanced_img.clone();
         let sharpen_amount = sharpen / 100.0; // 0.0 - 1.0
         
@@ -230,25 +249,23 @@ fn apply_enhance_filter(img: &DynamicImage, contrast: f32, brightness: f32, satu
 fn generate_thumbnail(image_data: String, max_size: u32, fixed_ratio: bool) -> Result<String, String> {
     let img = decode_base64_image(&image_data)?;
     
+    if max_size == 0 {
+        return Err("max_size must be greater than 0".to_string());
+    }
+    
     let (width, height) = (img.width(), img.height());
     
     let (thumb_w, thumb_h, scaled_w, scaled_h, offset_x, offset_y) = if fixed_ratio {
         let tw = max_size;
-        let th = (max_size as f32 * 9.0 / 16.0) as u32;
-        
-        let mut canvas: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(tw, th);
-        
-        for pixel in canvas.pixels_mut() {
-            *pixel = Rgba([0, 0, 0, 255]);
-        }
+        let th = ((max_size as f32 * 9.0 / 16.0).max(1.0)) as u32;
         
         let img_ratio = width as f32 / height as f32;
         let canvas_ratio = 16.0 / 9.0;
         
         let (sw, sh) = if img_ratio > canvas_ratio {
-            (tw, (tw as f32 / img_ratio) as u32)
+            (tw, ((tw as f32 / img_ratio).max(1.0)) as u32)
         } else {
-            ((th as f32 * img_ratio) as u32, th)
+            (((th as f32 * img_ratio).max(1.0)) as u32, th)
         };
         
         let ox = (tw - sw) / 2;
@@ -257,9 +274,9 @@ fn generate_thumbnail(image_data: String, max_size: u32, fixed_ratio: bool) -> R
         (tw, th, sw, sh, ox, oy)
     } else {
         let (tw, th) = if width > height {
-            (max_size, (height as f32 * max_size as f32 / width as f32) as u32)
+            (max_size, ((height as f32 * max_size as f32 / width as f32).max(1.0)) as u32)
         } else {
-            ((width as f32 * max_size as f32 / height as f32) as u32, max_size)
+            (((width as f32 * max_size as f32 / height as f32).max(1.0)) as u32, max_size)
         };
         
         (tw, th, tw, th, 0, 0)
@@ -410,10 +427,18 @@ fn get_save_path(base_dir: &str, prefix: &str, extension: &str) -> Result<(PathB
     Ok((file_path, file_name))
 }
 
+fn sanitize_prefix(prefix: &str) -> String {
+    let sanitized: String = prefix
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+        .collect();
+    if sanitized.is_empty() { "photo".to_string() } else { sanitized }
+}
+
 #[tauri::command]
 fn save_image(image_data: String, prefix: Option<String>) -> Result<ImageSaveResult, String> {
     let base_dir = get_cds_dir()?;
-    let prefix_str = prefix.unwrap_or_else(|| "photo".to_string());
+    let prefix_str = sanitize_prefix(&prefix.unwrap_or_else(|| "photo".to_string()));
     
     let decoded = extract_base64(&image_data)?;
     
@@ -441,7 +466,7 @@ fn save_image(image_data: String, prefix: Option<String>) -> Result<ImageSaveRes
 #[tauri::command]
 fn save_image_with_enhance(image_data: String, prefix: Option<String>, contrast: f32, brightness: f32, saturation: f32, sharpen: f32) -> Result<ImageSaveResult, String> {
     let base_dir = get_cds_dir()?;
-    let prefix_str = prefix.unwrap_or_else(|| "photo".to_string());
+    let prefix_str = sanitize_prefix(&prefix.unwrap_or_else(|| "photo".to_string()));
     
     let img = decode_base64_image(&image_data)?;
     
@@ -471,16 +496,38 @@ fn save_image_with_enhance(image_data: String, prefix: Option<String>, contrast:
 // 将笔画渲染到图片，用于撤销功能
 
 /// 解析颜色字符串为 RGBA
-fn parse_color(color_str: &str) -> Rgba<u8> {
-    if color_str.starts_with('#') && color_str.len() == 7 {
-        let r = u8::from_str_radix(&color_str[1..3], 16).unwrap_or(52);
-        let g = u8::from_str_radix(&color_str[3..5], 16).unwrap_or(152);
-        let b = u8::from_str_radix(&color_str[5..7], 16).unwrap_or(219);
-        Rgba([r, g, b, 255])
-    } else {
-        Rgba([52, 152, 219, 255])
+/// 支持格式: #RRGGBB 或 #RRGGBBAA
+fn parse_color(color_str: &str) -> Result<Rgba<u8>, String> {
+    if !color_str.starts_with('#') {
+        return Err(format!("Invalid color format: must start with '#', got: {}", color_str));
+    }
+    
+    match color_str.len() {
+        7 => {
+            let r = u8::from_str_radix(&color_str[1..3], 16)
+                .map_err(|_| format!("Invalid red component in color: {}", color_str))?;
+            let g = u8::from_str_radix(&color_str[3..5], 16)
+                .map_err(|_| format!("Invalid green component in color: {}", color_str))?;
+            let b = u8::from_str_radix(&color_str[5..7], 16)
+                .map_err(|_| format!("Invalid blue component in color: {}", color_str))?;
+            Ok(Rgba([r, g, b, 255]))
+        }
+        9 => {
+            let r = u8::from_str_radix(&color_str[1..3], 16)
+                .map_err(|_| format!("Invalid red component in color: {}", color_str))?;
+            let g = u8::from_str_radix(&color_str[3..5], 16)
+                .map_err(|_| format!("Invalid green component in color: {}", color_str))?;
+            let b = u8::from_str_radix(&color_str[5..7], 16)
+                .map_err(|_| format!("Invalid blue component in color: {}", color_str))?;
+            let a = u8::from_str_radix(&color_str[7..9], 16)
+                .map_err(|_| format!("Invalid alpha component in color: {}", color_str))?;
+            Ok(Rgba([r, g, b, a]))
+        }
+        _ => Err(format!("Invalid color format: expected #RRGGBB or #RRGGBBAA, got: {}", color_str))
     }
 }
+
+const DEFAULT_COLOR: Rgba<u8> = Rgba([52, 152, 219, 255]);
 
 fn draw_line_on_canvas(canvas: &mut RgbaImage, x1: i32, y1: i32, x2: i32, y2: i32, color: Rgba<u8>, width: u32) {
     let dx = (x2 - x1).abs();
@@ -600,7 +647,8 @@ fn compact_strokes(request: CompactStrokesRequest) -> Result<String, String> {
         }
         
         if stroke.stroke_type == "draw" {
-            let color = parse_color(stroke.color.as_deref().unwrap_or("#3498db"));
+            let color = parse_color(stroke.color.as_deref().unwrap_or("#3498db"))
+                .unwrap_or(DEFAULT_COLOR);
             let line_width = stroke.line_width.unwrap_or(2);
             
             for point in points {
@@ -642,16 +690,23 @@ fn compact_strokes(request: CompactStrokesRequest) -> Result<String, String> {
 // 并行生成多张缩略图，使用 rayon 加速
 
 #[tauri::command]
-fn generate_thumbnails_batch(images: Vec<ThumbnailRequest>, max_size: u32, fixed_ratio: bool) -> Result<Vec<String>, String> {
-    let results: Vec<String> = images
+fn generate_thumbnails_batch(images: Vec<ThumbnailRequest>, max_size: u32, fixed_ratio: bool) -> Result<Vec<ThumbnailResult>, String> {
+    if max_size == 0 {
+        return Err("max_size must be greater than 0".to_string());
+    }
+    
+    let results: Vec<ThumbnailResult> = images
         .par_iter()
         .map(|req| {
             match generate_thumbnail_internal(&req.image_data, max_size, fixed_ratio) {
-                Ok(thumbnail) => thumbnail,
-                Err(e) => {
-                    eprintln!("Failed to generate thumbnail: {}", e);
-                    String::new()
-                }
+                Ok(thumbnail) => ThumbnailResult {
+                    thumbnail: Some(thumbnail),
+                    error: None,
+                },
+                Err(e) => ThumbnailResult {
+                    thumbnail: None,
+                    error: Some(e),
+                },
             }
         })
         .collect();
@@ -666,15 +721,15 @@ fn generate_thumbnail_internal(image_data: &str, max_size: u32, fixed_ratio: boo
     
     let (thumb_w, thumb_h, scaled_w, scaled_h, offset_x, offset_y) = if fixed_ratio {
         let tw = max_size;
-        let th = (max_size as f32 * 9.0 / 16.0) as u32;
+        let th = ((max_size as f32 * 9.0 / 16.0).max(1.0)) as u32;
         
         let img_ratio = width as f32 / height as f32;
         let canvas_ratio = 16.0 / 9.0;
         
         let (sw, sh) = if img_ratio > canvas_ratio {
-            (tw, (tw as f32 / img_ratio) as u32)
+            (tw, ((tw as f32 / img_ratio).max(1.0)) as u32)
         } else {
-            ((th as f32 * img_ratio) as u32, th)
+            (((th as f32 * img_ratio).max(1.0)) as u32, th)
         };
         
         let ox = (tw - sw) / 2;
@@ -683,9 +738,9 @@ fn generate_thumbnail_internal(image_data: &str, max_size: u32, fixed_ratio: boo
         (tw, th, sw, sh, ox, oy)
     } else {
         let (tw, th) = if width > height {
-            (max_size, (height as f32 * max_size as f32 / width as f32) as u32)
+            (max_size, ((height as f32 * max_size as f32 / width as f32).max(1.0)) as u32)
         } else {
-            ((width as f32 * max_size as f32 / height as f32) as u32, max_size)
+            (((width as f32 * max_size as f32 / height as f32).max(1.0)) as u32, max_size)
         };
         
         (tw, th, tw, th, 0, 0)
@@ -731,11 +786,8 @@ static OOBE_ACTIVE: AtomicBool = AtomicBool::new(false);
 async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::WebviewWindowBuilder;
     
-    let existing = app.get_webview_window("settings");
-    if existing.is_some() {
-        if let Some(window) = existing {
-            let _ = window.set_focus();
-        }
+    if let Some(window) = app.get_webview_window("settings") {
+        window.set_focus().map_err(|e| format!("Failed to focus settings window: {}", e))?;
         return Ok(());
     }
     
@@ -753,7 +805,7 @@ async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     .build()
     .map_err(|e| format!("Failed to create settings window: {}", e))?;
     
-    let _ = window.set_focus();
+    window.set_focus().map_err(|e| format!("Failed to focus new settings window: {}", e))?;
     
     Ok(())
 }
@@ -806,11 +858,58 @@ struct GitHubRelease {
     html_url: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UpdateCheckResult {
+    has_update: bool,
+    current_version: String,
+    latest_version: String,
+    release: Option<GitHubRelease>,
+}
+
+fn parse_version(version: &str) -> Option<(u32, u32, u32)> {
+    let version = version.trim_start_matches('v');
+    let parts: Vec<&str> = version.split('.').collect();
+    
+    if parts.len() >= 3 {
+        let major = parts[0].parse::<u32>().ok()?;
+        let minor = parts[1].parse::<u32>().ok()?;
+        let patch = parts[2].parse::<u32>().ok()?;
+        return Some((major, minor, patch));
+    }
+    None
+}
+
+fn is_newer_version(current: &str, latest: &str) -> bool {
+    let current_ver = parse_version(current);
+    let latest_ver = parse_version(latest);
+    
+    match (current_ver, latest_ver) {
+        (Some(c), Some(l)) => l > c,
+        _ => false,
+    }
+}
+
+fn validate_github_url(url: &str) -> Result<(), String> {
+    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+    
+    let valid_domains = ["github.com", "www.github.com", "api.github.com"];
+    let host = parsed.host_str().unwrap_or("");
+    
+    if !valid_domains.contains(&host) {
+        return Err(format!("Invalid GitHub URL: unexpected domain {}", host));
+    }
+    
+    Ok(())
+}
+
 #[tauri::command]
-async fn check_update() -> Result<GitHubRelease, String> {
+async fn check_update() -> Result<UpdateCheckResult, String> {
+    let current_version = env!("CARGO_PKG_VERSION");
+    
     let client = reqwest::Client::builder()
         .user_agent("ViewStage")
         .timeout(std::time::Duration::from_secs(10))
+        .https_only(true)
         .build()
         .map_err(|e| e.to_string())?;
     
@@ -818,38 +917,36 @@ async fn check_update() -> Result<GitHubRelease, String> {
         .get("https://api.github.com/repos/ospneam/ViewStage/releases/latest")
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Network error: {}", e))?;
     
     if !response.status().is_success() {
-        return Err(format!("请求失败: {}", response.status()));
+        return Err(format!("GitHub API error: {}", response.status()));
     }
     
     let release: GitHubRelease = response
         .json()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
     
-    Ok(release)
+    if release.tag_name.is_empty() {
+        return Err("Invalid release: empty tag name".to_string());
+    }
+    
+    validate_github_url(&release.html_url)?;
+    
+    let latest_version = release.tag_name.trim_start_matches('v');
+    let has_update = is_newer_version(current_version, latest_version);
+    
+    Ok(UpdateCheckResult {
+        has_update,
+        current_version: current_version.to_string(),
+        latest_version: latest_version.to_string(),
+        release: if has_update { Some(release) } else { None },
+    })
 }
 
-#[tauri::command]
-async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    let config_path = config_dir.join("config.json");
-    
-    if config_path.exists() {
-        if let Ok(config_content) = std::fs::read_to_string(&config_path) {
-            if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_content) {
-                return Ok(config);
-            }
-        }
-    }
-    
-    if !config_dir.exists() {
-        std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
-    }
-    
-    let default_config = serde_json::json!({
+fn get_default_config() -> serde_json::Value {
+    serde_json::json!({
         "width": 1920,
         "height": 1080,
         "language": "zh-CN",
@@ -885,10 +982,42 @@ async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value, String
             {"r": 255, "g": 255, "b": 255}
         ],
         "fileAssociations": false
-    });
+    })
+}
+
+fn merge_with_defaults(existing: &serde_json::Value, defaults: &serde_json::Value) -> serde_json::Value {
+    let mut merged = defaults.clone();
     
-    let config_str = serde_json::to_string_pretty(&default_config).map_err(|e| e.to_string())?;
-    std::fs::write(&config_path, config_str).map_err(|e| e.to_string())?;
+    if let (Some(existing_obj), Some(merged_obj)) = (existing.as_object(), merged.as_object_mut()) {
+        for (key, value) in existing_obj {
+            merged_obj.insert(key.clone(), value.clone());
+        }
+    }
+    
+    merged
+}
+
+#[tauri::command]
+async fn get_settings(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let config_path = config_dir.join("config.json");
+    
+    let default_config = get_default_config();
+    
+    if !config_path.exists() {
+        return Ok(default_config);
+    }
+    
+    if let Ok(config_content) = std::fs::read_to_string(&config_path) {
+        if let Ok(existing_config) = serde_json::from_str::<serde_json::Value>(&config_content) {
+            let merged_config = merge_with_defaults(&existing_config, &default_config);
+            
+            let merged_str = serde_json::to_string_pretty(&merged_config).map_err(|e| e.to_string())?;
+            std::fs::write(&config_path, merged_str).map_err(|e| e.to_string())?;
+            
+            return Ok(merged_config);
+        }
+    }
     
     Ok(default_config)
 }
@@ -902,6 +1031,7 @@ async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Re
     }
     
     let config_path = config_dir.join("config.json");
+    let temp_path = config_path.with_extension("json.tmp");
     
     let existing_settings = if config_path.exists() {
         if let Ok(config_content) = std::fs::read_to_string(&config_path) {
@@ -925,7 +1055,12 @@ async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Re
     };
     
     let config_str = serde_json::to_string_pretty(&existing_settings).map_err(|e| e.to_string())?;
-    std::fs::write(&config_path, &config_str).map_err(|e| e.to_string())?;
+    
+    std::fs::write(&temp_path, &config_str).map_err(|e| e.to_string())?;
+    std::fs::rename(&temp_path, &config_path).map_err(|e| {
+        let _ = std::fs::remove_file(&temp_path);
+        format!("Failed to rename config file: {}", e)
+    })?;
     
     Ok(())
 }
@@ -1041,36 +1176,7 @@ async fn close_splashscreen(app: tauri::AppHandle) -> Result<(), String> {
 async fn complete_oobe(app: tauri::AppHandle) -> Result<(), String> {
     OOBE_ACTIVE.store(false, Ordering::SeqCst);
     
-    let main_window = app.get_webview_window("main").ok_or("Main window not found")?;
-    
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    let config_path = config_dir.join("config.json");
-    
-    if config_path.exists() {
-        if let Ok(config_content) = std::fs::read_to_string(&config_path) {
-            if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_content) {
-                if let (Some(width), Some(height)) = (
-                    config.get("width").and_then(|v| v.as_u64()),
-                    config.get("height").and_then(|v| v.as_u64())
-                ) {
-                    let _ = main_window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                        width: width as u32,
-                        height: height as u32,
-                    }));
-                }
-            }
-        }
-    }
-    
-    let _ = main_window.show();
-    let _ = main_window.set_fullscreen(true);
-    let _ = main_window.set_focus();
-    
-    if let Some(oobe_window) = app.get_webview_window("oobe") {
-        let _ = oobe_window.close();
-    }
-    
-    main_window.eval("location.reload()").map_err(|e| e.to_string())?;
+    restart_application(&app);
     
     Ok(())
 }
@@ -1078,6 +1184,11 @@ async fn complete_oobe(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn is_oobe_active() -> bool {
     OOBE_ACTIVE.load(Ordering::SeqCst)
+}
+
+#[tauri::command]
+fn exit_app() {
+    std::process::exit(0);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1212,7 +1323,8 @@ pub fn run() {
             check_pdf_default_app,
             close_splashscreen,
             complete_oobe,
-            is_oobe_active
+            is_oobe_active,
+            exit_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

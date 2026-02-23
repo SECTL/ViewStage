@@ -1,6 +1,6 @@
 [package]
 name = "viewstage"
-version = "0.4.0"
+version = "0.4.5"
 description = "An application for video presentation and document annotation"
 authors = ["ospneam"]
 edition = "2021"
@@ -31,6 +31,7 @@ base64 = "0.22"
 rayon = "1.10"
 chrono = "0.4"
 reqwest = { version = "0.11", features = ["json"] }
+url = "2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
