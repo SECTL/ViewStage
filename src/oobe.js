@@ -322,7 +322,7 @@ function setupPage1Buttons() {
 
 function setupCloseButton() {
     document.getElementById('closeBtn').addEventListener('click', async () => {
-        await invoke('complete_oobe');
+        await invoke('exit_app');
     });
 }
 
