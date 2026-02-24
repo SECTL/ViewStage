@@ -347,8 +347,10 @@ fn rotate_image(image_data: String, direction: String) -> Result<String, String>
 /// 获取应用缓存目录
 #[tauri::command]
 fn get_cache_dir(app: tauri::AppHandle) -> Result<String, String> {
-    let cache_dir = app.path().app_cache_dir()
-        .map_err(|e| format!("Failed to get cache dir: {}", e))?;
+    let config_dir = app.path().app_config_dir()
+        .map_err(|e| format!("Failed to get config dir: {}", e))?;
+    
+    let cache_dir = config_dir.join("cache");
     
     if !cache_dir.exists() {
         std::fs::create_dir_all(&cache_dir)
@@ -361,8 +363,10 @@ fn get_cache_dir(app: tauri::AppHandle) -> Result<String, String> {
 /// 获取缓存大小
 #[tauri::command]
 fn get_cache_size(app: tauri::AppHandle) -> Result<u64, String> {
-    let cache_dir = app.path().app_cache_dir()
-        .map_err(|e| format!("Failed to get cache dir: {}", e))?;
+    let config_dir = app.path().app_config_dir()
+        .map_err(|e| format!("Failed to get config dir: {}", e))?;
+    
+    let cache_dir = config_dir.join("cache");
     
     if !cache_dir.exists() {
         return Ok(0);
@@ -391,8 +395,10 @@ fn get_cache_size(app: tauri::AppHandle) -> Result<u64, String> {
 /// 清除缓存
 #[tauri::command]
 fn clear_cache(app: tauri::AppHandle) -> Result<String, String> {
-    let cache_dir = app.path().app_cache_dir()
-        .map_err(|e| format!("Failed to get cache dir: {}", e))?;
+    let config_dir = app.path().app_config_dir()
+        .map_err(|e| format!("Failed to get config dir: {}", e))?;
+    
+    let cache_dir = config_dir.join("cache");
     
     if !cache_dir.exists() {
         return Ok("缓存目录不存在".to_string());
@@ -486,8 +492,7 @@ fn check_auto_clear_cache(app: tauri::AppHandle) -> Result<bool, String> {
     if days_since_last_clear >= auto_clear_days as i64 {
         log::info!("执行自动清除缓存，距上次清除 {} 天", days_since_last_clear);
         
-        let cache_dir = app.path().app_cache_dir()
-            .map_err(|e| format!("Failed to get cache dir: {}", e))?;
+        let cache_dir = config_dir.join("cache");
         
         if cache_dir.exists() {
             fn remove_dir_contents(path: &std::path::Path) {
@@ -1282,13 +1287,12 @@ fn restart_application(app: &tauri::AppHandle) {
 #[tauri::command]
 async fn reset_settings(app: tauri::AppHandle) -> Result<(), String> {
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    let config_path = config_dir.join("config.json");
     
-    if config_path.exists() {
-        std::fs::remove_file(&config_path).map_err(|e| e.to_string())?;
+    if config_dir.exists() {
+        std::fs::remove_dir_all(&config_dir).map_err(|e| e.to_string())?;
         
-        if config_path.exists() {
-            return Err("配置文件删除失败".to_string());
+        if config_dir.exists() {
+            return Err("配置目录删除失败".to_string());
         }
     }
     
@@ -1505,7 +1509,8 @@ async fn convert_docx_to_pdf_from_bytes(file_data: Vec<u8>, file_name: String, a
     let detection = detect_office_windows();
     println!("推荐使用: {:?}", detection.recommended);
     
-    let cache_dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let cache_dir = config_dir.join("cache");
     fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
     
     let temp_name = format!("temp_{}.docx", chrono::Local::now().format("%Y%m%d%H%M%S"));
@@ -1615,7 +1620,8 @@ async fn convert_docx_to_pdf(docx_path: String, app: tauri::AppHandle) -> Result
     
     println!("转换文件: {}", docx_absolute.display());
     
-    let cache_dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let cache_dir = config_dir.join("cache");
     fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
     
     let pdf_name = docx_absolute.file_stem()
@@ -1860,7 +1866,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             println!("单实例回调: args={:?}", args);
             if args.len() > 1 {

@@ -1282,13 +1282,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         btnOpenLogDir.addEventListener('click', async () => {
             try {
                 const { invoke } = window.__TAURI__.core;
-                const { Command } = window.__TAURI__.shell;
+                const { openPath } = window.__TAURI__.opener;
                 
                 const configDir = await invoke('get_config_dir');
                 const logDir = configDir + '\\log';
                 
-                const cmd = Command.create('explorer', [logDir]);
-                await cmd.execute();
+                await openPath(logDir);
             } catch (error) {
                 console.error('打开日志目录失败:', error);
                 showSettingsDialog('错误', '打开日志目录失败', 'error');

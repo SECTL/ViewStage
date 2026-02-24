@@ -6,6 +6,17 @@
   "permissions": [
     "core:default",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$APPCONFIG/**" },
+        { "path": "$APPCACHE/**" },
+        { "path": "$HOME/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" }
+      ]
+    },
     "core:window:allow-minimize",
     "core:window:allow-close",
     "dialog:default",
@@ -32,17 +43,6 @@
         { "path": "$APPCACHE/**" },
         { "path": "**" }
       ]
-    },
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        {
-          "name": "explorer",
-          "cmd": "explorer",
-          "args": true
-        }
-      ]
-    },
-    "shell:allow-execute"
+    }
   ]
 }
