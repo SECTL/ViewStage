@@ -32,6 +32,17 @@
         { "path": "$APPCACHE/**" },
         { "path": "**" }
       ]
-    }
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "explorer",
+          "cmd": "explorer",
+          "args": true
+        }
+      ]
+    },
+    "shell:allow-execute"
   ]
 }

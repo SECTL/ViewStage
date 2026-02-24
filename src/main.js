@@ -380,6 +380,17 @@ window.addEventListener('DOMContentLoaded', async () => {
         
         await initCacheDir();
         
+        // 检查并执行自动清除缓存
+        try {
+            const { invoke } = window.__TAURI__.core;
+            const cleared = await invoke('check_auto_clear_cache');
+            if (cleared) {
+                console.log('自动清除缓存已执行');
+            }
+        } catch (e) {
+            console.log('检查自动清除缓存失败:', e);
+        }
+        
         await loadCameraSetting();
         
         // 检测摄像头是否存在

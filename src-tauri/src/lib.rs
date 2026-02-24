@@ -421,6 +421,98 @@ fn clear_cache(app: tauri::AppHandle) -> Result<String, String> {
     Ok(format!("已清除 {} 个文件，共 {:.2} MB", cleared_files, cleared_size as f64 / 1024.0 / 1024.0))
 }
 
+/// 检查并执行自动清除缓存
+#[tauri::command]
+fn check_auto_clear_cache(app: tauri::AppHandle) -> Result<bool, String> {
+    let config_dir = app.path().app_config_dir()
+        .map_err(|e| format!("Failed to get config dir: {}", e))?;
+    
+    let config_file = config_dir.join("config.json");
+    
+    if !config_file.exists() {
+        return Ok(false);
+    }
+    
+    let config_content = std::fs::read_to_string(&config_file)
+        .map_err(|e| format!("Failed to read config: {}", e))?;
+    
+    let config: serde_json::Value = serde_json::from_str(&config_content)
+        .map_err(|e| format!("Failed to parse config: {}", e))?;
+    
+    let auto_clear_days = config.get("autoClearCacheDays")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    
+    if auto_clear_days == 0 {
+        log::info!("自动清除缓存已关闭");
+        return Ok(false);
+    }
+    
+    let last_clear_date = config.get("lastCacheClearDate")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    
+    if last_clear_date == today {
+        log::info!("今日已执行过自动清除缓存");
+        return Ok(false);
+    }
+    
+    if last_clear_date.is_empty() {
+        let mut updated_config = config.clone();
+        updated_config["lastCacheClearDate"] = serde_json::json!(today);
+        let updated_content = serde_json::to_string_pretty(&updated_config)
+            .map_err(|e| format!("Failed to serialize config: {}", e))?;
+        std::fs::write(&config_file, updated_content)
+            .map_err(|e| format!("Failed to write config: {}", e))?;
+        log::info!("首次设置自动清除缓存日期");
+        return Ok(false);
+    }
+    
+    let last_date = chrono::NaiveDate::parse_from_str(last_clear_date, "%Y-%m-%d")
+        .map_err(|e| format!("Failed to parse last clear date: {}", e))?;
+    let today_date = chrono::Local::now().date_naive();
+    
+    let days_since_last_clear = (today_date - last_date).num_days();
+    
+    if days_since_last_clear >= auto_clear_days as i64 {
+        log::info!("执行自动清除缓存，距上次清除 {} 天", days_since_last_clear);
+        
+        let cache_dir = app.path().app_cache_dir()
+            .map_err(|e| format!("Failed to get cache dir: {}", e))?;
+        
+        if cache_dir.exists() {
+            fn remove_dir_contents(path: &std::path::Path) {
+                if let Ok(entries) = std::fs::read_dir(path) {
+                    for entry in entries.flatten() {
+                        let entry_path = entry.path();
+                        if entry_path.is_dir() {
+                            remove_dir_contents(&entry_path);
+                            let _ = std::fs::remove_dir(&entry_path);
+                        } else {
+                            let _ = std::fs::remove_file(&entry_path);
+                        }
+                    }
+                }
+            }
+            remove_dir_contents(&cache_dir);
+        }
+        
+        let mut updated_config = config.clone();
+        updated_config["lastCacheClearDate"] = serde_json::json!(today);
+        let updated_content = serde_json::to_string_pretty(&updated_config)
+            .map_err(|e| format!("Failed to serialize config: {}", e))?;
+        std::fs::write(&config_file, updated_content)
+            .map_err(|e| format!("Failed to write config: {}", e))?;
+        
+        log::info!("自动清除缓存完成");
+        return Ok(true);
+    }
+    
+    Ok(false)
+}
+
 /// 获取应用配置目录
 #[tauri::command]
 fn get_config_dir(app: tauri::AppHandle) -> Result<String, String> {
@@ -1053,7 +1145,9 @@ fn get_default_config() -> serde_json::Value {
             {"r": 255, "g": 255, "b": 255}
         ],
         "fileAssociations": false,
-        "wordAssociations": false
+        "wordAssociations": false,
+        "autoClearCacheDays": 15,
+        "lastCacheClearDate": ""
     })
 }
 
@@ -1756,6 +1850,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             println!("单实例回调: args={:?}", args);
             if args.len() > 1 {
@@ -1858,6 +1953,7 @@ pub fn run() {
             get_cache_dir, 
             get_cache_size,
             clear_cache,
+            check_auto_clear_cache,
             get_config_dir, 
             get_cds_dir, 
             enhance_image, 

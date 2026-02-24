@@ -193,6 +193,14 @@ body {
     font-size: 16px;
     width: 20px;
     text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-icon img {
+    width: 16px;
+    height: 16px;
 }
 
 .btn-text {
@@ -201,19 +209,19 @@ body {
 }
 
 .btn-clear-cache {
-    padding: 8px 16px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 6px;
     color: #fff;
-    font-size: 13px;
+    font-size: 12px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
 .btn-clear-cache:hover {
-    background: rgba(255, 100, 100, 0.3);
-    border-color: rgba(255, 100, 100, 0.5);
+    background: rgba(255, 100, 100, 0.2);
+    border-color: rgba(255, 100, 100, 0.4);
 }
 
 .btn-clear-cache:active {

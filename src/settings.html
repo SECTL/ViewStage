@@ -29,6 +29,10 @@
                 <span class="btn-icon">⚙</span>
                 <span class="btn-text">应用设置</span>
             </button>
+            <button class="sidebar-btn" id="btnStorage">
+                <span class="btn-icon"><img src="assets/icon/folder.svg" width="16" height="16" style="filter: invert(1);"></span>
+                <span class="btn-text">存储</span>
+            </button>
             <button class="sidebar-btn" id="btnCanvas">
                 <span class="btn-icon">◐</span>
                 <span class="btn-text">Canvas调节</span>
@@ -296,9 +300,31 @@
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
+                </div>
+                
+                <!-- 存储页面 -->
+                <div class="page" id="pageStorage">
+                    <h2 class="page-title">存储</h2>
                     <div class="setting-item">
                         <span class="setting-label">缓存 <span id="cacheSize" style="color: #888; font-size: 12px;"></span></span>
                         <button class="btn-clear-cache" id="btnClearCache">清除缓存</button>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">自动清除缓存</span>
+                        <div class="custom-select" id="autoClearCacheSelect">
+                            <div class="select-selected" id="autoClearCacheSelected">每半月</div>
+                            <div class="select-options" id="autoClearCacheOptions">
+                                <div class="select-option" data-value="0">关闭</div>
+                                <div class="select-option" data-value="1">每天</div>
+                                <div class="select-option" data-value="7">每周</div>
+                                <div class="select-option" data-value="15">每半月</div>
+                                <div class="select-option" data-value="30">每月</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">日志</span>
+                        <button class="btn-clear-cache" id="btnOpenLogDir">打开日志目录</button>
                     </div>
                 </div>
                 

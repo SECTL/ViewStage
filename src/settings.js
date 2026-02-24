@@ -592,6 +592,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                     assocWord.checked = settings.wordAssociations === true;
                 }
                 
+                const autoClearCacheDays = settings.autoClearCacheDays ?? 15;
+                const autoClearCacheSelected = document.getElementById('autoClearCacheSelected');
+                const autoClearCacheOptions = document.getElementById('autoClearCacheOptions');
+                if (autoClearCacheSelected && autoClearCacheOptions) {
+                    const options = autoClearCacheOptions.querySelectorAll('.select-option');
+                    options.forEach(opt => {
+                        if (parseInt(opt.dataset.value) === autoClearCacheDays) {
+                            autoClearCacheSelected.textContent = opt.textContent;
+                        }
+                    });
+                }
+                
                 return settings;
             } catch (error) {
                 console.error('加载设置失败:', error);
@@ -1234,6 +1246,56 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     
+    // 自动清除缓存设置
+    const autoClearCacheSelect = document.getElementById('autoClearCacheSelect');
+    const autoClearCacheSelected = document.getElementById('autoClearCacheSelected');
+    const autoClearCacheOptions = document.getElementById('autoClearCacheOptions');
+    
+    if (autoClearCacheSelect && autoClearCacheSelected && autoClearCacheOptions && window.__TAURI__) {
+        autoClearCacheSelected.addEventListener('click', () => {
+            autoClearCacheSelect.classList.toggle('open');
+        });
+        
+        document.addEventListener('click', (e) => {
+            if (!autoClearCacheSelect.contains(e.target)) {
+                autoClearCacheSelect.classList.remove('open');
+            }
+        });
+        
+        autoClearCacheOptions.querySelectorAll('.select-option').forEach(option => {
+            option.addEventListener('click', async () => {
+                const days = parseInt(option.dataset.value);
+                autoClearCacheSelected.textContent = option.textContent;
+                autoClearCacheSelect.classList.remove('open');
+                
+                if (days === 0) {
+                    showSettingsDialog('警告', '若关闭自动清理可能导致C盘异常，强烈建议打开自动清理功能', 'error');
+                }
+                await saveSettings({ autoClearCacheDays: days });
+            });
+        });
+    }
+    
+    // 打开日志目录
+    const btnOpenLogDir = document.getElementById('btnOpenLogDir');
+    if (btnOpenLogDir && window.__TAURI__) {
+        btnOpenLogDir.addEventListener('click', async () => {
+            try {
+                const { invoke } = window.__TAURI__.core;
+                const { Command } = window.__TAURI__.shell;
+                
+                const configDir = await invoke('get_config_dir');
+                const logDir = configDir + '\\log';
+                
+                const cmd = Command.create('explorer', [logDir]);
+                await cmd.execute();
+            } catch (error) {
+                console.error('打开日志目录失败:', error);
+                showSettingsDialog('错误', '打开日志目录失败', 'error');
+            }
+        });
+    }
+    
     const restartModal = document.getElementById('restartModal');
     const restartLater = document.getElementById('restartLater');
     const restartNow = document.getElementById('restartNow');
@@ -1398,6 +1460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             const pageMap = {
                 'btnApp': 'pageApp',
+                'btnStorage': 'pageStorage',
                 'btnCanvas': 'pageCanvas',
                 'btnSource': 'pageSource',
                 'btnAbout': 'pageAbout'
