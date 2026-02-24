@@ -411,7 +411,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         console.log('画布初始化完成');
     } catch (error) {
         console.error('初始化失败:', error);
-        alert('应用初始化失败，请刷新页面重试');
+        showErrorDialog('初始化失败', '应用初始化失败，请刷新页面重试');
     }
 });
 
@@ -540,7 +540,7 @@ function listenForPdfFileOpen() {
             loadPdfFromPath(filePath);
         } else {
             console.error('无法解析文件路径，payload:', event.payload);
-            alert('无法解析文件路径');
+            showErrorDialog('文件错误', '无法解析文件路径');
         }
     }).then(() => {
         console.log('file-opened 事件监听注册成功');
@@ -837,6 +837,8 @@ async function generateThumbnailBlob(blob, maxSize = 150) {
 }
 
 async function loadPdfFromPath(filePath) {
+    const wasCameraOpen = state.isCameraOpen;
+    
     if (state.isCameraOpen) {
         await setCameraState(false);
     }
@@ -847,22 +849,30 @@ async function loadPdfFromPath(filePath) {
     const isWord = fileName_lower.endsWith('.docx') || fileName_lower.endsWith('.doc');
     
     if (isWord) {
-        showLoadingOverlay('正在解析 Word 文档...');
+        showLoadingOverlay('正在检测 Office 软件...');
         
         const { invoke } = window.__TAURI__.core;
         const { fs } = window.__TAURI__;
         
+        let detection;
         try {
-            const detection = await invoke('detect_office');
+            detection = await invoke('detect_office');
             console.log('Office 检测结果:', detection);
             if (detection.recommended === 'None') {
                 hideLoadingOverlay();
-                alert('未检测到可用的 Office 软件\n\n请安装以下软件之一：\n• Microsoft Word\n• WPS Office\n• LibreOffice\n\n或将 Word 文档另存为 PDF 后导入');
+                showErrorDialog('Office 未安装', '未检测到可用的 Office 软件\n\n请安装以下软件之一：\n• Microsoft Word\n• WPS Office\n• LibreOffice\n\n或将 Word 文档另存为 PDF 后导入');
+                if (wasCameraOpen) await setCameraState(true);
                 return;
             }
         } catch (e) {
+            hideLoadingOverlay();
             console.log('检测 Office 失败:', e);
+            showErrorDialog('检测失败', '检测 Office 软件失败，请重试');
+            if (wasCameraOpen) await setCameraState(true);
+            return;
         }
+        
+        updateLoadingProgress('正在读取文件...');
         
         let fileData;
         try {
@@ -870,7 +880,8 @@ async function loadPdfFromPath(filePath) {
         } catch (readError) {
             hideLoadingOverlay();
             console.error('文件读取失败:', readError);
-            alert('无法读取文件: ' + readError.message);
+            showErrorDialog('读取失败', '无法读取文件:\n' + readError.message);
+            if (wasCameraOpen) await setCameraState(true);
             return;
         }
         
@@ -883,6 +894,8 @@ async function loadPdfFromPath(filePath) {
         
         console.log('文件大小:', uint8Array.length, '字节');
         
+        updateLoadingProgress('正在处理 Word 文档...');
+        
         let pdfPath = null;
         try {
             pdfPath = await invoke('convert_docx_to_pdf_from_bytes', { 
@@ -893,18 +906,33 @@ async function loadPdfFromPath(filePath) {
         } catch (convertError) {
             hideLoadingOverlay();
             console.error('Word 转换失败:', convertError);
-            alert(`Word 文档转换失败\n\n${convertError}`);
+            const errorMsg = String(convertError);
+            let friendlyMsg = 'Word 文档转换失败';
+            
+            if (errorMsg.includes('Office') || errorMsg.includes('Word') || errorMsg.includes('WPS')) {
+                friendlyMsg = 'Office 软件调用失败\n\n可能的原因：\n• Office 软件未正确安装\n• 文件被其他程序占用\n• 文件格式不支持';
+            } else if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
+                friendlyMsg = '转换超时\n\n文件可能过大或 Office 软件响应缓慢';
+            } else if (errorMsg.includes('损坏') || errorMsg.includes('corrupt')) {
+                friendlyMsg = '文件可能已损坏\n\n请尝试用 Word 打开后重新保存';
+            }
+            
+            showErrorDialog('转换失败', friendlyMsg, () => {
+                loadPdfFromPath(filePath);
+            });
+            if (wasCameraOpen) await setCameraState(true);
             return;
         }
         
-        updateLoadingProgress('正在导入文件...');
+        updateLoadingProgress('正在渲染页面...');
         
         try {
             const pdfReady = await waitForPdfJs();
             if (!pdfReady) {
                 hideLoadingOverlay();
                 console.error('PDF.js 库加载超时');
-                alert('PDF库加载超时，请重启应用后重试');
+                showErrorDialog('加载失败', 'PDF 库加载超时\n\n请重启应用后重试');
+                if (wasCameraOpen) await setCameraState(true);
                 return;
             }
             
@@ -954,7 +982,8 @@ async function loadPdfFromPath(filePath) {
         } catch (error) {
             hideLoadingOverlay();
             console.error('文件导入失败:', error);
-            alert('文件导入失败，请确保文件格式正确');
+            showErrorDialog('导入失败', '文件导入失败，请确保文件格式正确');
+            if (wasCameraOpen) await setCameraState(true);
         }
         
         return;
@@ -967,7 +996,8 @@ async function loadPdfFromPath(filePath) {
         if (!pdfReady) {
             hideLoadingOverlay();
             console.error('PDF.js 库加载超时');
-            alert('PDF库加载超时，请重启应用后重试');
+            showErrorDialog('加载失败', 'PDF 库加载超时\n\n请重启应用后重试');
+            if (wasCameraOpen) await setCameraState(true);
             return;
         }
         
@@ -980,7 +1010,8 @@ async function loadPdfFromPath(filePath) {
         } catch (readError) {
             console.error('文件读取失败:', readError);
             hideLoadingOverlay();
-            alert('无法读取文件: ' + readError.message);
+            showErrorDialog('读取失败', '无法读取文件:\n' + readError.message);
+            if (wasCameraOpen) await setCameraState(true);
             return;
         }
         
@@ -1033,7 +1064,8 @@ async function loadPdfFromPath(filePath) {
     } catch (error) {
         hideLoadingOverlay();
         console.error('文件导入失败:', error);
-        alert('文件导入失败，请确保文件格式正确');
+        showErrorDialog('导入失败', '文件导入失败，请确保文件格式正确');
+        if (wasCameraOpen) await setCameraState(true);
     }
 }
 
@@ -4002,6 +4034,8 @@ function importPDF() {
         const file = e.target.files[0];
         if (!file) return;
         
+        const wasCameraOpen = state.isCameraOpen;
+        
         if (state.isCameraOpen) {
             await setCameraState(false);
         }
@@ -4010,27 +4044,36 @@ function importPDF() {
         const isWord = fileName.endsWith('.docx') || fileName.endsWith('.doc');
         
         if (isWord) {
-            showLoadingOverlay('正在解析 Word 文档...');
+            showLoadingOverlay('正在检测 Office 软件...');
             
             const { invoke } = window.__TAURI__.core;
             
+            let detection;
             try {
-                const detection = await invoke('detect_office');
+                detection = await invoke('detect_office');
                 console.log('Office 检测结果:', detection);
                 if (detection.recommended === 'None') {
                     hideLoadingOverlay();
-                    alert('未检测到可用的 Office 软件\n\n请安装以下软件之一：\n• Microsoft Word\n• WPS Office\n• LibreOffice\n\n或将 Word 文档另存为 PDF 后导入');
+                    showErrorDialog('Office 未安装', '未检测到可用的 Office 软件\n\n请安装以下软件之一：\n• Microsoft Word\n• WPS Office\n• LibreOffice\n\n或将 Word 文档另存为 PDF 后导入');
+                    if (wasCameraOpen) await setCameraState(true);
                     return;
                 }
             } catch (e) {
+                hideLoadingOverlay();
                 console.log('检测 Office 失败:', e);
+                showErrorDialog('检测失败', '检测 Office 软件失败，请重试');
+                if (wasCameraOpen) await setCameraState(true);
+                return;
             }
+            
+            updateLoadingProgress('正在读取文件...');
             
             const arrayBuffer = await file.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
             
             console.log('文件大小:', uint8Array.length, '字节');
-            console.log('文件前 16 字节:', Array.from(uint8Array.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+            
+            updateLoadingProgress('正在处理 Word 文档...');
             
             let pdfPath = null;
             try {
@@ -4042,17 +4085,32 @@ function importPDF() {
             } catch (convertError) {
                 hideLoadingOverlay();
                 console.error('Word 转换失败:', convertError);
-                alert(`Word 文档转换失败\n\n${convertError}`);
+                const errorMsg = String(convertError);
+                let friendlyMsg = 'Word 文档转换失败';
+                
+                if (errorMsg.includes('Office') || errorMsg.includes('Word') || errorMsg.includes('WPS')) {
+                    friendlyMsg = 'Office 软件调用失败\n\n可能的原因：\n• Office 软件未正确安装\n• 文件被其他程序占用\n• 文件格式不支持';
+                } else if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
+                    friendlyMsg = '转换超时\n\n文件可能过大或 Office 软件响应缓慢';
+                } else if (errorMsg.includes('损坏') || errorMsg.includes('corrupt')) {
+                    friendlyMsg = '文件可能已损坏\n\n请尝试用 Word 打开后重新保存';
+                }
+                
+                showErrorDialog('转换失败', friendlyMsg, () => {
+                    importPDF();
+                });
+                if (wasCameraOpen) await setCameraState(true);
                 return;
             }
             
-            updateLoadingProgress('正在导入文件...');
+            updateLoadingProgress('正在渲染页面...');
             
             try {
                 const pdfReady = await waitForPdfJs();
                 if (!pdfReady) {
                     hideLoadingOverlay();
-                    alert('PDF库加载超时，请重启应用后重试');
+                    showErrorDialog('加载失败', 'PDF 库加载超时\n\n请重启应用后重试');
+                    if (wasCameraOpen) await setCameraState(true);
                     return;
                 }
                 
@@ -4103,7 +4161,8 @@ function importPDF() {
             } catch (error) {
                 hideLoadingOverlay();
                 console.error('文件导入失败:', error);
-                alert('文件导入失败，请确保文件格式正确');
+                showErrorDialog('导入失败', '文件导入失败，请确保文件格式正确');
+                if (wasCameraOpen) await setCameraState(true);
             }
         } else {
             showLoadingOverlay('正在导入文件...');
@@ -4112,7 +4171,8 @@ function importPDF() {
                 const pdfReady = await waitForPdfJs();
                 if (!pdfReady) {
                     hideLoadingOverlay();
-                    alert('PDF库加载超时，请重启应用后重试');
+                    showErrorDialog('加载失败', 'PDF 库加载超时\n\n请重启应用后重试');
+                    if (wasCameraOpen) await setCameraState(true);
                     return;
                 }
                 
@@ -4154,7 +4214,8 @@ function importPDF() {
             } catch (error) {
                 hideLoadingOverlay();
                 console.error('文件导入失败:', error);
-                alert('文件导入失败，请确保文件格式正确');
+                showErrorDialog('导入失败', '文件导入失败，请确保文件格式正确');
+                if (wasCameraOpen) await setCameraState(true);
             }
         }
     };
@@ -4187,6 +4248,45 @@ function hideLoadingOverlay() {
     if (overlay) {
         overlay.remove();
     }
+}
+
+function showErrorDialog(title, message, retryCallback = null) {
+    const existing = document.getElementById('errorDialog');
+    if (existing) existing.remove();
+    
+    const dialog = document.createElement('div');
+    dialog.id = 'errorDialog';
+    dialog.className = 'error-dialog-overlay';
+    dialog.innerHTML = `
+        <div class="error-dialog">
+            <div class="error-icon">⚠️</div>
+            <div class="error-title">${title}</div>
+            <div class="error-message">${message}</div>
+            <div class="error-buttons">
+                ${retryCallback ? '<button class="error-btn error-btn-retry" id="errorRetry">重试</button>' : ''}
+                <button class="error-btn error-btn-close" id="errorClose">关闭</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    
+    const closeBtn = document.getElementById('errorClose');
+    const retryBtn = document.getElementById('errorRetry');
+    
+    closeBtn?.addEventListener('click', () => {
+        dialog.remove();
+    });
+    
+    retryBtn?.addEventListener('click', () => {
+        dialog.remove();
+        if (retryCallback) retryCallback();
+    });
+    
+    dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) {
+            dialog.remove();
+        }
+    });
 }
 
 function collapseFileSidebar() {
@@ -4582,7 +4682,7 @@ async function captureCamera() {
     
     if (!state.isCameraReady) {
         console.error('摄像头尚未就绪');
-        alert('摄像头尚未就绪，请稍后再试');
+        showErrorDialog('摄像头未就绪', '摄像头尚未就绪，请稍后再试');
         return;
     }
     
@@ -4591,7 +4691,7 @@ async function captureCamera() {
     
     if (!videoW || !videoH) {
         console.error('视频尺寸无效:', videoW, videoH);
-        alert('摄像头尚未就绪，请稍后再试');
+        showErrorDialog('摄像头未就绪', '摄像头尚未就绪，请稍后再试');
         return;
     }
     
