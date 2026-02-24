@@ -9,6 +9,34 @@
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // ==================== 自定义弹窗函数 ====================
+    function showSettingsDialog(title, message, type = 'info') {
+        const existing = document.getElementById('settingsDialog');
+        if (existing) existing.remove();
+        
+        const dialog = document.createElement('div');
+        dialog.id = 'settingsDialog';
+        dialog.className = 'settings-dialog-overlay';
+        
+        const icon = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+        
+        dialog.innerHTML = `
+            <div class="settings-dialog">
+                <div class="settings-dialog-icon">${icon}</div>
+                <div class="settings-dialog-title">${title}</div>
+                <div class="settings-dialog-message">${message}</div>
+                <button class="settings-dialog-btn" id="settingsDialogClose">确定</button>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+        
+        const closeBtn = document.getElementById('settingsDialogClose');
+        closeBtn?.addEventListener('click', () => dialog.remove());
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) dialog.remove();
+        });
+    }
+    
     // ==================== DOM 元素引用 ====================
     const btnClose = document.getElementById('btnClose');
     const auroraBg = document.getElementById('auroraBg');
@@ -623,7 +651,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         restartModal.classList.add('active');
                     }
                 } else {
-                    alert('保存设置失败，请重试');
+                    showSettingsDialog('保存失败', '保存设置失败，请重试', 'error');
                 }
             });
         });
@@ -672,7 +700,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         restartModal.classList.add('active');
                     }
                 } else {
-                    alert('保存设置失败，请重试');
+                    showSettingsDialog('保存失败', '保存设置失败，请重试', 'error');
                 }
             });
         });
@@ -708,7 +736,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const saved = await saveSettings({ defaultCamera: value });
             
             if (!saved) {
-                alert('保存设置失败，请重试');
+                showSettingsDialog('保存失败', '保存设置失败，请重试', 'error');
             }
         });
     }
@@ -1101,7 +1129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             } catch (error) {
                 console.error('导出设置失败:', error);
-                alert('导出失败: ' + error);
+                showSettingsDialog('导出失败', String(error), 'error');
             }
         });
     }
@@ -1131,7 +1159,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             } catch (error) {
                 console.error('导入设置失败:', error);
-                alert('导入失败: ' + error);
+                showSettingsDialog('导入失败', String(error), 'error');
             }
         });
     }
@@ -1157,8 +1185,51 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await invoke('reset_settings');
             } catch (error) {
                 console.error('重置失败:', error);
-                alert('重置失败: ' + error);
+                showSettingsDialog('重置失败', String(error), 'error');
                 modalOverlay.classList.remove('active');
+            }
+        });
+    }
+    
+    // 缓存管理
+    const cacheSizeEl = document.getElementById('cacheSize');
+    const btnClearCache = document.getElementById('btnClearCache');
+    
+    async function updateCacheSize() {
+        if (!window.__TAURI__) return;
+        try {
+            const { invoke } = window.__TAURI__.core;
+            const size = await invoke('get_cache_size');
+            if (cacheSizeEl) {
+                if (size === 0) {
+                    cacheSizeEl.textContent = '(0 B)';
+                } else if (size < 1024) {
+                    cacheSizeEl.textContent = `(${size} B)`;
+                } else if (size < 1024 * 1024) {
+                    cacheSizeEl.textContent = `(${(size / 1024).toFixed(1)} KB)`;
+                } else if (size < 1024 * 1024 * 1024) {
+                    cacheSizeEl.textContent = `(${(size / 1024 / 1024).toFixed(1)} MB)`;
+                } else {
+                    cacheSizeEl.textContent = `(${(size / 1024 / 1024 / 1024).toFixed(2)} GB)`;
+                }
+            }
+        } catch (error) {
+            console.error('获取缓存大小失败:', error);
+        }
+    }
+    
+    updateCacheSize();
+    
+    if (btnClearCache && window.__TAURI__) {
+        btnClearCache.addEventListener('click', async () => {
+            try {
+                const { invoke } = window.__TAURI__.core;
+                const result = await invoke('clear_cache');
+                showSettingsDialog('清除完成', result, 'success');
+                updateCacheSize();
+            } catch (error) {
+                console.error('清除缓存失败:', error);
+                showSettingsDialog('清除失败', String(error), 'error');
             }
         });
     }
@@ -1184,7 +1255,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await invoke('restart_app');
             } catch (error) {
                 console.error('重启失败:', error);
-                alert('重启失败: ' + error);
+                showSettingsDialog('重启失败', String(error), 'error');
             }
         });
     }

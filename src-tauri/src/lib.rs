@@ -351,6 +351,76 @@ fn get_cache_dir(app: tauri::AppHandle) -> Result<String, String> {
     Ok(cache_dir.to_string_lossy().to_string())
 }
 
+/// 获取缓存大小
+#[tauri::command]
+fn get_cache_size(app: tauri::AppHandle) -> Result<u64, String> {
+    let cache_dir = app.path().app_cache_dir()
+        .map_err(|e| format!("Failed to get cache dir: {}", e))?;
+    
+    if !cache_dir.exists() {
+        return Ok(0);
+    }
+    
+    fn dir_size(path: &std::path::Path) -> u64 {
+        let mut size = 0;
+        if path.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        size += dir_size(&path);
+                    } else {
+                        size += entry.metadata().map(|m| m.len()).unwrap_or(0);
+                    }
+                }
+            }
+        }
+        size
+    }
+    
+    Ok(dir_size(&cache_dir))
+}
+
+/// 清除缓存
+#[tauri::command]
+fn clear_cache(app: tauri::AppHandle) -> Result<String, String> {
+    let cache_dir = app.path().app_cache_dir()
+        .map_err(|e| format!("Failed to get cache dir: {}", e))?;
+    
+    if !cache_dir.exists() {
+        return Ok("缓存目录不存在".to_string());
+    }
+    
+    fn remove_dir_contents(path: &std::path::Path) -> (u64, u32) {
+        let mut size = 0u64;
+        let mut count = 0u32;
+        
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let entry_path = entry.path();
+                if entry_path.is_dir() {
+                    let (s, c) = remove_dir_contents(&entry_path);
+                    size += s;
+                    count += c;
+                    let _ = std::fs::remove_dir(&entry_path);
+                } else {
+                    size += entry.metadata().map(|m| m.len()).unwrap_or(0);
+                    if std::fs::remove_file(&entry_path).is_ok() {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        (size, count)
+    }
+    
+    let (cleared_size, cleared_files) = remove_dir_contents(&cache_dir);
+    
+    log::info!("清除缓存: {} 字节, {} 个文件", cleared_size, cleared_files);
+    
+    Ok(format!("已清除 {} 个文件，共 {:.2} MB", cleared_files, cleared_size as f64 / 1024.0 / 1024.0))
+}
+
 /// 获取应用配置目录
 #[tauri::command]
 fn get_config_dir(app: tauri::AppHandle) -> Result<String, String> {
@@ -1349,12 +1419,6 @@ async fn convert_docx_to_pdf_from_bytes(file_data: Vec<u8>, file_name: String, a
             .map_err(|e| format!("同步文件失败: {}", e))?;
     }
     
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    
-    let metadata = fs::metadata(&temp_docx_path)
-        .map_err(|e| format!("获取文件信息失败: {}", e))?;
-    println!("临时文件大小: {} 字节", metadata.len());
-    
     let pdf_name = temp_name.replace(".docx", ".pdf");
     let pdf_path = cache_dir.join(&pdf_name);
     
@@ -1370,19 +1434,31 @@ async fn convert_docx_to_pdf_from_bytes(file_data: Vec<u8>, file_name: String, a
     
     let result = match detection.recommended {
         OfficeSoftware::MicrosoftWord => {
-            convert_with_word_com(&docx_path_str, &pdf_path_str)
+            let r = convert_with_word_com(&docx_path_str, &pdf_path_str);
+            if r.is_err() && detection.has_wps {
+                println!("Word 转换失败，尝试 WPS...");
+                convert_with_wps_com(&docx_path_str, &pdf_path_str)
+            } else if r.is_err() && detection.has_libreoffice {
+                println!("Word 转换失败，尝试 LibreOffice...");
+                convert_with_libreoffice(&docx_path_str, &pdf_path_str, &cache_dir)
+            } else {
+                r
+            }
         }
         OfficeSoftware::WpsOffice => {
-            convert_with_wps_com(&docx_path_str, &pdf_path_str)
+            let r = convert_with_wps_com(&docx_path_str, &pdf_path_str);
+            if r.is_err() && detection.has_word {
+                println!("WPS 转换失败，尝试 Word...");
+                convert_with_word_com(&docx_path_str, &pdf_path_str)
+            } else if r.is_err() && detection.has_libreoffice {
+                println!("WPS 转换失败，尝试 LibreOffice...");
+                convert_with_libreoffice(&docx_path_str, &pdf_path_str, &cache_dir)
+            } else {
+                r
+            }
         }
         OfficeSoftware::LibreOffice => {
-            use std::process::Command;
-            let output_dir = cache_dir.to_str().unwrap().to_string();
-            Command::new("soffice")
-                .args(["--headless", "--convert-to", "pdf", "--outdir", &output_dir, &docx_path_str])
-                .output()
-                .map(|_| ())
-                .map_err(|e| format!("LibreOffice 转换失败: {}", e))
+            convert_with_libreoffice(&docx_path_str, &pdf_path_str, &cache_dir)
         }
         OfficeSoftware::None => {
             Err("未检测到可用的 Office 软件，请安装 Microsoft Word、WPS Office 或 LibreOffice".to_string())
@@ -1395,13 +1471,29 @@ async fn convert_docx_to_pdf_from_bytes(file_data: Vec<u8>, file_name: String, a
     
     result?;
     
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    for _ in 0..10 {
+        if pdf_path.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
     
     if pdf_path.exists() {
         Ok(pdf_path_str)
     } else {
         Err("PDF 文件生成失败".to_string())
     }
+}
+
+#[cfg(target_os = "windows")]
+fn convert_with_libreoffice(docx_path: &str, _pdf_path: &str, cache_dir: &std::path::PathBuf) -> Result<(), String> {
+    use std::process::Command;
+    let output_dir = cache_dir.to_str().unwrap().to_string();
+    Command::new("soffice")
+        .args(["--headless", "--convert-to", "pdf", "--outdir", &output_dir, docx_path])
+        .output()
+        .map(|_| ())
+        .map_err(|e| format!("LibreOffice 转换失败: {}", e))
 }
 
 #[cfg(target_os = "windows")]
@@ -1477,31 +1569,16 @@ fn convert_with_word_com(docx_path: &str, pdf_path: &str) -> Result<(), String> 
     let ps_script = format!(r#"
         $ErrorActionPreference = 'Stop'
         
-        Write-Host "开始 Word 转换"
-        Write-Host "输入: {input}"
-        Write-Host "输出: {output}"
-        
-        if (-not (Test-Path '{input}')) {{
-            throw "输入文件不存在: {input}"
-        }}
-        
         $word = New-Object -ComObject Word.Application
         $word.Visible = $false
         $word.DisplayAlerts = 0
         $doc = $null
         try {{
-            Write-Host "正在打开文档..."
             $doc = $word.Documents.Open('{input}', $false, $false, $false)
             if (-not $doc) {{
                 throw "无法打开文档，文件可能已损坏或格式不支持"
             }}
-            Write-Host "文档已打开，正在导出 PDF..."
             $doc.ExportAsFixedFormat('{output}', 17)
-            Write-Host "转换完成"
-        }}
-        catch {{
-            Write-Host "错误: $_"
-            throw $_
         }}
         finally {{
             if ($doc) {{ 
@@ -1516,12 +1593,9 @@ fn convert_with_word_com(docx_path: &str, pdf_path: &str) -> Result<(), String> 
     "#, input = docx_path.replace("'", "''"), output = pdf_path.replace("'", "''"));
     
     let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .args(["-WindowStyle", "Hidden", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
         .output()
         .map_err(|e| format!("PowerShell 执行失败: {}", e))?;
-    
-    println!("PowerShell stdout: {}", String::from_utf8_lossy(&output.stdout));
-    println!("PowerShell stderr: {}", String::from_utf8_lossy(&output.stderr));
     
     if output.status.success() {
         Ok(())
@@ -1542,14 +1616,6 @@ fn convert_with_wps_com(docx_path: &str, pdf_path: &str) -> Result<(), String> {
     let ps_script = format!(r#"
         $ErrorActionPreference = 'Stop'
         
-        Write-Host "开始 WPS 转换"
-        Write-Host "输入: {input}"
-        Write-Host "输出: {output}"
-        
-        if (-not (Test-Path '{input}')) {{
-            throw "输入文件不存在: {input}"
-        }}
-        
         $wps = $null
         try {{
             $wps = New-Object -ComObject Kwps.Application
@@ -1560,18 +1626,11 @@ fn convert_with_wps_com(docx_path: &str, pdf_path: &str) -> Result<(), String> {
         $wps.DisplayAlerts = 0
         $doc = $null
         try {{
-            Write-Host "正在打开文档..."
             $doc = $wps.Documents.Open('{input}', $false, $false, $false)
             if (-not $doc) {{
                 throw "无法打开文档，文件可能已损坏或格式不支持"
             }}
-            Write-Host "文档已打开，正在导出 PDF..."
             $doc.ExportAsFixedFormat('{output}', 17)
-            Write-Host "转换完成"
-        }}
-        catch {{
-            Write-Host "错误: $_"
-            throw $_
         }}
         finally {{
             if ($doc) {{ 
@@ -1586,12 +1645,9 @@ fn convert_with_wps_com(docx_path: &str, pdf_path: &str) -> Result<(), String> {
     "#, input = docx_path.replace("'", "''"), output = pdf_path.replace("'", "''"));
     
     let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .args(["-WindowStyle", "Hidden", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
         .output()
         .map_err(|e| format!("PowerShell 执行失败: {}", e))?;
-    
-    println!("PowerShell stdout: {}", String::from_utf8_lossy(&output.stdout));
-    println!("PowerShell stderr: {}", String::from_utf8_lossy(&output.stderr));
     
     if output.status.success() {
         Ok(())
@@ -1677,6 +1733,25 @@ async fn set_file_type_icons() -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    use simplelog::*;
+    use std::fs::File;
+    
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("com.viewstage.app");
+    let log_dir = config_dir.join("log");
+    
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        eprintln!("无法创建日志目录: {}", e);
+    }
+    
+    let log_file = log_dir.join(format!("viewstage_{}.log", chrono::Local::now().format("%Y%m%d")));
+    
+    if let Ok(file) = File::create(&log_file) {
+        let _ = WriteLogger::init(LevelFilter::Info, Config::default(), file);
+        log::info!("日志系统初始化成功");
+    }
+    
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
@@ -1781,6 +1856,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_cache_dir, 
+            get_cache_size,
+            clear_cache,
             get_config_dir, 
             get_cds_dir, 
             enhance_image, 

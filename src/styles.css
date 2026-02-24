@@ -1145,6 +1145,106 @@ body {
     font-weight: 500;
 }
 
+/* ========== 错误弹窗 ========== */
+.error-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.error-dialog {
+    background: rgba(40, 40, 40, 0.98);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    padding: 24px;
+    min-width: 300px;
+    max-width: 450px;
+    text-align: center;
+    animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.error-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.error-title {
+    color: #fff;
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.error-message {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 20px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.error-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+}
+
+.error-btn {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.error-btn-close {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.error-btn-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.error-btn-retry {
+    background: #3498db;
+    color: #fff;
+}
+
+.error-btn-retry:hover {
+    background: #2980b9;
+}
+
 /* ========== 菜单弹出 ========== */
 .menu-popup {
     position: absolute;
