@@ -49,6 +49,18 @@
         "name": "PDF Document",
         "role": "Viewer",
         "mimeType": "application/pdf"
+      },
+      {
+        "ext": ["docx"],
+        "name": "Word Document",
+        "role": "Viewer",
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      },
+      {
+        "ext": ["doc"],
+        "name": "Word 97-2003 Document",
+        "role": "Viewer",
+        "mimeType": "application/msword"
       }
     ]
   },

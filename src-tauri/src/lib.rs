@@ -1192,6 +1192,420 @@ fn exit_app() {
     std::process::exit(0);
 }
 
+// ==================== Office 文件转换 ====================
+
+/// Office 软件类型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum OfficeSoftware {
+    MicrosoftWord,
+    WpsOffice,
+    LibreOffice,
+    None,
+}
+
+/// Office 检测结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OfficeDetectionResult {
+    pub has_word: bool,
+    pub has_wps: bool,
+    pub has_libreoffice: bool,
+    pub recommended: OfficeSoftware,
+}
+
+#[cfg(target_os = "windows")]
+fn detect_office_windows() -> OfficeDetectionResult {
+    use winreg::RegKey;
+    use winreg::enums::*;
+    
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    
+    let has_word = check_word_installed(&hkcu, &hklm);
+    let has_wps = check_wps_installed(&hkcu, &hklm);
+    let has_libreoffice = check_libreoffice_installed(&hkcu, &hklm);
+    
+    let recommended = if has_word {
+        OfficeSoftware::MicrosoftWord
+    } else if has_wps {
+        OfficeSoftware::WpsOffice
+    } else if has_libreoffice {
+        OfficeSoftware::LibreOffice
+    } else {
+        OfficeSoftware::None
+    };
+    
+    OfficeDetectionResult {
+        has_word,
+        has_wps,
+        has_libreoffice,
+        recommended,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn check_word_installed(hkcu: &winreg::RegKey, hklm: &winreg::RegKey) -> bool {
+    let paths = [
+        "SOFTWARE\\Microsoft\\Office\\Word",
+        "SOFTWARE\\Microsoft\\Office\\16.0\\Word",
+        "SOFTWARE\\Microsoft\\Office\\15.0\\Word",
+        "SOFTWARE\\Microsoft\\Office\\14.0\\Word",
+        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\WINWORD.EXE",
+    ];
+    
+    for path in &paths {
+        if hkcu.open_subkey(path).is_ok() || hklm.open_subkey(path).is_ok() {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn check_wps_installed(hkcu: &winreg::RegKey, hklm: &winreg::RegKey) -> bool {
+    let paths = [
+        "SOFTWARE\\Kingsoft\\Office",
+        "SOFTWARE\\WPS",
+        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\wps.exe",
+    ];
+    
+    for path in &paths {
+        if hkcu.open_subkey(path).is_ok() || hklm.open_subkey(path).is_ok() {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn check_libreoffice_installed(hkcu: &winreg::RegKey, hklm: &winreg::RegKey) -> bool {
+    let paths = [
+        "SOFTWARE\\LibreOffice",
+        "SOFTWARE\\The Document Foundation\\LibreOffice",
+    ];
+    
+    for path in &paths {
+        if hkcu.open_subkey(path).is_ok() || hklm.open_subkey(path).is_ok() {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(not(target_os = "windows"))]
+fn detect_office_windows() -> OfficeDetectionResult {
+    OfficeDetectionResult {
+        has_word: false,
+        has_wps: false,
+        has_libreoffice: false,
+        recommended: OfficeSoftware::None,
+    }
+}
+
+#[tauri::command]
+fn detect_office() -> OfficeDetectionResult {
+    detect_office_windows()
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn convert_docx_to_pdf_from_bytes(file_data: Vec<u8>, file_name: String, app: tauri::AppHandle) -> Result<String, String> {
+    use std::fs;
+    use std::io::Write;
+    
+    println!("收到文件数据: {} 字节", file_data.len());
+    println!("文件名: {}", file_name);
+    
+    if file_data.len() < 4 {
+        return Err("文件数据太小，可能已损坏".to_string());
+    }
+    
+    let header: Vec<String> = file_data.iter().take(16).map(|b| format!("{:02x}", b)).collect();
+    println!("文件头: {}", header.join(" "));
+    
+    if file_data[0] == 0x50 && file_data[1] == 0x4B {
+        println!("检测到 ZIP 格式 (docx)");
+    } else if file_data[0] == 0xD0 && file_data[1] == 0xCF {
+        println!("检测到 OLE 格式 (doc)");
+    } else {
+        println!("未知文件格式");
+    }
+    
+    let detection = detect_office_windows();
+    println!("推荐使用: {:?}", detection.recommended);
+    
+    let cache_dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    
+    let temp_name = format!("temp_{}.docx", chrono::Local::now().format("%Y%m%d%H%M%S"));
+    let temp_docx_path = cache_dir.join(&temp_name);
+    
+    {
+        let mut file = fs::File::create(&temp_docx_path)
+            .map_err(|e| format!("创建临时文件失败: {}", e))?;
+        file.write_all(&file_data)
+            .map_err(|e| format!("写入临时文件失败: {}", e))?;
+        file.sync_all()
+            .map_err(|e| format!("同步文件失败: {}", e))?;
+    }
+    
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    
+    let metadata = fs::metadata(&temp_docx_path)
+        .map_err(|e| format!("获取文件信息失败: {}", e))?;
+    println!("临时文件大小: {} 字节", metadata.len());
+    
+    let pdf_name = temp_name.replace(".docx", ".pdf");
+    let pdf_path = cache_dir.join(&pdf_name);
+    
+    if pdf_path.exists() {
+        fs::remove_file(&pdf_path).map_err(|e| e.to_string())?;
+    }
+    
+    let docx_path_str = temp_docx_path.to_string_lossy().to_string();
+    let pdf_path_str = pdf_path.to_string_lossy().to_string();
+    
+    println!("临时文件路径: {}", docx_path_str);
+    println!("输出 PDF 路径: {}", pdf_path_str);
+    
+    let result = match detection.recommended {
+        OfficeSoftware::MicrosoftWord => {
+            convert_with_word_com(&docx_path_str, &pdf_path_str)
+        }
+        OfficeSoftware::WpsOffice => {
+            convert_with_wps_com(&docx_path_str, &pdf_path_str)
+        }
+        OfficeSoftware::LibreOffice => {
+            use std::process::Command;
+            let output_dir = cache_dir.to_str().unwrap().to_string();
+            Command::new("soffice")
+                .args(["--headless", "--convert-to", "pdf", "--outdir", &output_dir, &docx_path_str])
+                .output()
+                .map(|_| ())
+                .map_err(|e| format!("LibreOffice 转换失败: {}", e))
+        }
+        OfficeSoftware::None => {
+            Err("未检测到可用的 Office 软件，请安装 Microsoft Word、WPS Office 或 LibreOffice".to_string())
+        }
+    };
+    
+    if let Err(e) = fs::remove_file(&temp_docx_path) {
+        println!("清理临时文件失败: {}", e);
+    }
+    
+    result?;
+    
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    
+    if pdf_path.exists() {
+        Ok(pdf_path_str)
+    } else {
+        Err("PDF 文件生成失败".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn convert_docx_to_pdf(docx_path: String, app: tauri::AppHandle) -> Result<String, String> {
+    use std::process::Command;
+    use std::fs;
+    
+    let detection = detect_office_windows();
+    
+    let docx = std::path::Path::new(&docx_path);
+    let docx_absolute = std::fs::canonicalize(docx)
+        .map_err(|e| format!("无法获取文件绝对路径: {}", e))?;
+    
+    if !docx_absolute.exists() {
+        return Err(format!("文件不存在: {}", docx_absolute.display()));
+    }
+    
+    println!("转换文件: {}", docx_absolute.display());
+    
+    let cache_dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    
+    let pdf_name = docx_absolute.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("converted")
+        .to_string() + ".pdf";
+    let pdf_path = cache_dir.join(&pdf_name);
+    
+    if pdf_path.exists() {
+        fs::remove_file(&pdf_path).map_err(|e| e.to_string())?;
+    }
+    
+    let docx_path_str = docx_absolute.to_string_lossy().to_string();
+    let pdf_path_str = pdf_path.to_string_lossy().to_string();
+    
+    match detection.recommended {
+        OfficeSoftware::MicrosoftWord => {
+            convert_with_word_com(&docx_path_str, &pdf_path_str)?;
+        }
+        OfficeSoftware::WpsOffice => {
+            convert_with_wps_com(&docx_path_str, &pdf_path_str)?;
+        }
+        OfficeSoftware::LibreOffice => {
+            let output_dir = cache_dir.to_str().unwrap().to_string();
+            Command::new("soffice")
+                .args(["--headless", "--convert-to", "pdf", "--outdir", &output_dir, &docx_path_str])
+                .output()
+                .map_err(|e| format!("LibreOffice 转换失败: {}", e))?;
+        }
+        OfficeSoftware::None => {
+            return Err("未检测到可用的 Office 软件，请安装 Microsoft Word、WPS Office 或 LibreOffice".to_string());
+        }
+    }
+    
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    
+    if pdf_path.exists() {
+        Ok(pdf_path_str)
+    } else {
+        Err("PDF 文件生成失败".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn convert_with_word_com(docx_path: &str, pdf_path: &str) -> Result<(), String> {
+    use std::process::Command;
+    
+    println!("Word COM 转换开始");
+    println!("  输入文件: {}", docx_path);
+    println!("  输出文件: {}", pdf_path);
+    
+    let ps_script = format!(r#"
+        $ErrorActionPreference = 'Stop'
+        
+        Write-Host "开始 Word 转换"
+        Write-Host "输入: {input}"
+        Write-Host "输出: {output}"
+        
+        if (-not (Test-Path '{input}')) {{
+            throw "输入文件不存在: {input}"
+        }}
+        
+        $word = New-Object -ComObject Word.Application
+        $word.Visible = $false
+        $word.DisplayAlerts = 0
+        $doc = $null
+        try {{
+            Write-Host "正在打开文档..."
+            $doc = $word.Documents.Open('{input}', $false, $false, $false)
+            if (-not $doc) {{
+                throw "无法打开文档，文件可能已损坏或格式不支持"
+            }}
+            Write-Host "文档已打开，正在导出 PDF..."
+            $doc.ExportAsFixedFormat('{output}', 17)
+            Write-Host "转换完成"
+        }}
+        catch {{
+            Write-Host "错误: $_"
+            throw $_
+        }}
+        finally {{
+            if ($doc) {{ 
+                try {{ $doc.Close($false) }} catch {{}}
+                [System.Runtime.Interopservices.Marshal]::ReleaseComObject($doc) | Out-Null
+            }}
+            try {{ $word.Quit() }} catch {{}}
+            [System.Runtime.Interopservices.Marshal]::ReleaseComObject($word) | Out-Null
+            [GC]::Collect()
+            [GC]::WaitForPendingFinalizers()
+        }}
+    "#, input = docx_path.replace("'", "''"), output = pdf_path.replace("'", "''"));
+    
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .output()
+        .map_err(|e| format!("PowerShell 执行失败: {}", e))?;
+    
+    println!("PowerShell stdout: {}", String::from_utf8_lossy(&output.stdout));
+    println!("PowerShell stderr: {}", String::from_utf8_lossy(&output.stderr));
+    
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("Word 转换失败: {}", stderr))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn convert_with_wps_com(docx_path: &str, pdf_path: &str) -> Result<(), String> {
+    use std::process::Command;
+    
+    println!("WPS COM 转换开始");
+    println!("  输入文件: {}", docx_path);
+    println!("  输出文件: {}", pdf_path);
+    
+    let ps_script = format!(r#"
+        $ErrorActionPreference = 'Stop'
+        
+        Write-Host "开始 WPS 转换"
+        Write-Host "输入: {input}"
+        Write-Host "输出: {output}"
+        
+        if (-not (Test-Path '{input}')) {{
+            throw "输入文件不存在: {input}"
+        }}
+        
+        $wps = $null
+        try {{
+            $wps = New-Object -ComObject Kwps.Application
+        }} catch {{
+            $wps = New-Object -ComObject WPS.Application
+        }}
+        $wps.Visible = $false
+        $wps.DisplayAlerts = 0
+        $doc = $null
+        try {{
+            Write-Host "正在打开文档..."
+            $doc = $wps.Documents.Open('{input}', $false, $false, $false)
+            if (-not $doc) {{
+                throw "无法打开文档，文件可能已损坏或格式不支持"
+            }}
+            Write-Host "文档已打开，正在导出 PDF..."
+            $doc.ExportAsFixedFormat('{output}', 17)
+            Write-Host "转换完成"
+        }}
+        catch {{
+            Write-Host "错误: $_"
+            throw $_
+        }}
+        finally {{
+            if ($doc) {{ 
+                try {{ $doc.Close($false) }} catch {{}}
+                [System.Runtime.Interopservices.Marshal]::ReleaseComObject($doc) | Out-Null
+            }}
+            try {{ $wps.Quit() }} catch {{}}
+            [System.Runtime.Interopservices.Marshal]::ReleaseComObject($wps) | Out-Null
+            [GC]::Collect()
+            [GC]::WaitForPendingFinalizers()
+        }}
+    "#, input = docx_path.replace("'", "''"), output = pdf_path.replace("'", "''"));
+    
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .output()
+        .map_err(|e| format!("PowerShell 执行失败: {}", e))?;
+    
+    println!("PowerShell stdout: {}", String::from_utf8_lossy(&output.stdout));
+    println!("PowerShell stderr: {}", String::from_utf8_lossy(&output.stderr));
+    
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("WPS 转换失败: {}", stderr))
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+async fn convert_docx_to_pdf(_docx_path: String, _app: tauri::AppHandle) -> Result<String, String> {
+    Err("此功能仅支持 Windows 系统".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1325,7 +1739,10 @@ pub fn run() {
             close_splashscreen,
             complete_oobe,
             is_oobe_active,
-            exit_app
+            exit_app,
+            detect_office,
+            convert_docx_to_pdf,
+            convert_docx_to_pdf_from_bytes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

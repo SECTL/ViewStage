@@ -852,13 +852,49 @@ async function loadPdfFromPath(filePath) {
             return;
         }
         
-        console.log('开始加载PDF:', filePath);
+        console.log('开始加载文件:', filePath);
+        
+        let pdfPath = null;
+        let cleanupPdf = false;
+        const fileName_lower = filePath.toLowerCase();
+        
+        if (fileName_lower.endsWith('.docx') || fileName_lower.endsWith('.doc')) {
+            showLoadingOverlay('正在转换 Word 文档...');
+            
+            const { invoke } = window.__TAURI__.core;
+            
+            try {
+                const detection = await invoke('detect_office');
+                if (detection.recommended === 'None') {
+                    hideLoadingOverlay();
+                    alert('未检测到可用的 Office 软件\n\n请安装以下软件之一：\n• Microsoft Word\n• WPS Office\n• LibreOffice\n\n或将 Word 文档另存为 PDF 后导入');
+                    return;
+                }
+            } catch (e) {
+                console.log('检测 Office 失败:', e);
+            }
+            
+            try {
+                pdfPath = await invoke('convert_docx_to_pdf', { docxPath: filePath });
+                cleanupPdf = true;
+                console.log('Word 文档已转换为 PDF:', pdfPath);
+            } catch (convertError) {
+                hideLoadingOverlay();
+                console.error('Word 转换失败:', convertError);
+                alert(`Word 文档转换失败\n\n${convertError}`);
+                return;
+            }
+            
+            showLoadingOverlay('正在导入文件...');
+        }
         
         const { fs } = window.__TAURI__;
         
+        const actualPath = pdfPath || filePath;
+        
         let fileData;
         try {
-            fileData = await fs.readFile(filePath);
+            fileData = await fs.readFile(actualPath);
             console.log('文件读取成功，数据类型:', typeof fileData, '是否数组:', Array.isArray(fileData));
         } catch (readError) {
             console.error('文件读取失败:', readError);
@@ -882,7 +918,7 @@ async function loadPdfFromPath(filePath) {
         console.log('PDF加载成功，页数:', pdf.numPages);
         
         const totalPages = pdf.numPages;
-        const fileName = filePath.split(/[/\\]/).pop().replace('.pdf', '');
+        const fileName = filePath.split(/[/\\]/).pop().replace(/\.(pdf|docx|doc)$/i, '');
         
         const folder = {
             name: fileName,
@@ -911,11 +947,19 @@ async function loadPdfFromPath(filePath) {
         }
         
         hideLoadingOverlay();
-        console.log(`PDF已导入: ${folder.name}，共${folder.pages.length}页`);
+        console.log(`文件已导入: ${folder.name}，共${folder.pages.length}页`);
+        
+        if (cleanupPdf && pdfPath) {
+            try {
+                await fs.remove(pdfPath);
+            } catch (e) {
+                console.log('清理转换的 PDF 失败:', e);
+            }
+        }
     } catch (error) {
         hideLoadingOverlay();
-        console.error('PDF导入失败:', error);
-        alert('PDF导入失败，请确保文件格式正确');
+        console.error('文件导入失败:', error);
+        alert('文件导入失败，请确保文件格式正确');
     }
 }
 
@@ -3840,9 +3884,12 @@ function updateFileSidebarContent() {
         contentHTML = '<div class="sidebar-empty">暂无文件</div>';
     } else {
         state.fileList.forEach((folder, index) => {
+            const iconSrc = folder.isWord 
+                ? 'assets/icon/file-earmark-word-fill.svg' 
+                : 'assets/icon/pdf.svg';
             contentHTML += `
                 <div class="sidebar-folder-item" data-index="${index}">
-                    <img src="assets/icon/pdf.svg" width="16" height="16" alt="文件夹" style="filter: invert(1);">
+                    <img src="${iconSrc}" width="16" height="16" alt="文件" style="filter: invert(1);">
                     <span class="folder-name">${folder.name}</span>
                     <span class="folder-count">${folder.pages.length}页</span>
                 </div>
@@ -3863,7 +3910,7 @@ function updateFileSidebarContent() {
 function importPDF() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.pdf';
+    input.accept = '.pdf,.docx,.doc';
     
     input.onchange = async (e) => {
         const file = e.target.files[0];
@@ -3873,55 +3920,156 @@ function importPDF() {
             await setCameraState(false);
         }
         
-        showLoadingOverlay('正在导入文件...');
+        const fileName = file.name.toLowerCase();
+        const isWord = fileName.endsWith('.docx') || fileName.endsWith('.doc');
         
-        try {
-            const pdfReady = await waitForPdfJs();
-            if (!pdfReady) {
-                hideLoadingOverlay();
-                alert('PDF库加载超时，请重启应用后重试');
-                return;
+        if (isWord) {
+            showLoadingOverlay('正在解析 Word 文档...');
+            
+            const { invoke } = window.__TAURI__.core;
+            
+            try {
+                const detection = await invoke('detect_office');
+                console.log('Office 检测结果:', detection);
+                if (detection.recommended === 'None') {
+                    hideLoadingOverlay();
+                    alert('未检测到可用的 Office 软件\n\n请安装以下软件之一：\n• Microsoft Word\n• WPS Office\n• LibreOffice\n\n或将 Word 文档另存为 PDF 后导入');
+                    return;
+                }
+            } catch (e) {
+                console.log('检测 Office 失败:', e);
             }
             
             const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const uint8Array = new Uint8Array(arrayBuffer);
             
-            const totalPages = pdf.numPages;
-            const folder = {
-                name: file.name.replace('.pdf', ''),
-                pages: []
-            };
+            console.log('文件大小:', uint8Array.length, '字节');
+            console.log('文件前 16 字节:', Array.from(uint8Array.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '));
             
-            folder.pages = await processPdfPagesParallel(pdf, totalPages);
-            
-            state.fileList.push(folder);
-            updateFileSidebarContent();
-            
-            const existingFileSidebar = document.querySelector('.file-sidebar');
-            if (!existingFileSidebar) {
-                expandFileSidebar();
+            let pdfPath = null;
+            try {
+                pdfPath = await invoke('convert_docx_to_pdf_from_bytes', { 
+                    fileData: Array.from(uint8Array),
+                    fileName: file.name
+                });
+                console.log('Word 文档已转换为 PDF:', pdfPath);
+            } catch (convertError) {
+                hideLoadingOverlay();
+                console.error('Word 转换失败:', convertError);
+                alert(`Word 文档转换失败\n\n${convertError}`);
+                return;
             }
             
-            if (folder.pages.length > 0) {
-                const firstPage = folder.pages[0];
-                const img = new Image();
-                img.onload = () => {
-                    state.currentImage = img;
-                    state.currentFolderIndex = state.fileList.length - 1;
-                    state.currentFolderPageIndex = 0;
-                    drawImageToCenter(img);
-                    updatePhotoButtonState();
-                    updateEnhanceButtonState();
+            updateLoadingProgress('正在导入文件...');
+            
+            try {
+                const pdfReady = await waitForPdfJs();
+                if (!pdfReady) {
+                    hideLoadingOverlay();
+                    alert('PDF库加载超时，请重启应用后重试');
+                    return;
+                }
+                
+                const { readFile, remove } = window.__TAURI__.fs;
+                const pdfBytes = await readFile(pdfPath);
+                const pdfArrayBuffer = pdfBytes.buffer;
+                const pdf = await pdfjsLib.getDocument({ data: pdfArrayBuffer }).promise;
+                
+                const totalPages = pdf.numPages;
+                const folder = {
+                    name: file.name.replace(/\.(pdf|docx|doc)$/i, ''),
+                    pages: [],
+                    isWord: true
                 };
-                img.src = firstPage.full;
+                
+                folder.pages = await processPdfPagesParallel(pdf, totalPages);
+                
+                state.fileList.push(folder);
+                updateFileSidebarContent();
+                
+                const existingFileSidebar = document.querySelector('.file-sidebar');
+                if (!existingFileSidebar) {
+                    expandFileSidebar();
+                }
+                
+                if (folder.pages.length > 0) {
+                    const firstPage = folder.pages[0];
+                    const img = new Image();
+                    img.onload = () => {
+                        state.currentImage = img;
+                        state.currentFolderIndex = state.fileList.length - 1;
+                        state.currentFolderPageIndex = 0;
+                        drawImageToCenter(img);
+                        updatePhotoButtonState();
+                        updateEnhanceButtonState();
+                    };
+                    img.src = firstPage.full;
+                }
+                
+                hideLoadingOverlay();
+                console.log(`文件已导入: ${folder.name}，共${folder.pages.length}页`);
+                
+                try {
+                    await remove(pdfPath);
+                } catch (e) {
+                    console.log('清理转换的 PDF 失败:', e);
+                }
+            } catch (error) {
+                hideLoadingOverlay();
+                console.error('文件导入失败:', error);
+                alert('文件导入失败，请确保文件格式正确');
             }
+        } else {
+            showLoadingOverlay('正在导入文件...');
             
-            hideLoadingOverlay();
-            console.log(`PDF已导入: ${folder.name}，共${folder.pages.length}页`);
-        } catch (error) {
-            hideLoadingOverlay();
-            console.error('PDF导入失败:', error);
-            alert('PDF导入失败，请确保文件格式正确');
+            try {
+                const pdfReady = await waitForPdfJs();
+                if (!pdfReady) {
+                    hideLoadingOverlay();
+                    alert('PDF库加载超时，请重启应用后重试');
+                    return;
+                }
+                
+                const pdfArrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: pdfArrayBuffer }).promise;
+                
+                const totalPages = pdf.numPages;
+                const folder = {
+                    name: file.name.replace('.pdf', ''),
+                    pages: []
+                };
+                
+                folder.pages = await processPdfPagesParallel(pdf, totalPages);
+                
+                state.fileList.push(folder);
+                updateFileSidebarContent();
+                
+                const existingFileSidebar = document.querySelector('.file-sidebar');
+                if (!existingFileSidebar) {
+                    expandFileSidebar();
+                }
+                
+                if (folder.pages.length > 0) {
+                    const firstPage = folder.pages[0];
+                    const img = new Image();
+                    img.onload = () => {
+                        state.currentImage = img;
+                        state.currentFolderIndex = state.fileList.length - 1;
+                        state.currentFolderPageIndex = 0;
+                        drawImageToCenter(img);
+                        updatePhotoButtonState();
+                        updateEnhanceButtonState();
+                    };
+                    img.src = firstPage.full;
+                }
+                
+                hideLoadingOverlay();
+                console.log(`文件已导入: ${folder.name}，共${folder.pages.length}页`);
+            } catch (error) {
+                hideLoadingOverlay();
+                console.error('文件导入失败:', error);
+                alert('文件导入失败，请确保文件格式正确');
+            }
         }
     };
     
