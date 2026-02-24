@@ -114,6 +114,8 @@ body {
     width:100vw;
     height:95vh;
     display:flex;
+    touch-action: pan-y;
+    overflow: hidden;
 }
 
 
