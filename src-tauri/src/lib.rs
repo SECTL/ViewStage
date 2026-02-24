@@ -18,6 +18,13 @@ use tauri::{Manager, Emitter};
 use image::{DynamicImage, ImageBuffer, Rgba, GenericImageView, RgbaImage};
 use base64::{Engine as _, engine::general_purpose};
 use rayon::prelude::*;
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -1687,7 +1694,8 @@ fn convert_with_word_com(docx_path: &str, pdf_path: &str) -> Result<(), String> 
     "#, input = docx_path.replace("'", "''"), output = pdf_path.replace("'", "''"));
     
     let output = Command::new("powershell")
-        .args(["-WindowStyle", "Hidden", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("PowerShell 执行失败: {}", e))?;
     
@@ -1739,7 +1747,8 @@ fn convert_with_wps_com(docx_path: &str, pdf_path: &str) -> Result<(), String> {
     "#, input = docx_path.replace("'", "''"), output = pdf_path.replace("'", "''"));
     
     let output = Command::new("powershell")
-        .args(["-WindowStyle", "Hidden", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("PowerShell 执行失败: {}", e))?;
     
@@ -1807,6 +1816,7 @@ async fn set_file_type_icons(app: tauri::AppHandle) -> Result<(), String> {
     
     let output = Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("设置图标失败: {}", e))?;
     
