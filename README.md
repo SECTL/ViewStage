@@ -15,7 +15,7 @@
 - **构建工具**：Cargo
 
 > [!IMPORTANT]
->这个应用部分使用了Tare编写与进行性能优化、检测
+>这个应用部分使用了Tare编写与进行性能优化、检测代码问题
 >>若您介意或排斥，请无视次项目，感谢(❁´◡`❁)
 
 ## 功能特点
@@ -71,6 +71,7 @@
 
 ## 许可证
 本项目采用开源许可证，详见 [LICENSE](https://github.com/ospneam/ViewStage/blob/main/LICENSE) 文件。
+
 
 
 
