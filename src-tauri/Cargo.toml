@@ -1,6 +1,6 @@
 [package]
 name = "viewstage"
-version = "0.4.6"
+version = "0.4.7"
 description = "An application for video presentation and document annotation"
 authors = ["ospneam"]
 edition = "2021"
