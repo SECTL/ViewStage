@@ -355,52 +355,15 @@ function getCachedCanvasRect() {
     return cachedCanvasRect;
 }
 
-// ==================== Blob URL 内存管理 ====================
-// 用于追踪和清理 Blob URL，防止内存泄漏
-
-const blobUrlRegistry = new Set();
-
-function registerBlobUrl(url) {
-    if (url && url.startsWith('blob:')) {
-        blobUrlRegistry.add(url);
-    }
-    return url;
-}
-
-function revokeBlobUrl(url) {
-    if (url && url.startsWith('blob:') && blobUrlRegistry.has(url)) {
-        URL.revokeObjectURL(url);
-        blobUrlRegistry.delete(url);
-    }
-}
-
-function cleanupImageBlobUrls(imgData) {
-    if (!imgData) return;
-    revokeBlobUrl(imgData.full);
-    revokeBlobUrl(imgData.thumbnail);
-}
-
-function cleanupFolderBlobUrls(folder) {
-    if (!folder || !folder.pages) return;
-    for (const page of folder.pages) {
-        revokeBlobUrl(page.full);
-        revokeBlobUrl(page.thumbnail);
-    }
-}
-
-function cleanupAllBlobUrls() {
-    for (const url of blobUrlRegistry) {
-        URL.revokeObjectURL(url);
-    }
-    blobUrlRegistry.clear();
-    console.log('所有 Blob URL 已清理');
-}
-
 // ==================== 初始化 ====================
 // 应用启动入口：DOM初始化、画布初始化、事件绑定、配置加载
 
 window.addEventListener('DOMContentLoaded', async () => {
     try {
+        if (window.i18n) {
+            await window.i18n.init();
+        }
+        
         if (window.__TAURI__) {
             const isOobeActive = await invoke('is_oobe_active');
             if (isOobeActive) {
@@ -449,24 +412,24 @@ window.addEventListener('DOMContentLoaded', async () => {
             } catch (error) {
                 if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
                     console.log('摄像头权限被拒绝，跳过摄像头初始化');
-                    showNoCameraMessage('无摄像头权限');
+                    showNoCameraMessage(window.i18n?.t('camera.noPermission') || '无摄像头权限');
                 } else {
                     console.error('摄像头初始化失败:', error);
-                    showNoCameraMessage('摄像头初始化失败');
+                    showNoCameraMessage(window.i18n?.t('camera.initFailed') || '摄像头初始化失败');
                 }
             }
         } else {
             console.log('未检测到摄像头，跳过摄像头初始化');
-            showNoCameraMessage('未检测到摄像头');
+            showNoCameraMessage(window.i18n?.t('camera.notDetected') || '未检测到摄像头');
         }
-        
-        // 页面卸载时清理所有 Blob URL
-        window.addEventListener('beforeunload', cleanupAllBlobUrls);
         
         console.log('画布初始化完成');
     } catch (error) {
         console.error('初始化失败:', error);
-        showErrorDialog('初始化失败', '应用初始化失败，请刷新页面重试');
+        showErrorDialog(
+            window.i18n?.t('errors.initFailed') || '初始化失败',
+            window.i18n?.t('errors.initFailedDesc') || '应用初始化失败，请刷新页面重试'
+        );
     }
 });
 
@@ -595,7 +558,10 @@ function listenForPdfFileOpen() {
             loadPdfFromPath(filePath);
         } else {
             console.error('无法解析文件路径，payload:', event.payload);
-            showErrorDialog('文件错误', '无法解析文件路径');
+            showErrorDialog(
+                window.i18n?.t('errors.fileError') || '文件错误',
+                window.i18n?.t('errors.fileParseError') || '无法解析文件路径'
+            );
         }
     }).then(() => {
         console.log('file-opened 事件监听注册成功');
@@ -778,12 +744,12 @@ async function processPdfPagesParallel(pdf, totalPages, batchSize = 4) {
                 else reject(new Error('Failed to create blob'));
             }, 'image/jpeg', 0.85);
         });
-        const fullUrl = registerBlobUrl(URL.createObjectURL(fullBlob));
+        const fullUrl = URL.createObjectURL(fullBlob);
         
         const thumbnail = await generateThumbnailFromCanvas(canvas, 150);
         
         processedCount++;
-        updateLoadingProgress(`正在处理 ${processedCount}/${totalPages} 页`);
+        updateLoadingProgress(window.i18n?.t('loading.processingPage', { current: processedCount, total: totalPages }) || `正在处理 ${processedCount}/${totalPages} 页`);
         
         return {
             full: fullUrl,
@@ -819,7 +785,7 @@ async function generateThumbnailFromCanvas(canvas, maxSize = 150) {
             else reject(new Error('Failed to create blob'));
         }, 'image/jpeg', 0.85);
     });
-    const blobUrl = registerBlobUrl(URL.createObjectURL(blob));
+    const blobUrl = URL.createObjectURL(blob);
     
     await new Promise((resolve, reject) => {
         img.onload = resolve;
@@ -842,7 +808,7 @@ async function generateThumbnailFromCanvas(canvas, maxSize = 150) {
     const thumbCtx = thumbCanvas.getContext('2d');
     thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
     
-    revokeBlobUrl(blobUrl);
+    URL.revokeObjectURL(blobUrl);
     
     const thumbBlob = await new Promise((resolve, reject) => {
         thumbCanvas.toBlob(blob => {
@@ -851,12 +817,12 @@ async function generateThumbnailFromCanvas(canvas, maxSize = 150) {
         }, 'image/jpeg', 0.7);
     });
     
-    return registerBlobUrl(URL.createObjectURL(thumbBlob));
+    return URL.createObjectURL(thumbBlob);
 }
 
 async function generateThumbnailBlob(blob, maxSize = 150) {
     const img = new Image();
-    const url = registerBlobUrl(URL.createObjectURL(blob));
+    const url = URL.createObjectURL(blob);
     
     await new Promise((resolve, reject) => {
         img.onload = resolve;
@@ -879,7 +845,7 @@ async function generateThumbnailBlob(blob, maxSize = 150) {
     const thumbCtx = thumbCanvas.getContext('2d');
     thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
     
-    revokeBlobUrl(url);
+    URL.revokeObjectURL(url);
     
     const thumbBlob = await new Promise((resolve, reject) => {
         thumbCanvas.toBlob(blob => {
@@ -888,7 +854,7 @@ async function generateThumbnailBlob(blob, maxSize = 150) {
         }, 'image/jpeg', 0.7);
     });
     
-    return registerBlobUrl(URL.createObjectURL(thumbBlob));
+    return URL.createObjectURL(thumbBlob);
 }
 
 async function loadPdfFromPath(filePath) {
@@ -904,7 +870,7 @@ async function loadPdfFromPath(filePath) {
     const isWord = fileName_lower.endsWith('.docx') || fileName_lower.endsWith('.doc');
     
     if (isWord) {
-        showLoadingOverlay('正在检测 Office 软件...');
+        showLoadingOverlay(window.i18n?.t('loading.detectingOffice') || '正在检测 Office 软件...');
         
         const { invoke } = window.__TAURI__.core;
         const { fs } = window.__TAURI__;
@@ -915,19 +881,25 @@ async function loadPdfFromPath(filePath) {
             console.log('Office 检测结果:', detection);
             if (detection.recommended === 'None') {
                 hideLoadingOverlay();
-                showErrorDialog('Office 未安装', '未检测到可用的 Office 软件\n\n请安装以下软件之一：\n• Microsoft Word\n• WPS Office\n• LibreOffice\n\n或将 Word 文档另存为 PDF 后导入');
+                showErrorDialog(
+                    window.i18n?.t('errors.officeNotInstalled') || 'Office 未安装',
+                    window.i18n?.t('errors.officeNotInstalledDesc') || '未检测到可用的 Office 软件\n\n请安装以下软件之一：\n• Microsoft Word\n• WPS Office\n• LibreOffice\n\n或将 Word 文档另存为 PDF 后导入'
+                );
                 if (wasCameraOpen) await setCameraState(true);
                 return;
             }
         } catch (e) {
             hideLoadingOverlay();
             console.log('检测 Office 失败:', e);
-            showErrorDialog('检测失败', '检测 Office 软件失败，请重试');
+            showErrorDialog(
+                window.i18n?.t('errors.officeDetectFailed') || '检测失败',
+                window.i18n?.t('errors.officeDetectFailedDesc') || '检测 Office 软件失败，请重试'
+            );
             if (wasCameraOpen) await setCameraState(true);
             return;
         }
         
-        updateLoadingProgress('正在读取文件...');
+        updateLoadingProgress(window.i18n?.t('loading.readingFile') || '正在读取文件...');
         
         let fileData;
         try {
@@ -935,7 +907,10 @@ async function loadPdfFromPath(filePath) {
         } catch (readError) {
             hideLoadingOverlay();
             console.error('文件读取失败:', readError);
-            showErrorDialog('读取失败', '无法读取文件:\n' + readError.message);
+            showErrorDialog(
+                window.i18n?.t('errors.readFailed') || '读取失败',
+                window.i18n?.t('errors.readFailedDesc') || '无法读取文件'
+            );
             if (wasCameraOpen) await setCameraState(true);
             return;
         }
@@ -949,7 +924,7 @@ async function loadPdfFromPath(filePath) {
         
         console.log('文件大小:', uint8Array.length, '字节');
         
-        updateLoadingProgress('正在处理 Word 文档...');
+        updateLoadingProgress(window.i18n?.t('loading.processingWord') || '正在处理 Word 文档...');
         
         let pdfPath = null;
         try {
@@ -962,31 +937,34 @@ async function loadPdfFromPath(filePath) {
             hideLoadingOverlay();
             console.error('Word 转换失败:', convertError);
             const errorMsg = String(convertError);
-            let friendlyMsg = 'Word 文档转换失败';
+            let friendlyMsg = window.i18n?.t('errors.wordConvertFailed') || 'Word 文档转换失败';
             
             if (errorMsg.includes('Office') || errorMsg.includes('Word') || errorMsg.includes('WPS')) {
-                friendlyMsg = 'Office 软件调用失败\n\n可能的原因：\n• Office 软件未正确安装\n• 文件被其他程序占用\n• 文件格式不支持';
-            } else if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
-                friendlyMsg = '转换超时\n\n文件可能过大或 Office 软件响应缓慢';
-            } else if (errorMsg.includes('损坏') || errorMsg.includes('corrupt')) {
-                friendlyMsg = '文件可能已损坏\n\n请尝试用 Word 打开后重新保存';
+                friendlyMsg = window.i18n?.t('errors.officeCallFailed') || 'Office 软件调用失败\n\n可能的原因：\n• Office 软件未正确安装\n• 文件被其他程序占用\n• 文件格式不支持';
             }
             
-            showErrorDialog('转换失败', friendlyMsg, () => {
-                loadPdfFromPath(filePath);
-            });
+            showErrorDialog(
+                window.i18n?.t('errors.convertFailed') || '转换失败',
+                friendlyMsg,
+                () => {
+                    loadPdfFromPath(filePath);
+                }
+            );
             if (wasCameraOpen) await setCameraState(true);
             return;
         }
         
-        updateLoadingProgress('正在渲染页面...');
+        updateLoadingProgress(window.i18n?.t('loading.renderingPage') || '正在渲染页面...');
         
         try {
             const pdfReady = await waitForPdfJs();
             if (!pdfReady) {
                 hideLoadingOverlay();
                 console.error('PDF.js 库加载超时');
-                showErrorDialog('加载失败', 'PDF 库加载超时\n\n请重启应用后重试');
+                showErrorDialog(
+                    window.i18n?.t('errors.loadFailed') || '加载失败',
+                    window.i18n?.t('errors.pdfLoadTimeout') || 'PDF 库加载超时\n\n请重启应用后重试'
+                );
                 if (wasCameraOpen) await setCameraState(true);
                 return;
             }
@@ -1037,21 +1015,27 @@ async function loadPdfFromPath(filePath) {
         } catch (error) {
             hideLoadingOverlay();
             console.error('文件导入失败:', error);
-            showErrorDialog('导入失败', '文件导入失败，请确保文件格式正确');
+            showErrorDialog(
+                window.i18n?.t('errors.importFailed') || '导入失败',
+                window.i18n?.t('errors.importFailedDesc') || '文件导入失败，请确保文件格式正确'
+            );
             if (wasCameraOpen) await setCameraState(true);
         }
         
         return;
     }
     
-    showLoadingOverlay('正在导入文件...');
+    showLoadingOverlay(window.i18n?.t('loading.importingFile') || '正在导入文件...');
     
     try {
         const pdfReady = await waitForPdfJs();
         if (!pdfReady) {
             hideLoadingOverlay();
             console.error('PDF.js 库加载超时');
-            showErrorDialog('加载失败', 'PDF 库加载超时\n\n请重启应用后重试');
+            showErrorDialog(
+                window.i18n?.t('errors.loadFailed') || '加载失败',
+                window.i18n?.t('errors.pdfLoadTimeout') || 'PDF 库加载超时\n\n请重启应用后重试'
+            );
             if (wasCameraOpen) await setCameraState(true);
             return;
         }
@@ -1065,7 +1049,10 @@ async function loadPdfFromPath(filePath) {
         } catch (readError) {
             console.error('文件读取失败:', readError);
             hideLoadingOverlay();
-            showErrorDialog('读取失败', '无法读取文件:\n' + readError.message);
+            showErrorDialog(
+                window.i18n?.t('errors.readFailed') || '读取失败',
+                window.i18n?.t('errors.readFailedDesc') || '无法读取文件'
+            );
             if (wasCameraOpen) await setCameraState(true);
             return;
         }
@@ -1119,7 +1106,10 @@ async function loadPdfFromPath(filePath) {
     } catch (error) {
         hideLoadingOverlay();
         console.error('文件导入失败:', error);
-        showErrorDialog('导入失败', '文件导入失败，请确保文件格式正确');
+        showErrorDialog(
+            window.i18n?.t('errors.importFailed') || '导入失败',
+            window.i18n?.t('errors.importFailedDesc') || '文件导入失败，请确保文件格式正确'
+        );
         if (wasCameraOpen) await setCameraState(true);
     }
 }
@@ -1493,12 +1483,12 @@ function showMenu() {
     menuPopup.className = 'menu-popup';
     menuPopup.innerHTML = `
         <button class="menu-item" id="menuSettings">
-            <img src="assets/icon/gear.svg" width="16" height="16" alt="设置" style="filter: invert(1);">
-            设置
+            <img src="assets/icon/gear.svg" width="16" height="16" alt="${window.i18n?.t('toolbar.settings') || '设置'}" style="filter: invert(1);">
+            ${window.i18n?.t('toolbar.settings') || '设置'}
         </button>
         <button class="menu-item menu-item-danger" id="menuClose">
-            <img src="assets/icon/arrow-bar-left.svg" width="16" height="16" alt="关闭" style="filter: invert(1);">
-            关闭
+            <img src="assets/icon/arrow-bar-left.svg" width="16" height="16" alt="${window.i18n?.t('common.close') || '关闭'}" style="filter: invert(1);">
+            ${window.i18n?.t('common.close') || '关闭'}
         </button>
     `;
     
@@ -1737,6 +1727,7 @@ function updateColorButtons() {
         if (DRAW_CONFIG.penColors[index]) {
             btn.dataset.color = DRAW_CONFIG.penColors[index];
             btn.style.backgroundColor = DRAW_CONFIG.penColors[index];
+            btn.title = window.i18n?.t('settings.colorN', { n: index + 1 }) || `颜色${index + 1}`;
             
             // 为黑色和白色添加边框
             if (DRAW_CONFIG.penColors[index].toLowerCase() === '#000000' || 
@@ -2337,7 +2328,6 @@ async function endStroke() {
     
     await batchDrawManager.endDrawing();
     
-    await pointCollector.finalize();
     pointCollector.clear();
     
     batchDrawManager.clear();
@@ -2535,7 +2525,6 @@ function perpendicularDistance(px, py, x1, y1, x2, y2) {
 
 /**
  * 批量收集线段点
- * 优化：本地累积点，批量调用WASM，减少JS-WASM边界开销
  */
 class PointCollector {
     constructor() {
@@ -2543,50 +2532,9 @@ class PointCollector {
         this.lastTime = Date.now();
         this.lastX = 0;
         this.lastY = 0;
-        this.pendingPoints = [];
-        this.batchSize = 20;
-        this.flushRafId = null;
     }
     
-    addPoint(fromX, fromY, toX, toY) {
-        const qFromX = quantizeCoord(fromX);
-        const qFromY = quantizeCoord(fromY);
-        const qToX = quantizeCoord(toX);
-        const qToY = quantizeCoord(toY);
-        
-        if (distance(qFromX, qFromY, qToX, qToY) < POINT_OPTIMIZATION.minDistance) {
-            return false;
-        }
-        
-        const now = Date.now();
-        if (now - this.lastTime < POINT_OPTIMIZATION.batchInterval) {
-            return false;
-        }
-        
-        this.lastTime = now;
-        this.lastX = qToX;
-        this.lastY = qToY;
-        
-        this.pendingPoints.push({
-            fromX: qFromX,
-            fromY: qFromY,
-            toX: qToX,
-            toY: qToY
-        });
-        
-        if (this.pendingPoints.length >= this.batchSize) {
-            this.flushPendingPoints();
-        }
-        
-        return true;
-    }
-    
-    async flushPendingPoints() {
-        if (this.pendingPoints.length === 0) return;
-        
-        const pointsToProcess = [...this.pendingPoints];
-        this.pendingPoints = [];
-        
+    async addPoint(fromX, fromY, toX, toY) {
         try {
             const config = {
                 epsilon: POINT_OPTIMIZATION.epsilon,
@@ -2594,61 +2542,75 @@ class PointCollector {
                 quantization: POINT_OPTIMIZATION.quantization
             };
             
+            const points = [{
+                fromX: fromX,
+                fromY: fromY,
+                toX: toX,
+                toY: toY
+            }];
+            
             const result = await wasmPointProcessor.collectPoints(
-                pointsToProcess,
+                points,
                 config,
                 this.lastTime,
                 this.lastX,
                 this.lastY
             );
             
+            if (result.error) {
+                throw new Error(result.error);
+            }
+            
             if (result.collectedPoints && result.collectedPoints.length > 0) {
-                for (const pt of result.collectedPoints) {
-                    this.points.push({
-                        fromX: pt.fromX,
-                        fromY: pt.fromY,
-                        toX: pt.toX,
-                        toY: pt.toY
-                    });
-                }
+                const collectedPoint = result.collectedPoints[0];
+                this.points.push({
+                    fromX: collectedPoint.fromX,
+                    fromY: collectedPoint.fromY,
+                    toX: collectedPoint.toX,
+                    toY: collectedPoint.toY
+                });
+                
                 this.lastTime = result.lastTime;
                 this.lastX = result.lastX;
                 this.lastY = result.lastY;
+                
+                return true;
             }
         } catch (error) {
-            for (const pt of pointsToProcess) {
-                this.points.push(pt);
+            console.warn('WASM点收集失败，使用前端降级方案:', error);
+            const qFromX = quantizeCoord(fromX);
+            const qFromY = quantizeCoord(fromY);
+            const qToX = quantizeCoord(toX);
+            const qToY = quantizeCoord(toY);
+            
+            if (distance(qFromX, qFromY, qToX, qToY) < POINT_OPTIMIZATION.minDistance) {
+                return false;
             }
+            
+            const now = Date.now();
+            if (now - this.lastTime < POINT_OPTIMIZATION.batchInterval) {
+                return false;
+            }
+            
+            this.lastTime = now;
+            this.lastX = qToX;
+            this.lastY = qToY;
+            
+            this.points.push({
+                fromX: qFromX,
+                fromY: qFromY,
+                toX: qToX,
+                toY: qToY
+            });
             
             if (this.points.length > POINT_OPTIMIZATION.maxPointsPerStroke) {
                 this.points = simplifyPoints(this.points, POINT_OPTIMIZATION.epsilon);
             }
-        }
-    }
-    
-    async finalize() {
-        if (this.pendingPoints.length > 0) {
-            await this.flushPendingPoints();
+            
+            return true;
         }
         
-        if (this.points.length > 50) {
-            try {
-                const config = {
-                    epsilon: POINT_OPTIMIZATION.epsilon,
-                    minDistance: POINT_OPTIMIZATION.minDistance,
-                    quantization: POINT_OPTIMIZATION.quantization
-                };
-                const processedPoints = await wasmPointProcessor.processStrokePoints(
-                    this.points,
-                    config
-                );
-                if (Array.isArray(processedPoints) && processedPoints.length > 0) {
-                    this.points = processedPoints;
-                }
-            } catch (error) {
-                this.points = simplifyPoints(this.points, POINT_OPTIMIZATION.epsilon);
-            }
-        }
+        return false;
     }
     
     getPoints() {
@@ -2657,10 +2619,7 @@ class PointCollector {
     
     clear() {
         this.points = [];
-        this.pendingPoints = [];
         this.lastTime = Date.now();
-        this.lastX = 0;
-        this.lastY = 0;
     }
 }
 
@@ -3200,11 +3159,11 @@ function takePhoto() {
             } catch (error) {
                 console.error('返回摄像头失败:', error);
                 if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-                    showNoCameraMessage('未检测到摄像头');
+                    showNoCameraMessage(window.i18n?.t('camera.notDetected') || '未检测到摄像头');
                 } else if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-                    showNoCameraMessage('无摄像头权限');
+                    showNoCameraMessage(window.i18n?.t('camera.noPermission') || '无摄像头权限');
                 } else {
-                    showNoCameraMessage('摄像头初始化失败');
+                    showNoCameraMessage(window.i18n?.t('camera.initFailed') || '摄像头初始化失败');
                 }
             }
         })();
@@ -3258,23 +3217,26 @@ function updatePhotoButtonState() {
     let newState;
     let html, title, addClass, removeClass;
     
+    const photoText = window.i18n?.t('toolbar.photo') || '拍照';
+    const switchToCameraText = window.i18n?.t('camera.switchToCamera') || '切换到摄像头';
+    
     if (state.isCameraOpen) {
         newState = 'camera';
-        html = `<img src="assets/icon/camera.svg" width="16" height="16" alt="拍照" style="filter: invert(1);">拍照`;
-        title = '捕获摄像头画面';
+        html = `<img src="assets/icon/camera.svg" width="16" height="16" alt="${photoText}" style="filter: invert(1);">${photoText}`;
+        title = window.i18n?.t('camera.captureFrame') || '捕获摄像头画面';
         addClass = 'camera-active';
         removeClass = '';
     } else if ((state.currentImageIndex >= 0 && state.imageList.length > 0) || 
                (state.currentFolderIndex >= 0 && state.currentFolderPageIndex >= 0)) {
         newState = 'switch';
-        html = `<img src="assets/icon/camera-fill.svg" width="16" height="16" alt="切换到摄像头" style="filter: invert(1);">切换到摄像头`;
-        title = '返回摄像头';
+        html = `<img src="assets/icon/camera-fill.svg" width="16" height="16" alt="${switchToCameraText}" style="filter: invert(1);">${switchToCameraText}`;
+        title = window.i18n?.t('camera.switchToCamera') || '返回摄像头';
         addClass = '';
         removeClass = 'camera-active';
     } else {
         newState = 'save';
-        html = `<img src="assets/icon/camera.svg" width="16" height="16" alt="拍照" style="filter: invert(1);">拍照`;
-        title = '保存画布截图';
+        html = `<img src="assets/icon/camera.svg" width="16" height="16" alt="${photoText}" style="filter: invert(1);">${photoText}`;
+        title = window.i18n?.t('camera.saveScreenshot') || '保存画布截图';
         addClass = '';
         removeClass = 'camera-active';
     }
@@ -3549,17 +3511,24 @@ function expandSidebar() {
     const sidebarElement = document.createElement('div');
     sidebarElement.classList.add('sidebar');
     
+    const noImagesText = window.i18n?.t('common.noImages') || '暂无图片';
+    const imageListText = window.i18n?.t('sidebar.imageList') || '图片列表';
+    const importImageText = window.i18n?.t('sidebar.importImage') || '导入图片';
+    const deleteText = window.i18n?.t('common.delete') || '删除';
+    const collapseText = window.i18n?.t('common.collapse') || '收起';
+    
     let imageListHTML = '';
     if (state.imageList.length === 0) {
-        imageListHTML = '<div class="sidebar-empty">暂无图片</div>';
+        imageListHTML = `<div class="sidebar-empty">${noImagesText}</div>`;
     } else {
         state.imageList.forEach((imgData, index) => {
             const isActive = (state.currentImageIndex >= 0 && index === state.currentImageIndex) ? 'active' : '';
+            const imageAlt = window.i18n?.t('sidebar.imageAlt', { n: index + 1 }) || `图片${index + 1}`;
             imageListHTML += `
                 <div class="sidebar-image-item ${isActive}" data-index="${index}">
-                    <img src="${imgData.thumbnail}" class="sidebar-thumbnail" alt="图片${index + 1}">
+                    <img src="${imgData.thumbnail}" class="sidebar-thumbnail" alt="${imageAlt}">
                     <div class="sidebar-image-actions">
-                        <button class="sidebar-btn-delete" title="删除">✕</button>
+                        <button class="sidebar-btn-delete" title="${deleteText}">✕</button>
                     </div>
                 </div>
             `;
@@ -3567,13 +3536,13 @@ function expandSidebar() {
     }
     
     sidebarElement.innerHTML = `
-        <div class="sidebar-header"><span class="sidebar-header-text">图片列表</span></div>
+        <div class="sidebar-header"><span class="sidebar-header-text">${imageListText}</span></div>
         <div class="sidebar-content">
             ${imageListHTML}
         </div>
         <button class="sidebar-import-btn" id="btnImportImageSidebar">
-            <img src="assets/icon/file-earmark-medical.svg" width="16" height="16" alt="导入" style="filter: invert(1);">
-            导入图片
+            <img src="assets/icon/file-earmark-medical.svg" width="16" height="16" alt="${importImageText}" style="filter: invert(1);">
+            ${importImageText}
         </button>
     `;
     dom.canvasContainer.appendChild(sidebarElement);
@@ -3592,8 +3561,8 @@ function expandSidebar() {
     });
     
     dom.btnExpand.innerHTML = `
-        <img src="assets/icon/caret-down-fill.svg" width="16" height="16" alt="收起" style="filter: invert(1);">
-        收起
+        <img src="assets/icon/caret-down-fill.svg" width="16" height="16" alt="${collapseText}" style="filter: invert(1);">
+        ${collapseText}
     `;
     console.log('展开侧边栏');
 }
@@ -3717,7 +3686,12 @@ function deleteImage(index) {
     if (index < 0 || index >= state.imageList.length) return;
     
     const imgData = state.imageList[index];
-    cleanupImageBlobUrls(imgData);
+    if (imgData.full && imgData.full.startsWith('blob:')) {
+        URL.revokeObjectURL(imgData.full);
+    }
+    if (imgData.thumbnail && imgData.thumbnail.startsWith('blob:')) {
+        URL.revokeObjectURL(imgData.thumbnail);
+    }
     
     state.imageList.splice(index, 1);
     
@@ -3771,17 +3745,21 @@ function updateSidebarContent() {
     const sidebarContent = document.querySelector('.sidebar-content');
     if (!sidebarContent) return;
     
+    const noImagesText = window.i18n?.t('common.noImages') || '暂无图片';
+    const deleteText = window.i18n?.t('common.delete') || '删除';
+    
     let imageListHTML = '';
     if (state.imageList.length === 0) {
-        imageListHTML = '<div class="sidebar-empty">暂无图片</div>';
+        imageListHTML = `<div class="sidebar-empty">${noImagesText}</div>`;
     } else {
         state.imageList.forEach((imgData, index) => {
             const isActive = (state.currentImageIndex >= 0 && index === state.currentImageIndex) ? 'active' : '';
+            const imageAlt = window.i18n?.t('sidebar.imageAlt', { n: index + 1 }) || `图片${index + 1}`;
             imageListHTML += `
                 <div class="sidebar-image-item ${isActive}" data-index="${index}">
-                    <img src="${imgData.thumbnail}" class="sidebar-thumbnail" alt="图片${index + 1}">
+                    <img src="${imgData.thumbnail}" class="sidebar-thumbnail" alt="${imageAlt}">
                     <div class="sidebar-image-actions">
-                        <button class="sidebar-btn-delete" title="删除">✕</button>
+                        <button class="sidebar-btn-delete" title="${deleteText}">✕</button>
                     </div>
                 </div>
             `;
@@ -3811,9 +3789,10 @@ function collapseSidebar() {
         }, { once: true });
     }
     
+    const imageText = window.i18n?.t('toolbar.image') || '图片';
     dom.btnExpand.innerHTML = `
-        <img src="assets/icon/file-earmark-medical.svg" width="16" height="16" alt="图片" style="filter: invert(1);">
-        图片
+        <img src="assets/icon/file-earmark-medical.svg" width="16" height="16" alt="${imageText}" style="filter: invert(1);">
+        ${imageText}
     `;
     console.log('收起侧边栏');
 }
@@ -3841,36 +3820,43 @@ function expandFileSidebar() {
         return;
     }
     
+    const noFilesText = window.i18n?.t('common.noFiles') || '暂无文件';
+    const fileListText = window.i18n?.t('sidebar.fileList') || '文件列表';
+    const addFileText = window.i18n?.t('sidebar.addFile') || '添加文件';
+    const collapseText = window.i18n?.t('common.collapse') || '收起';
+    
     const fileSidebarElement = document.createElement('div');
     fileSidebarElement.classList.add('sidebar', 'file-sidebar');
     
     let contentHTML = '';
     if (state.fileList.length === 0) {
-        contentHTML = '<div class="sidebar-empty">暂无文件</div>';
+        contentHTML = `<div class="sidebar-empty">${noFilesText}</div>`;
     } else {
         state.fileList.forEach((folder, index) => {
             const isWord = folder.isWord === true;
             const iconSrc = isWord 
                 ? 'assets/icon/file-earmark-word-fill.svg' 
                 : 'assets/icon/pdf.svg';
+            const fileAlt = window.i18n?.t('toolbar.file') || '文件';
+            const pagesText = window.i18n?.t('sidebar.pages', { n: folder.pages.length }) || `${folder.pages.length}页`;
             contentHTML += `
                 <div class="sidebar-folder-item" data-index="${index}">
-                    <img src="${iconSrc}" width="16" height="16" alt="文件" style="filter: invert(1);">
+                    <img src="${iconSrc}" width="16" height="16" alt="${fileAlt}" style="filter: invert(1);">
                     <span class="folder-name">${folder.name}</span>
-                    <span class="folder-count">${folder.pages.length}页</span>
+                    <span class="folder-count">${pagesText}</span>
                 </div>
             `;
         });
     }
     
     fileSidebarElement.innerHTML = `
-        <div class="sidebar-header"><span class="sidebar-header-text">文件列表</span></div>
+        <div class="sidebar-header"><span class="sidebar-header-text">${fileListText}</span></div>
         <div class="sidebar-content">
             ${contentHTML}
         </div>
         <button class="sidebar-import-btn" id="btnAddFile">
-            <img src="assets/icon/file-earmark.svg" width="16" height="16" alt="添加" style="filter: invert(1);">
-            添加文件
+            <img src="assets/icon/file-earmark.svg" width="16" height="16" alt="${addFileText}" style="filter: invert(1);">
+            ${addFileText}
         </button>
     `;
     
@@ -3888,8 +3874,8 @@ function expandFileSidebar() {
     });
     
     dom.btnSave.innerHTML = `
-        <img src="assets/icon/caret-down-fill.svg" width="16" height="16" alt="收起" style="filter: invert(1);">
-        收起
+        <img src="assets/icon/caret-down-fill.svg" width="16" height="16" alt="${collapseText}" style="filter: invert(1);">
+        ${collapseText}
     `;
     console.log('展开文件侧边栏');
     
@@ -3917,10 +3903,11 @@ function openFolder(folderIndex) {
     let pagesHTML = '';
     folder.pages.forEach((page, index) => {
         const isActive = (state.currentFolderIndex === folderIndex && state.currentFolderPageIndex === index) ? 'active' : '';
+        const pageLabel = window.i18n?.t('sidebar.page', { n: index + 1 }) || `第${index + 1}页`;
         pagesHTML += `
             <div class="sidebar-image-item ${isActive}" data-folder="${folderIndex}" data-page="${index}">
-                <img src="${page.thumbnail}" class="sidebar-thumbnail" alt="第${index + 1}页">
-                <div class="sidebar-page-label">第${index + 1}页</div>
+                <img src="${page.thumbnail}" class="sidebar-thumbnail" alt="${pageLabel}">
+                <div class="sidebar-page-label">${pageLabel}</div>
             </div>
         `;
     });
@@ -3943,9 +3930,10 @@ function openFolder(folderIndex) {
 }
 
 function closeFolder() {
+    const fileListText = window.i18n?.t('sidebar.fileList') || '文件列表';
     const sidebarHeader = document.querySelector('.file-sidebar .sidebar-header');
     if (sidebarHeader) {
-        sidebarHeader.innerHTML = '<span class="sidebar-header-text">文件列表</span>';
+        sidebarHeader.innerHTML = `<span class="sidebar-header-text">${fileListText}</span>`;
         sidebarHeader.classList.remove('has-back');
     }
     
@@ -4077,9 +4065,11 @@ function updateFileSidebarContent() {
     const sidebarContent = document.querySelector('.file-sidebar .sidebar-content');
     if (!sidebarContent) return;
     
+    const noFilesText = window.i18n?.t('common.noFiles') || '暂无文件';
+    
     let contentHTML = '';
     if (state.fileList.length === 0) {
-        contentHTML = '<div class="sidebar-empty">暂无文件</div>';
+        contentHTML = `<div class="sidebar-empty">${noFilesText}</div>`;
     } else {
         state.fileList.forEach((folder, index) => {
             const isWord = folder.isWord === true;
@@ -4087,11 +4077,13 @@ function updateFileSidebarContent() {
                 ? 'assets/icon/file-earmark-word-fill.svg' 
                 : 'assets/icon/pdf.svg';
             console.log(`文件夹 ${folder.name}: isWord=${isWord}, iconSrc=${iconSrc}`);
+            const fileAlt = window.i18n?.t('toolbar.file') || '文件';
+            const pagesText = window.i18n?.t('sidebar.pages', { n: folder.pages.length }) || `${folder.pages.length}页`;
             contentHTML += `
                 <div class="sidebar-folder-item" data-index="${index}">
-                    <img src="${iconSrc}" width="16" height="16" alt="文件" style="filter: invert(1);" onerror="this.style.display='none'">
+                    <img src="${iconSrc}" width="16" height="16" alt="${fileAlt}" style="filter: invert(1);" onerror="this.style.display='none'">
                     <span class="folder-name">${folder.name}</span>
-                    <span class="folder-count">${folder.pages.length}页</span>
+                    <span class="folder-count">${pagesText}</span>
                 </div>
             `;
         });
@@ -4126,7 +4118,7 @@ function importPDF() {
         const isWord = fileName.endsWith('.docx') || fileName.endsWith('.doc');
         
         if (isWord) {
-            showLoadingOverlay('正在检测 Office 软件...');
+            showLoadingOverlay(window.i18n?.t('loading.detectingOffice') || '正在检测 Office 软件...');
             
             const { invoke } = window.__TAURI__.core;
             
@@ -4136,26 +4128,32 @@ function importPDF() {
                 console.log('Office 检测结果:', detection);
                 if (detection.recommended === 'None') {
                     hideLoadingOverlay();
-                    showErrorDialog('Office 未安装', '未检测到可用的 Office 软件\n\n请安装以下软件之一：\n• Microsoft Word\n• WPS Office\n• LibreOffice\n\n或将 Word 文档另存为 PDF 后导入');
+                    showErrorDialog(
+                        window.i18n?.t('errors.officeNotInstalled') || 'Office 未安装',
+                        window.i18n?.t('errors.officeNotInstalledDesc') || '未检测到可用的 Office 软件\n\n请安装以下软件之一：\n• Microsoft Word\n• WPS Office\n• LibreOffice\n\n或将 Word 文档另存为 PDF 后导入'
+                    );
                     if (wasCameraOpen) await setCameraState(true);
                     return;
                 }
             } catch (e) {
                 hideLoadingOverlay();
                 console.log('检测 Office 失败:', e);
-                showErrorDialog('检测失败', '检测 Office 软件失败，请重试');
+                showErrorDialog(
+                    window.i18n?.t('errors.officeDetectFailed') || '检测失败',
+                    window.i18n?.t('errors.officeDetectFailedDesc') || '检测 Office 软件失败，请重试'
+                );
                 if (wasCameraOpen) await setCameraState(true);
                 return;
             }
             
-            updateLoadingProgress('正在读取文件...');
+            updateLoadingProgress(window.i18n?.t('loading.readingFile') || '正在读取文件...');
             
             const arrayBuffer = await file.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
             
             console.log('文件大小:', uint8Array.length, '字节');
             
-            updateLoadingProgress('正在处理 Word 文档...');
+            updateLoadingProgress(window.i18n?.t('loading.processingWord') || '正在处理 Word 文档...');
             
             let pdfPath = null;
             try {
@@ -4168,30 +4166,33 @@ function importPDF() {
                 hideLoadingOverlay();
                 console.error('Word 转换失败:', convertError);
                 const errorMsg = String(convertError);
-                let friendlyMsg = 'Word 文档转换失败';
+                let friendlyMsg = window.i18n?.t('errors.wordConvertFailed') || 'Word 文档转换失败';
                 
                 if (errorMsg.includes('Office') || errorMsg.includes('Word') || errorMsg.includes('WPS')) {
-                    friendlyMsg = 'Office 软件调用失败\n\n可能的原因：\n• Office 软件未正确安装\n• 文件被其他程序占用\n• 文件格式不支持';
-                } else if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
-                    friendlyMsg = '转换超时\n\n文件可能过大或 Office 软件响应缓慢';
-                } else if (errorMsg.includes('损坏') || errorMsg.includes('corrupt')) {
-                    friendlyMsg = '文件可能已损坏\n\n请尝试用 Word 打开后重新保存';
+                    friendlyMsg = window.i18n?.t('errors.officeCallFailed') || 'Office 软件调用失败\n\n可能的原因：\n• Office 软件未正确安装\n• 文件被其他程序占用\n• 文件格式不支持';
                 }
                 
-                showErrorDialog('转换失败', friendlyMsg, () => {
-                    importPDF();
-                });
+                showErrorDialog(
+                    window.i18n?.t('errors.convertFailed') || '转换失败',
+                    friendlyMsg,
+                    () => {
+                        importPDF();
+                    }
+                );
                 if (wasCameraOpen) await setCameraState(true);
                 return;
             }
             
-            updateLoadingProgress('正在渲染页面...');
+            updateLoadingProgress(window.i18n?.t('loading.renderingPage') || '正在渲染页面...');
             
             try {
                 const pdfReady = await waitForPdfJs();
                 if (!pdfReady) {
                     hideLoadingOverlay();
-                    showErrorDialog('加载失败', 'PDF 库加载超时\n\n请重启应用后重试');
+                    showErrorDialog(
+                        window.i18n?.t('errors.loadFailed') || '加载失败',
+                        window.i18n?.t('errors.pdfLoadTimeout') || 'PDF 库加载超时\n\n请重启应用后重试'
+                    );
                     if (wasCameraOpen) await setCameraState(true);
                     return;
                 }
@@ -4243,17 +4244,23 @@ function importPDF() {
             } catch (error) {
                 hideLoadingOverlay();
                 console.error('文件导入失败:', error);
-                showErrorDialog('导入失败', '文件导入失败，请确保文件格式正确');
+                showErrorDialog(
+                    window.i18n?.t('errors.importFailed') || '导入失败',
+                    window.i18n?.t('errors.importFailedDesc') || '文件导入失败，请确保文件格式正确'
+                );
                 if (wasCameraOpen) await setCameraState(true);
             }
         } else {
-            showLoadingOverlay('正在导入文件...');
+            showLoadingOverlay(window.i18n?.t('loading.importingFile') || '正在导入文件...');
             
             try {
                 const pdfReady = await waitForPdfJs();
                 if (!pdfReady) {
                     hideLoadingOverlay();
-                    showErrorDialog('加载失败', 'PDF 库加载超时\n\n请重启应用后重试');
+                    showErrorDialog(
+                        window.i18n?.t('errors.loadFailed') || '加载失败',
+                        window.i18n?.t('errors.pdfLoadTimeout') || 'PDF 库加载超时\n\n请重启应用后重试'
+                    );
                     if (wasCameraOpen) await setCameraState(true);
                     return;
                 }
@@ -4296,7 +4303,10 @@ function importPDF() {
             } catch (error) {
                 hideLoadingOverlay();
                 console.error('文件导入失败:', error);
-                showErrorDialog('导入失败', '文件导入失败，请确保文件格式正确');
+                showErrorDialog(
+                    window.i18n?.t('errors.importFailed') || '导入失败',
+                    window.i18n?.t('errors.importFailedDesc') || '文件导入失败，请确保文件格式正确'
+                );
                 if (wasCameraOpen) await setCameraState(true);
             }
         }
@@ -4336,6 +4346,9 @@ function showErrorDialog(title, message, retryCallback = null) {
     const existing = document.getElementById('errorDialog');
     if (existing) existing.remove();
     
+    const retryText = window.i18n?.t('common.retry') || '重试';
+    const closeText = window.i18n?.t('common.close') || '关闭';
+    
     const dialog = document.createElement('div');
     dialog.id = 'errorDialog';
     dialog.className = 'error-dialog-overlay';
@@ -4345,8 +4358,8 @@ function showErrorDialog(title, message, retryCallback = null) {
             <div class="error-title">${title}</div>
             <div class="error-message">${message}</div>
             <div class="error-buttons">
-                ${retryCallback ? '<button class="error-btn error-btn-retry" id="errorRetry">重试</button>' : ''}
-                <button class="error-btn error-btn-close" id="errorClose">关闭</button>
+                ${retryCallback ? `<button class="error-btn error-btn-retry" id="errorRetry">${retryText}</button>` : ''}
+                <button class="error-btn error-btn-close" id="errorClose">${closeText}</button>
             </div>
         </div>
     `;
@@ -4380,9 +4393,10 @@ function collapseFileSidebar() {
         }, { once: true });
     }
     
+    const fileText = window.i18n?.t('toolbar.file') || '文件';
     dom.btnSave.innerHTML = `
-        <img src="assets/icon/File.svg" width="16" height="16" alt="文件" style="filter: invert(1);">
-        文件
+        <img src="assets/icon/File.svg" width="16" height="16" alt="${fileText}" style="filter: invert(1);">
+        ${fileText}
     `;
     console.log('收起文件侧边栏');
 }
@@ -4566,7 +4580,7 @@ function showNoCameraMessage(message) {
     
     ctx.font = `${Math.round(width * 0.018)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.fillText('找不到展台设备', centerX, centerY + height * 0.015);
+    ctx.fillText(window.i18n?.t('camera.deviceNotFound') || '找不到展台设备', centerX, centerY + height * 0.015);
     
     ctx.font = `${Math.round(width * 0.012)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
@@ -4764,7 +4778,10 @@ async function captureCamera() {
     
     if (!state.isCameraReady) {
         console.error('摄像头尚未就绪');
-        showErrorDialog('摄像头未就绪', '摄像头尚未就绪，请稍后再试');
+        showErrorDialog(
+            window.i18n?.t('camera.notReady') || '摄像头未就绪',
+            window.i18n?.t('camera.notReadyDesc') || '摄像头尚未就绪，请稍后再试'
+        );
         return;
     }
     
@@ -4773,7 +4790,10 @@ async function captureCamera() {
     
     if (!videoW || !videoH) {
         console.error('视频尺寸无效:', videoW, videoH);
-        showErrorDialog('摄像头未就绪', '摄像头尚未就绪，请稍后再试');
+        showErrorDialog(
+            window.i18n?.t('camera.notReady') || '摄像头未就绪',
+            window.i18n?.t('camera.notReadyDesc') || '摄像头尚未就绪，请稍后再试'
+        );
         return;
     }
     
@@ -4835,11 +4855,12 @@ async function captureCamera() {
         }
     }
     
-    const blobUrl = registerBlobUrl(URL.createObjectURL(blob));
+    const blobUrl = URL.createObjectURL(blob);
     const img = new Image();
     img.src = blobUrl;
     img.onload = () => {
-        addImageToListNoHighlight(img, `拍摄${state.imageList.length + 1}`);
+        const photoName = window.i18n?.t('camera.photoName', { n: state.imageList.length + 1 }) || `拍摄${state.imageList.length + 1}`;
+        addImageToListNoHighlight(img, photoName);
         expandSidebarIfCollapsed();
         console.log('已捕获摄像头画面并保存到图片列表');
     };
@@ -4899,7 +4920,7 @@ async function importImage() {
         
         // 如果有大图片或者多个文件，显示加载动画
         if (files.length > 1 || hasLargeImage) {
-            showLoadingOverlay(`正在读取图片...`);
+            showLoadingOverlay(window.i18n?.t('loading.readingImages') || '正在读取图片...');
         }
         
         const imageDataList = [];
@@ -4908,15 +4929,16 @@ async function importImage() {
             const file = files[i];
             
             if (files.length > 1 || file.size > 2.5 * 1024 * 1024) {
-                updateLoadingProgress(`正在读取图片 ${i + 1}/${files.length}...`);
+                updateLoadingProgress(window.i18n?.t('loading.readingImage', { current: i + 1, total: files.length }) || `正在读取图片 ${i + 1}/${files.length}...`);
             }
             
-            const blobUrl = registerBlobUrl(URL.createObjectURL(file));
+            const blobUrl = URL.createObjectURL(file);
             
+            const imageName = file.name || window.i18n?.t('sidebar.imageAlt', { n: state.imageList.length + imageDataList.length + 1 }) || `图片${state.imageList.length + imageDataList.length + 1}`;
             imageDataList.push({
                 data: blobUrl,
                 blob: file,
-                name: file.name || `图片${state.imageList.length + imageDataList.length + 1}`
+                name: imageName
             });
         }
         
@@ -4924,7 +4946,7 @@ async function importImage() {
         
         if (window.__TAURI__ && imageDataList.length > 1) {
             try {
-                updateLoadingProgress(`正在并行生成缩略图...`);
+                updateLoadingProgress(window.i18n?.t('loading.generatingThumbnails') || '正在并行生成缩略图...');
                 const { invoke } = window.__TAURI__.core;
                 
                 const base64Promises = imageDataList.map(async (imgData) => {
@@ -4968,7 +4990,7 @@ async function importImage() {
             let thumbnail;
             if (thumbnails[i] && thumbnails[i].length > 0) {
                 const thumbBlob = await fetch(thumbnails[i]).then(r => r.blob());
-                thumbnail = registerBlobUrl(URL.createObjectURL(thumbBlob));
+                thumbnail = URL.createObjectURL(thumbBlob);
             } else {
                 thumbnail = await generateThumbnailBlob(imgData.blob, 150);
             }
@@ -5022,7 +5044,7 @@ async function importImage() {
 
 async function addImageToList(img, name, isLast = true) {
     const blob = await fetch(img.src).then(r => r.blob());
-    const blobUrl = registerBlobUrl(URL.createObjectURL(blob));
+    const blobUrl = URL.createObjectURL(blob);
     const thumbnail = await generateThumbnailBlob(blob, 150);
     
     const imgData = {
@@ -5068,7 +5090,7 @@ async function addImageToList(img, name, isLast = true) {
 
 async function addImageToListNoHighlight(img, name) {
     const blob = await fetch(img.src).then(r => r.blob());
-    const blobUrl = registerBlobUrl(URL.createObjectURL(blob));
+    const blobUrl = URL.createObjectURL(blob);
     const thumbnail = await generateThumbnailBlob(blob, 150);
     
     const imgData = {

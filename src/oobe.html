@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>欢迎使用 ViewStage</title>
+    <title data-i18n="oobe.welcome">欢迎使用 ViewStage</title>
     <link rel="stylesheet" href="oobe.css">
+    <script src="i18n.js"></script>
     <script>document.addEventListener('contextmenu', e => e.preventDefault());</script>
 </head>
 <body>
@@ -15,7 +16,7 @@
             <img class="carousel-image active" src="assets/Chinese.png" alt="Chinese">
             <img class="carousel-image" src="assets/English.png" alt="English">
         </div>
-        <div class="carousel-hint">点击任意位置开始设置</div>
+        <div class="carousel-hint" data-i18n="oobe.clickToStart">点击任意位置开始设置</div>
     </div>
     
     <div class="close-btn" id="closeBtn" style="display: none;">×</div>
@@ -23,66 +24,67 @@
     <div class="oobe-container" id="page1" style="display: none;">
         <div class="logo-section">
             <img class="logo-icon" src="assets/Square1024x1024Logo.png" alt="ViewStage">
-            <h1 class="welcome-title">欢迎使用 ViewStage</h1>
-            <p class="welcome-subtitle">选择您的语言</p>
+            <h1 class="welcome-title" data-i18n="oobe.welcome">欢迎使用 ViewStage</h1>
+            <p class="welcome-subtitle" data-i18n="oobe.selectLanguage">选择您的语言</p>
         </div>
 
         <div class="settings-section">
             <div class="setting-item">
-                <span class="setting-label">语言</span>
+                <span class="setting-label" data-i18n="settings.language">语言</span>
                 <div class="custom-select" id="languageSelect">
                     <div class="select-selected">简体中文</div>
                     <div class="select-options">
                         <div class="select-option selected" data-value="zh-CN">简体中文</div>
+                        <div class="select-option" data-value="zh-TW">繁體中文</div>
                         <div class="select-option" data-value="en-US">English</div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <button class="btn-start" id="btnNext1">下一步</button>
+        <button class="btn-start" id="btnNext1" data-i18n="common.next">下一步</button>
     </div>
 
     <div class="oobe-container" id="page2" style="display: none;">
         <div class="logo-section">
             <img class="logo-icon" src="assets/Square1024x1024Logo.png" alt="ViewStage">
-            <h1 class="welcome-title">欢迎使用 ViewStage</h1>
-            <p class="welcome-subtitle">选择设置方式</p>
+            <h1 class="welcome-title" data-i18n="oobe.welcome">欢迎使用 ViewStage</h1>
+            <p class="welcome-subtitle" data-i18n="oobe.selectSetupMethod">选择设置方式</p>
         </div>
 
         <div class="choice-section">
             <div class="choice-card" id="quickSetup">
                 <div class="choice-icon">⚡</div>
-                <div class="choice-title">快速设置</div>
-                <div class="choice-desc">使用推荐配置快速开始</div>
+                <div class="choice-title" data-i18n="oobe.quickSetup">快速设置</div>
+                <div class="choice-desc" data-i18n="oobe.quickSetupDesc">使用推荐配置快速开始</div>
             </div>
             <div class="choice-card" id="importConfig">
                 <div class="choice-icon">📁</div>
-                <div class="choice-title">导入配置</div>
-                <div class="choice-desc">从配置文件恢复设置（推荐相同设备使用，否则可能会有未知的问题 ）</div>
+                <div class="choice-title" data-i18n="oobe.importConfig">导入配置</div>
+                <div class="choice-desc" data-i18n="oobe.importConfigDesc">从配置文件恢复设置（推荐相同设备使用，否则可能会有未知的问题 ）</div>
             </div>
         </div>
 
-        <button class="btn-back" id="btnBack2">返回</button>
+        <button class="btn-back" id="btnBack2" data-i18n="common.back">返回</button>
     </div>
 
     <div class="oobe-container" id="page3" style="display: none;">
         <div class="logo-section">
             <img class="logo-icon" src="assets/Square1024x1024Logo.png" alt="ViewStage">
-            <h1 class="welcome-title">快速设置</h1>
-            <p class="welcome-subtitle">基本设置</p>
+            <h1 class="welcome-title" data-i18n="oobe.quickSetup">快速设置</h1>
+            <p class="welcome-subtitle" data-i18n="oobe.basicSettings">基本设置</p>
         </div>
 
         <div class="settings-section">
            <div class="setting-item">
-                <span class="setting-label">分辨率</span>
+                <span class="setting-label" data-i18n="settings.resolution">分辨率</span>
                 <div class="custom-select" id="resolutionSelect">
-                    <div class="select-selected" id="resolutionSelected">加载中...</div>
+                    <div class="select-selected" id="resolutionSelected" data-i18n="common.loading">加载中...</div>
                     <div class="select-options" id="resolutionOptions"></div>
                 </div>
             </div>
             <div class="setting-item">
-                <span class="setting-label">界面模糊效果</span>
+                <span class="setting-label" data-i18n="settings.blurEffect">界面模糊效果</span>
                 <label class="toggle-switch">
                     <input type="checkbox" id="blurToggle" checked>
                     <span class="toggle-slider"></span>
@@ -91,43 +93,43 @@
         </div>
 
         <div class="page-nav">
-            <button class="btn-back" id="btnBack3">返回</button>
-            <button class="btn-start" id="btnNext3">下一步</button>
+            <button class="btn-back" id="btnBack3" data-i18n="common.back">返回</button>
+            <button class="btn-start" id="btnNext3" data-i18n="common.next">下一步</button>
         </div>
     </div>
 
     <div class="oobe-container" id="page4" style="display: none;">
         <div class="settings-section">
             <div class="setting-item">
-                <span class="setting-label">默认摄像头</span>
+                <span class="setting-label" data-i18n="settings.defaultCamera">默认摄像头</span>
                 <div class="custom-select" id="cameraSelect">
-                    <div class="select-selected" id="cameraSelected">加载中...</div>
+                    <div class="select-selected" id="cameraSelected" data-i18n="common.loading">加载中...</div>
                     <div class="select-options" id="cameraOptions"></div>
                 </div>
             </div>
             <div class="setting-item">
-                <span class="setting-label">摄像头分辨率</span>
+                <span class="setting-label" data-i18n="settings.cameraResolution">摄像头分辨率</span>
                 <div class="custom-select" id="cameraResolutionSelect">
-                    <div class="select-selected" id="cameraResolutionSelected">加载中...</div>
+                    <div class="select-selected" id="cameraResolutionSelected" data-i18n="common.loading">加载中...</div>
                     <div class="select-options" id="cameraResolutionOptions"></div>
                 </div>
             </div>
             <div class="setting-item">
-                <span class="setting-label">移动时帧率</span>
+                <span class="setting-label" data-i18n="settings.moveFps">移动时帧率</span>
                 <div class="custom-select" id="moveFpsSelect">
                     <div class="select-selected" id="moveFpsSelected">30 FPS</div>
                     <div class="select-options" id="moveFpsOptions"></div>
                 </div>
             </div>
             <div class="setting-item">
-                <span class="setting-label">绘画时帧率</span>
+                <span class="setting-label" data-i18n="settings.drawFps">绘画时帧率</span>
                 <div class="custom-select" id="drawFpsSelect">
                     <div class="select-selected" id="drawFpsSelected">10 FPS</div>
                     <div class="select-options" id="drawFpsOptions"></div>
                 </div>
             </div>
             <div class="setting-item">
-                <span class="setting-label">默认打开方式</span>
+                <span class="setting-label" data-i18n="oobe.defaultOpenMethod">默认打开方式</span>
                 <label class="toggle-switch">
                     <input type="checkbox" id="assocPdf">
                     <span class="toggle-slider"></span>
@@ -136,19 +138,19 @@
         </div>
 
         <div class="page-nav">
-            <button class="btn-back" id="btnBack4">返回</button>
-            <button class="btn-start" id="btnNext4">完成</button>
+            <button class="btn-back" id="btnBack4" data-i18n="common.back">返回</button>
+            <button class="btn-start" id="btnNext4" data-i18n="common.done">完成</button>
         </div>
     </div>
 
     <div class="oobe-container" id="page5" style="display: none;">
         <div class="logo-section">
             <img class="logo-icon" src="assets/Square1024x1024Logo.png" alt="ViewStage">
-            <h1 class="welcome-title">设置完成</h1>
-            <p class="welcome-subtitle">配置已保存，点击下方按钮重启应用</p>
+            <h1 class="welcome-title" data-i18n="oobe.setupComplete">设置完成</h1>
+            <p class="welcome-subtitle" data-i18n="oobe.configSaved">配置已保存，点击下方按钮重启应用</p>
         </div>
 
-        <button class="btn-start" id="btnRestart">重启应用</button>
+        <button class="btn-start" id="btnRestart" data-i18n="oobe.restartApp">重启应用</button>
     </div>
 
     <script src="oobe.js"></script>

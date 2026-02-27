@@ -7,28 +7,20 @@
     <title>ViewStage</title>
     <link rel="stylesheet" href="styles.css">
     <script src="JS/pdf.min.js"></script>
+    <script src="i18n.js"></script>
     <script type="module" src="main.js"></script>
     <script>document.addEventListener('contextmenu', e => e.preventDefault());</script>
 </head>
 <body>
     <div class="container">
-        <!-- 主内容区域 -->
         <div class="main-function">
-            <!-- 画布容器 -->
             <div class="canvas-container" id="canvasContainer">
-                <!-- 三层Canvas架构：
-                     - bgCanvas (底层): 灰色背景
-                     - imageCanvas (中间层): 摄像头/PDF图像
-                     - drawCanvas (顶层): 批注和橡皮擦
-                 -->
                 <canvas id="bgCanvas" class="canvas-base"></canvas>
                 <canvas id="imageCanvas" class="canvas-image"></canvas>
                 <canvas id="drawCanvas" class="canvas-draw"></canvas>
-                <!-- 橡皮提示框 -->
                 <div class="eraser-hint" id="eraserHint"></div>
             </div>
             
-            <!-- 笔触控制面板 -->
             <div class="pen-control-panel" id="penControlPanel">
                 <div class="pen-size-vertical">
                     <div class="slider-wrapper" id="penSizeSliderWrapper">
@@ -67,99 +59,89 @@
                 </div>
             </div>
             
-            <!-- 设置面板 -->
             <div class="settings-panel" id="settingsPanel">
                 <div class="settings-row">
-                    <span class="settings-label">旋转：</span>
-                    <button class="settings-btn" id="btnRotateLeft" title="向左旋转">
+                    <span class="settings-label" data-i18n="rotation.rotateLeft">旋转：</span>
+                    <button class="settings-btn" id="btnRotateLeft" data-i18n-title="rotation.rotateLeft">
                         ↺
                     </button>
-                    <button class="settings-btn" id="btnRotateRight" title="向右旋转">
+                    <button class="settings-btn" id="btnRotateRight" data-i18n-title="rotation.rotateRight">
                         ↻
                     </button>
                 </div>
             </div>
             
-            <!-- 底部工具栏 -->
             <div class="toolbar">
-                <!-- 左侧：窗口控制 -->
                 <div class="toolbar-left">
                     <button class="toolbar-btn" id="btnMenu">
                         <img src="assets/icon/justify.svg" width="16" height="16" alt="菜单" style="filter: invert(1);">
-                        菜单
+                        <span data-i18n="toolbar.menu">菜单</span>
                     </button>
                     <div class="toolbar-separator"></div>
                     <button class="toolbar-btn" id="btnMinimize">
                         <img src="assets/icon/box-arrow-in-down-left.svg" width="16" height="16" alt="最小化" style="filter: invert(1);">
-                        最小化
+                        <span data-i18n="toolbar.minimize">最小化</span>
                     </button>
                 </div>
                 
-                <!-- 中间：核心功能 -->
                 <div class="toolbar-center">
-                    <!-- 模式切换 -->
                     <button class="toolbar-btn function-btn" id="btnMove" data-mode="move">
                         <img src="assets/icon/move.svg" width="16" height="16" alt="移动" style="filter: invert(1);">
-                        移动
+                        <span data-i18n="toolbar.move">移动</span>
                     </button>
                     <div class="toolbar-separator"></div>
                     <button class="toolbar-btn function-btn" id="btnComment" data-mode="comment">
                         <img src="assets/icon/pen.svg" width="16" height="16" alt="批注" style="filter: invert(1);">
-                        批注
+                        <span data-i18n="toolbar.comment">批注</span>
                     </button>
                     <div class="toolbar-separator"></div>
                     <button class="toolbar-btn function-btn" id="btnEraser" data-mode="eraser">
                         <img src="assets/icon/eraser.svg" width="16" height="16" alt="橡皮" style="filter: invert(1);">
-                        橡皮
+                        <span data-i18n="toolbar.eraser">橡皮</span>
                     </button>
                     
-                    <!-- 批注工具 -->
                     <div class="toolbar-separator"></div>
                     <button class="toolbar-btn function-btn" id="btnUndo">
                         <img src="assets/icon/reply.svg" width="16" height="16" alt="撤销" style="filter: invert(1);">
-                        撤销
+                        <span data-i18n="toolbar.undo">撤销</span>
                     </button>
                     <div class="toolbar-separator"></div>
                     <button class="toolbar-btn function-btn" id="btnClear">
                         <img src="assets/icon/file-earmark-break.svg" width="16" height="16" alt="清空批注" style="filter: invert(1);">
-                        清空批注
+                        <span data-i18n="toolbar.clearAnnotations">清空批注</span>
                     </button>
                     
                     <div class="toolbar-separator-bold"></div>
                     
-                    <!-- 摄像头功能 -->
                     <button class="toolbar-btn function-btn" id="btnPhoto">
                         <img src="assets/icon/camera.svg" width="16" height="16" alt="拍照" style="filter: invert(1);">
-                        拍照
+                        <span data-i18n="toolbar.photo">拍照</span>
                     </button>
                     
                     <div class="toolbar-separator enhance-separator"></div>
                     
-                    <!-- 图像处理 -->
                     <button class="toolbar-btn function-btn enhance-btn" id="btnEnhance">
                         <img src="assets/icon/file-earmark-medical.svg" width="16" height="16" alt="文档增强" style="filter: invert(1);">
-                        文档增强
+                        <span data-i18n="toolbar.enhance">文档增强</span>
                     </button>
                     
                     <div class="toolbar-separator enhance-separator"></div>
                     
-                    <!-- 设置 -->
                     <button class="toolbar-btn function-btn" id="btnSettings">
                         <img src="assets/icon/gear.svg" width="16" height="16" alt="设置" style="filter: invert(1);">
-                        设置
+                        <span data-i18n="toolbar.settings">设置</span>
                     </button>
                 </div>
                 
-                <!-- 右侧：侧边栏控制 -->
                 <div class="toolbar-right">
                     <button class="toolbar-btn" id="btnExpand">
                         <img src="assets/icon/file-earmark-medical.svg" width="16" height="16" alt="图片" style="filter: invert(1);">
-                        图片
+                        <span data-i18n="toolbar.image">图片</span>
                     </button>
                     <div class="toolbar-separator"></div>
                     <button class="toolbar-btn" id="btnSave">
                         <img src="assets/icon/File.svg" width="16" height="16" alt="文件" style="filter: invert(1);">
-                        文件
+                        <span data-i18n="toolbar.file">文件</span>
                     </button>
                 </div>
             </div>

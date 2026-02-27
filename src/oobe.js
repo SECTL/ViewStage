@@ -1,5 +1,30 @@
 const invoke = window.__TAURI__?.core?.invoke;
 
+(async function initI18n() {
+    if (window.i18n) {
+        await window.i18n.init();
+        updateOOBEPageTexts();
+    }
+})();
+
+function updateOOBEPageTexts() {
+    if (!window.i18n) return;
+    
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        const translation = window.i18n.t(key);
+        if (translation) {
+            if (el.tagName === 'INPUT' && el.hasAttribute('placeholder')) {
+                el.placeholder = translation;
+            } else {
+                el.textContent = translation;
+            }
+        }
+    });
+    
+    document.title = window.i18n.t('oobe.welcome') || '欢迎使用 ViewStage';
+}
+
 let blobs = [];
 let animationId = null;
 let lastFrameTime = 0;
@@ -287,13 +312,19 @@ function setupCustomSelects() {
             select.classList.toggle('open');
         });
 
-        options.addEventListener('click', (e) => {
+        options.addEventListener('click', async (e) => {
             const option = e.target.closest('.select-option');
             if (option) {
                 selected.textContent = option.textContent;
                 options.querySelectorAll('.select-option').forEach(o => o.classList.remove('selected'));
                 option.classList.add('selected');
                 select.classList.remove('open');
+                
+                if (select.id === 'languageSelect' && window.i18n) {
+                    const newLocale = option.dataset.value;
+                    await window.i18n.setLocale(newLocale);
+                    updateOOBEPageTexts();
+                }
             }
         });
     });
@@ -450,7 +481,7 @@ async function initCameraSelect() {
         cameraOptions.innerHTML = '';
         
         if (videoDevices.length === 0) {
-            cameraSelected.textContent = '未检测到摄像头';
+            cameraSelected.textContent = window.i18n?.t('settings.noCameraDetected') || '未检测到摄像头';
             cameraResolutionSelected.textContent = '-';
             moveFpsSelected.textContent = '-';
             drawFpsSelected.textContent = '-';
@@ -462,11 +493,13 @@ async function initCameraSelect() {
             const option = document.createElement('div');
             option.className = 'select-option' + (index === 0 ? ' selected' : '');
             option.dataset.value = device.deviceId;
-            option.textContent = device.label || `摄像头 ${index + 1}`;
+            const cameraText = window.i18n?.t('camera.camera') || '摄像头';
+            option.textContent = device.label || `${cameraText} ${index + 1}`;
             cameraOptions.appendChild(option);
         });
 
-        cameraSelected.textContent = videoDevices[0].label || '摄像头 1';
+        const cameraText = window.i18n?.t('camera.camera') || '摄像头';
+        cameraSelected.textContent = videoDevices[0].label || `${cameraText} 1`;
         
         await initCameraResolutionSelect(track);
         await initFpsSelect(track);
@@ -476,11 +509,11 @@ async function initCameraSelect() {
         console.error('摄像头检测失败:', error.name);
         
         if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-            cameraSelected.textContent = '无摄像头权限';
+            cameraSelected.textContent = window.i18n?.t('settings.noCameraPermission') || '无摄像头权限';
         } else if (error.name === 'NotFoundError') {
-            cameraSelected.textContent = '未检测到摄像头';
+            cameraSelected.textContent = window.i18n?.t('settings.noCameraDetected') || '未检测到摄像头';
         } else {
-            cameraSelected.textContent = '获取失败';
+            cameraSelected.textContent = window.i18n?.t('settings.getFailed') || '获取失败';
         }
         
         cameraResolutionSelected.textContent = '-';
@@ -545,7 +578,8 @@ async function initCameraResolutionSelect(track) {
             const maxResLabel = `${widths.max} x ${heights.max}`;
             const exists = resolutions.some(r => r.w === widths.max && r.h === heights.max);
             if (!exists) {
-                resolutions.push({ w: widths.max, h: heights.max, label: `${maxResLabel} (最大)` });
+                const maxText = window.i18n?.t('settings.maximum') || '最大';
+                resolutions.push({ w: widths.max, h: heights.max, label: `${maxResLabel} (${maxText})` });
             }
         }
     }
@@ -553,11 +587,14 @@ async function initCameraResolutionSelect(track) {
     cameraResolutionOptions.innerHTML = '';
     
     if (resolutions.length === 0) {
-        cameraResolutionSelected.textContent = '无法获取';
+        cameraResolutionSelected.textContent = window.i18n?.t('settings.cannotGet') || '无法获取';
     } else {
+        const defaultOption = resolutions.find(r => r.w === 1280 && r.h === 720) || resolutions[0];
+        const defaultIndex = resolutions.indexOf(defaultOption);
+        
         resolutions.forEach((res, index) => {
             const option = document.createElement('div');
-            option.className = 'select-option' + (index === 0 ? ' selected' : '');
+            option.className = 'select-option' + (index === defaultIndex ? ' selected' : '');
             option.dataset.width = res.w;
             option.dataset.height = res.h;
             option.dataset.value = `${res.w}x${res.h}`;
@@ -565,7 +602,6 @@ async function initCameraResolutionSelect(track) {
             cameraResolutionOptions.appendChild(option);
         });
         
-        const defaultOption = resolutions.find(r => r.w === 1280 && r.h === 720) || resolutions[0];
         cameraResolutionSelected.textContent = defaultOption.label;
     }
 }
