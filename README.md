@@ -68,11 +68,12 @@
  - ✅图标完善（采用icons.bootcss.com中的图标，在此表示感谢(*^_^*)）
  - ✅设置
  - ✅笔颜色（目前支持存储15中颜色）
- - ❎多语言（预计在3月内完成）
+ - ✅多语言
  - ❓更多功能(欢迎到issues提交(*^_^*))
 
 ## 许可证
 本项目采用开源许可证，详见 [LICENSE](https://github.com/ospneam/ViewStage/blob/main/LICENSE) 文件。
+
 
 
 
