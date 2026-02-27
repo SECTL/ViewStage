@@ -9,6 +9,8 @@
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
+    await i18n.init();
+    
     // ==================== 自定义弹窗函数 ====================
     function showSettingsDialog(title, message, type = 'info') {
         const existing = document.getElementById('settingsDialog');
@@ -25,7 +27,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="settings-dialog-icon">${icon}</div>
                 <div class="settings-dialog-title">${title}</div>
                 <div class="settings-dialog-message">${message}</div>
-                <button class="settings-dialog-btn" id="settingsDialogClose">确定</button>
+                <button class="settings-dialog-btn" id="settingsDialogClose">${window.i18n?.t('common.confirm') || '确定'}</button>
             </div>
         `;
         document.body.appendChild(dialog);
@@ -176,13 +178,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                         cameraOptionsContainer.innerHTML = '';
                         
                         if (!hasCameraPermission) {
-                            cameraSelected.textContent = '无摄像头权限';
+                            cameraSelected.textContent = window.i18n?.t('settings.noCameraPermission') || '无摄像头权限';
                             cameraResolutionSelected.textContent = '-';
                             moveFpsSelected.textContent = '-';
                             drawFpsSelected.textContent = '-';
                             disableCameraSettings();
                         } else if (videoDevices.length === 0) {
-                            cameraSelected.textContent = '未检测到摄像头';
+                            cameraSelected.textContent = window.i18n?.t('settings.noCameraDetected') || '未检测到摄像头';
                             cameraResolutionSelected.textContent = '-';
                             moveFpsSelected.textContent = '-';
                             drawFpsSelected.textContent = '-';
@@ -193,11 +195,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 option.className = 'select-option';
                                 option.dataset.value = device.deviceId;
                                 
-                                let label = device.label || `摄像头 ${index + 1}`;
+                                const cameraText = window.i18n?.t('camera.camera') || '摄像头';
+                                let label = device.label || `${cameraText} ${index + 1}`;
                                 if (label.includes('back') || label.includes('后置') || label.includes('rear')) {
-                                    label = `后置: ${label}`;
+                                    label = `${window.i18n?.t('camera.rearCamera') || '后置'}: ${label}`;
                                 } else if (label.includes('front') || label.includes('前置') || label.includes('user')) {
-                                    label = `前置: ${label}`;
+                                    label = `${window.i18n?.t('camera.frontCamera') || '前置'}: ${label}`;
                                 }
                                 
                                 option.textContent = label;
@@ -231,7 +234,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
                     } catch (error) {
                         console.error('获取摄像头列表失败:', error);
-                        cameraSelected.textContent = '获取失败';
+                        cameraSelected.textContent = window.i18n?.t('settings.getFailed') || '获取失败';
                         cameraResolutionSelected.textContent = '-';
                         moveFpsSelected.textContent = '-';
                         drawFpsSelected.textContent = '-';
@@ -276,7 +279,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 const maxResLabel = `${widths.max} x ${heights.max}`;
                                 const exists = resolutions.some(r => r.w === widths.max && r.h === heights.max);
                                 if (!exists) {
-                                    resolutions.push({ w: widths.max, h: heights.max, label: `${maxResLabel} (最大)` });
+                                    const maxText = window.i18n?.t('settings.maximum') || '最大';
+                                    resolutions.push({ w: widths.max, h: heights.max, label: `${maxResLabel} (${maxText})` });
                                 }
                             }
                         }
@@ -284,7 +288,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         cameraResolutionOptionsContainer.innerHTML = '';
                         
                         if (resolutions.length === 0) {
-                            cameraResolutionSelected.textContent = '无法获取';
+                            cameraResolutionSelected.textContent = window.i18n?.t('settings.cannotGet') || '无法获取';
                         } else {
                             resolutions.forEach(res => {
                                 const option = document.createElement('div');
@@ -320,7 +324,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
                     } catch (error) {
                         console.error('获取摄像头分辨率失败:', error);
-                        cameraResolutionSelected.textContent = '获取失败';
+                        cameraResolutionSelected.textContent = window.i18n?.t('settings.getFailed') || '获取失败';
                     } finally {
                         if (track) {
                             track.stop();
@@ -663,7 +667,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         restartModal.classList.add('active');
                     }
                 } else {
-                    showSettingsDialog('保存失败', '保存设置失败，请重试', 'error');
+                    showSettingsDialog(window.i18n?.t('settings.saveFailed') || '保存失败', window.i18n?.t('settings.saveFailedRetry') || '保存设置失败，请重试', 'error');
                 }
             });
         });
@@ -712,7 +716,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         restartModal.classList.add('active');
                     }
                 } else {
-                    showSettingsDialog('保存失败', '保存设置失败，请重试', 'error');
+                    showSettingsDialog(window.i18n?.t('settings.saveFailed') || '保存失败', window.i18n?.t('settings.saveFailedRetry') || '保存设置失败，请重试', 'error');
                 }
             });
         });
@@ -748,7 +752,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const saved = await saveSettings({ defaultCamera: value });
             
             if (!saved) {
-                showSettingsDialog('保存失败', '保存设置失败，请重试', 'error');
+                showSettingsDialog(window.i18n?.t('settings.saveFailed') || '保存失败', window.i18n?.t('settings.saveFailedRetry') || '保存设置失败，请重试', 'error');
             }
         });
     }
@@ -1141,7 +1145,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             } catch (error) {
                 console.error('导出设置失败:', error);
-                showSettingsDialog('导出失败', String(error), 'error');
+                showSettingsDialog(window.i18n?.t('settings.exportFailed') || '导出失败', String(error), 'error');
             }
         });
     }
@@ -1171,7 +1175,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             } catch (error) {
                 console.error('导入设置失败:', error);
-                showSettingsDialog('导入失败', String(error), 'error');
+                showSettingsDialog(window.i18n?.t('settings.importFailed') || '导入失败', String(error), 'error');
             }
         });
     }
@@ -1197,7 +1201,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await invoke('reset_settings');
             } catch (error) {
                 console.error('重置失败:', error);
-                showSettingsDialog('重置失败', String(error), 'error');
+                showSettingsDialog(window.i18n?.t('settings.saveFailed') || '保存失败', String(error), 'error');
                 modalOverlay.classList.remove('active');
             }
         });
@@ -1237,11 +1241,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const { invoke } = window.__TAURI__.core;
                 const result = await invoke('clear_cache');
-                showSettingsDialog('清除完成', result, 'success');
+                showSettingsDialog(window.i18n?.t('settings.clearComplete') || '清除完成', result, 'success');
                 updateCacheSize();
             } catch (error) {
                 console.error('清除缓存失败:', error);
-                showSettingsDialog('清除失败', String(error), 'error');
+                showSettingsDialog(window.i18n?.t('settings.clearFailed') || '清除失败', String(error), 'error');
             }
         });
     }
@@ -1269,7 +1273,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 autoClearCacheSelect.classList.remove('open');
                 
                 if (days === 0) {
-                    showSettingsDialog('警告', '若关闭自动清理可能导致C盘异常，强烈建议打开自动清理功能', 'error');
+                    showSettingsDialog(window.i18n?.t('common.warning') || '警告', window.i18n?.t('errors.autoClearWarning') || '若关闭自动清理可能导致C盘异常，强烈建议打开自动清理功能', 'error');
                 }
                 await saveSettings({ autoClearCacheDays: days });
             });
@@ -1290,7 +1294,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await openPath(logDir);
             } catch (error) {
                 console.error('打开日志目录失败:', error);
-                showSettingsDialog('错误', '打开日志目录失败', 'error');
+                showSettingsDialog(window.i18n?.t('common.error') || '错误', window.i18n?.t('settings.openLogDirFailed') || '打开日志目录失败', 'error');
             }
         });
     }
@@ -1316,7 +1320,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await invoke('restart_app');
             } catch (error) {
                 console.error('重启失败:', error);
-                showSettingsDialog('重启失败', String(error), 'error');
+                showSettingsDialog(window.i18n?.t('settings.saveFailed') || '保存失败', String(error), 'error');
             }
         });
     }
@@ -1500,7 +1504,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         
         if (updateStatus) {
-            updateStatus.textContent = '正在检查更新...';
+            updateStatus.textContent = window.i18n?.t('settings.checkingUpdate') || '正在检查更新...';
         }
         
         if (updateInfo) {
@@ -1526,11 +1530,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 if (currentVersion === latestVersion) {
                     if (updateStatus) {
-                        updateStatus.textContent = '当前已是最新版本';
+                        updateStatus.textContent = window.i18n?.t('settings.latestVersion') || '已是最新版本';
                     }
                 } else {
                     if (updateStatus) {
-                        updateStatus.innerHTML = `发现新版本 <a href="#" id="downloadLink" style="color: #3498db; cursor: pointer;">${latestVersion}</a>`;
+                        const newText = window.i18n?.t('settings.newVersionFound') || '发现新版本';
+                        updateStatus.innerHTML = `${newText} <a href="#" id="downloadLink" style="color: #3498db; cursor: pointer;">${latestVersion}</a>`;
                         
                         const downloadLink = document.getElementById('downloadLink');
                         if (downloadLink && release.html_url) {
@@ -1561,8 +1566,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             
             if (updateStatus) {
-                updateStatus.textContent = '检查更新失败，请稍后重试';
-            }
+                    updateStatus.textContent = window.i18n?.t('settings.updateCheckFailed') || '检查更新失败';
+                }
         }
     }
 

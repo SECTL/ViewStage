@@ -7,98 +7,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>设置 - ViewStage</title>
+    <title data-i18n="settings.title">设置 - ViewStage</title>
     <link rel="stylesheet" href="settings.css">
+    <script src="i18n.js"></script>
     <script>document.addEventListener('contextmenu', e => e.preventDefault());</script>
 </head>
 <body>
-    <!-- 极光背景动画 -->
     <div class="aurora-bg" id="auroraBg"></div>
     
-    <!-- 顶部标题栏 (可拖拽) -->
     <div class="topbar" data-tauri-drag-region>
         <button class="btn-close" id="btnClose">×</button>
-        <div class="setting-title" data-tauri-drag-region>设置</div>
+        <div class="setting-title" data-tauri-drag-region data-i18n="settings.title">设置</div>
         <div class="topbar-placeholder"></div>
     </div>
 
     <div class="main-container">
-        <!-- 左侧导航栏 -->
         <div class="sidebar">
             <button class="sidebar-btn" id="btnApp">
                 <span class="btn-icon">⚙</span>
-                <span class="btn-text">应用设置</span>
+                <span class="btn-text" data-i18n="settings.appSettings">应用设置</span>
             </button>
             <button class="sidebar-btn" id="btnStorage">
                 <span class="btn-icon"><img src="assets/icon/folder.svg" width="16" height="16" style="filter: invert(1);"></span>
-                <span class="btn-text">存储</span>
+                <span class="btn-text" data-i18n="settings.storage">存储</span>
             </button>
             <button class="sidebar-btn" id="btnCanvas">
                 <span class="btn-icon">◐</span>
-                <span class="btn-text">Canvas调节</span>
+                <span class="btn-text" data-i18n="settings.canvasAdjust">Canvas调节</span>
             </button>
             <button class="sidebar-btn" id="btnSource">
                 <span class="btn-icon">◉</span>
-                <span class="btn-text">信号源调节</span>
+                <span class="btn-text" data-i18n="settings.sourceAdjust">信号源调节</span>
             </button>
             <button class="sidebar-btn" id="btnAbout">
                 <span class="btn-icon">ℹ</span>
-                <span class="btn-text">关于</span>
+                <span class="btn-text" data-i18n="settings.about">关于</span>
             </button>
         </div>
 
-        <!-- 右侧内容区域 -->
         <div class="content">
-            <!-- 应用设置页面 -->
             <div class="page" id="pageApp">
-                <h2 class="page-title">应用设置</h2>
+                <h2 class="page-title" data-i18n="settings.appSettings">应用设置</h2>
                     <div class="setting-item">
-                        <span class="setting-label">语言</span>
+                        <span class="setting-label" data-i18n="settings.language">语言</span>
                         <div class="custom-select" id="languageSelect">
                             <div class="select-selected" id="selectSelected">简体中文</div>
                             <div class="select-options" id="selectOptions">
                                 <div class="select-option" data-value="zh-CN">简体中文</div>
+                                <div class="select-option" data-value="zh-TW">繁體中文</div>
                                 <div class="select-option" data-value="en-US">English</div>
                             </div>
                         </div>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">分辨率</span>
+                        <span class="setting-label" data-i18n="settings.resolution">分辨率</span>
                         <div class="custom-select" id="resolutionSelect">
-                            <div class="select-selected" id="resolutionSelected">加载中...</div>
+                            <div class="select-selected" id="resolutionSelected" data-i18n="common.loading">加载中...</div>
                             <div class="select-options" id="resolutionOptions"></div>
                         </div>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">界面模糊效果</span>
+                        <span class="setting-label" data-i18n="settings.blurEffect">界面模糊效果</span>
                         <label class="switch">
                             <input type="checkbox" id="blurEffectToggle" checked>
                             <span class="slider"></span>
                         </label>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">设置管理</span>
+                        <span class="setting-label" data-i18n="settings.settingsManagement">设置管理</span>
                         <div class="button-group">
-                            <button class="btn-action" id="btnExportSettings">导出设置</button>
-                            <button class="btn-action" id="btnImportSettings">导入设置</button>
+                            <button class="btn-action" id="btnExportSettings" data-i18n="settings.exportSettings">导出设置</button>
+                            <button class="btn-action" id="btnImportSettings" data-i18n="settings.importSettings">导入设置</button>
                         </div>
                     </div>
                     <div class="setting-item">
-                        <button class="btn-reset" id="btnReset">重置应用</button>
+                        <button class="btn-reset" id="btnReset" data-i18n="settings.resetApp">重置应用</button>
                     </div>
                 </div>
                 
                 <div class="page" id="pageCanvas">
-                    <h2 class="page-title">Canvas调节</h2>
+                    <h2 class="page-title" data-i18n="settings.canvasAdjust">Canvas调节</h2>
                     <div class="setting-item">
-                        <span class="setting-label">画布缩放倍数</span>
+                        <span class="setting-label" data-i18n="settings.canvasScale">画布缩放倍数</span>
                         <div class="slider-container">
                             <input type="range" id="canvasScaleSlider" min="1" max="3" step="0.5" value="2" class="slider">
                             <span class="slider-value" id="canvasScaleValue">2x</span>
                         </div>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">设备像素比限制</span>
+                        <span class="setting-label" data-i18n="settings.dprLimit">设备像素比限制</span>
                         <div class="custom-select" id="dprSelect">
                             <div class="select-selected" id="dprSelected">2</div>
                             <div class="select-options" id="dprOptions">
@@ -109,14 +106,14 @@
                         </div>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">绘画平滑度</span>
+                        <span class="setting-label" data-i18n="settings.smoothStrength">绘画平滑度</span>
                         <div class="slider-container">
                             <input type="range" id="smoothStrengthSlider" min="0" max="1" step="0.1" value="0.5" class="slider">
                             <span class="slider-value" id="smoothStrengthValue">0.5</span>
                         </div>
                     </div>
                     <div class="setting-item flex-start">
-                        <span class="setting-label">画笔颜色</span>
+                        <span class="setting-label" data-i18n="settings.penColors">画笔颜色</span>
                         <div class="color-editor" id="colorEditor">
                             <div class="color-editor-row">
                                 <div class="color-edit-item">
@@ -189,96 +186,96 @@
                 </div>
                 
                 <div class="page" id="pageSource">
-                    <h2 class="page-title">信号源调节</h2>
+                    <h2 class="page-title" data-i18n="settings.sourceAdjust">信号源调节</h2>
                     <div class="setting-item">
-                        <span class="setting-label">默认摄像头</span>
+                        <span class="setting-label" data-i18n="settings.defaultCamera">默认摄像头</span>
                         <div class="custom-select" id="cameraSelect">
-                            <div class="select-selected" id="cameraSelected">加载中...</div>
+                            <div class="select-selected" id="cameraSelected" data-i18n="common.loading">加载中...</div>
                             <div class="select-options" id="cameraOptions"></div>
                         </div>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">摄像头分辨率</span>
+                        <span class="setting-label" data-i18n="settings.cameraResolution">摄像头分辨率</span>
                         <div class="custom-select" id="cameraResolutionSelect">
-                            <div class="select-selected" id="cameraResolutionSelected">加载中...</div>
+                            <div class="select-selected" id="cameraResolutionSelected" data-i18n="common.loading">加载中...</div>
                             <div class="select-options" id="cameraResolutionOptions"></div>
                         </div>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">移动时帧率</span>
+                        <span class="setting-label" data-i18n="settings.moveFps">移动时帧率</span>
                         <div class="custom-select" id="moveFpsSelect">
                             <div class="select-selected" id="moveFpsSelected">30 FPS</div>
                             <div class="select-options" id="moveFpsOptions"></div>
                         </div>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">绘画时帧率</span>
+                        <span class="setting-label" data-i18n="settings.drawFps">绘画时帧率</span>
                         <div class="custom-select" id="drawFpsSelect">
                             <div class="select-selected" id="drawFpsSelected">10 FPS</div>
                             <div class="select-options" id="drawFpsOptions"></div>
                         </div>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">PDF 输出分辨率</span>
+                        <span class="setting-label" data-i18n="settings.pdfOutputResolution">PDF 输出分辨率</span>
                         <div class="custom-select" id="pdfScaleSelect">
                             <div class="select-selected" id="pdfScaleSelected">1.5x</div>
                             <div class="select-options" id="pdfScaleOptions">
-                                <div class="select-option" data-value="1">1x (低)</div>
-                                <div class="select-option" data-value="1.5">1.5x (中)</div>
-                                <div class="select-option" data-value="2">2x (高)</div>
-                                <div class="select-option" data-value="2.5">2.5x (超高)</div>
-                                <div class="select-option" data-value="3">3x (最高)</div>
+                                <div class="select-option" data-value="1">1x (<span data-i18n="settings.resolutionLow">低</span>)</div>
+                                <div class="select-option" data-value="1.5">1.5x (<span data-i18n="settings.resolutionMedium">中</span>)</div>
+                                <div class="select-option" data-value="2">2x (<span data-i18n="settings.resolutionHigh">高</span>)</div>
+                                <div class="select-option" data-value="2.5">2.5x (<span data-i18n="settings.resolutionVeryHigh">超高</span>)</div>
+                                <div class="select-option" data-value="3">3x (<span data-i18n="settings.resolutionMax">最高</span>)</div>
                             </div>
                         </div>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">画面镜像</span>
+                        <span class="setting-label" data-i18n="settings.mirror">画面镜像</span>
                         <label class="toggle-switch">
                             <input type="checkbox" id="mirrorToggle">
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">默认旋转角度</span>
+                        <span class="setting-label" data-i18n="settings.defaultRotation">默认旋转角度</span>
                         <div class="custom-select" id="defaultRotationSelect">
                             <div class="select-selected" id="defaultRotationSelected">0°</div>
                             <div class="select-options" id="defaultRotationOptions">
-                                <div class="select-option" data-value="0">0° (不旋转)</div>
-                                <div class="select-option" data-value="90">90° (顺时针)</div>
-                                <div class="select-option" data-value="180">180° (倒置)</div>
-                                <div class="select-option" data-value="270">270° (逆时针)</div>
+                                <div class="select-option" data-value="0">0° (<span data-i18n="settings.rotationNone">不旋转</span>)</div>
+                                <div class="select-option" data-value="90">90° (<span data-i18n="settings.rotationClockwise">顺时针</span>)</div>
+                                <div class="select-option" data-value="180">180° (<span data-i18n="settings.rotationUpsideDown">倒置</span>)</div>
+                                <div class="select-option" data-value="270">270° (<span data-i18n="settings.rotationCounterClockwise">逆时针</span>)</div>
                             </div>
                         </div>
                     </div>
                     <div class="setting-group collapsed">
                         <div class="setting-group-header" id="imageProcessHeader">
-                            <span class="setting-label">图像处理</span>
+                            <span class="setting-label" data-i18n="settings.imageProcessing">图像处理</span>
                             <span class="group-arrow">▼</span>
                         </div>
                         <div class="setting-group-content" id="imageProcessContent">
                             <div class="setting-item">
-                                <span class="setting-label">对比度</span>
+                                <span class="setting-label" data-i18n="settings.contrast">对比度</span>
                                 <div class="slider-container">
                                     <input type="range" id="contrastSlider" min="0.5" max="3" step="0.1" value="1.4" class="slider">
                                     <span class="slider-value" id="contrastValue">1.4</span>
                                 </div>
                             </div>
                             <div class="setting-item">
-                                <span class="setting-label">亮度</span>
+                                <span class="setting-label" data-i18n="settings.brightness">亮度</span>
                                 <div class="slider-container">
                                     <input type="range" id="brightnessSlider" min="-50" max="50" step="5" value="10" class="slider">
                                     <span class="slider-value" id="brightnessValue">10</span>
                                 </div>
                             </div>
                             <div class="setting-item">
-                                <span class="setting-label">饱和度</span>
+                                <span class="setting-label" data-i18n="settings.saturation">饱和度</span>
                                 <div class="slider-container">
                                     <input type="range" id="saturationSlider" min="0.5" max="2" step="0.1" value="1.2" class="slider">
                                     <span class="slider-value" id="saturationValue">1.2</span>
                                 </div>
                             </div>
                             <div class="setting-item">
-                                <span class="setting-label">锐化</span>
+                                <span class="setting-label" data-i18n="settings.sharpen">锐化</span>
                                 <div class="slider-container">
                                     <input type="range" id="sharpenSlider" min="0" max="100" step="5" value="0" class="slider">
                                     <span class="slider-value" id="sharpenValue">0</span>
@@ -287,14 +284,14 @@
                         </div>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">PDF 默认打开方式</span>
+                        <span class="setting-label" data-i18n="settings.pdfDefaultOpen">PDF 默认打开方式</span>
                         <label class="toggle-switch">
                             <input type="checkbox" id="assocPdf" data-ext="pdf">
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">Word 文档默认打开方式</span>
+                        <span class="setting-label" data-i18n="settings.wordDefaultOpen">Word 文档默认打开方式</span>
                         <label class="toggle-switch">
                             <input type="checkbox" id="assocWord" data-ext="word">
                             <span class="toggle-slider"></span>
@@ -302,29 +299,28 @@
                     </div>
                 </div>
                 
-                <!-- 存储页面 -->
                 <div class="page" id="pageStorage">
-                    <h2 class="page-title">存储</h2>
+                    <h2 class="page-title" data-i18n="settings.storage">存储</h2>
                     <div class="setting-item">
-                        <span class="setting-label">缓存 <span id="cacheSize" style="color: #888; font-size: 12px;"></span></span>
-                        <button class="btn-clear-cache" id="btnClearCache">清除缓存</button>
+                        <span class="setting-label" data-i18n="settings.cache">缓存 <span id="cacheSize" style="color: #888; font-size: 12px;"></span></span>
+                        <button class="btn-clear-cache" id="btnClearCache" data-i18n="settings.clearCache">清除缓存</button>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">自动清除缓存</span>
+                        <span class="setting-label" data-i18n="settings.autoClearCache">自动清除缓存</span>
                         <div class="custom-select" id="autoClearCacheSelect">
-                            <div class="select-selected" id="autoClearCacheSelected">每半月</div>
+                            <div class="select-selected" id="autoClearCacheSelected" data-i18n="settings.biweekly">每半月</div>
                             <div class="select-options" id="autoClearCacheOptions">
-                                <div class="select-option" data-value="0">关闭</div>
-                                <div class="select-option" data-value="1">每天</div>
-                                <div class="select-option" data-value="7">每周</div>
-                                <div class="select-option" data-value="15">每半月</div>
-                                <div class="select-option" data-value="30">每月</div>
+                                <div class="select-option" data-value="0" data-i18n="settings.close">关闭</div>
+                                <div class="select-option" data-value="1" data-i18n="settings.daily">每天</div>
+                                <div class="select-option" data-value="7" data-i18n="settings.weekly">每周</div>
+                                <div class="select-option" data-value="15" data-i18n="settings.biweekly">每半月</div>
+                                <div class="select-option" data-value="30" data-i18n="settings.monthly">每月</div>
                             </div>
                         </div>
                     </div>
                     <div class="setting-item">
-                        <span class="setting-label">日志</span>
-                        <button class="btn-clear-cache" id="btnOpenLogDir">打开日志目录</button>
+                        <span class="setting-label" data-i18n="settings.log">日志</span>
+                        <button class="btn-clear-cache" id="btnOpenLogDir" data-i18n="settings.openLogDir">打开日志目录</button>
                     </div>
                 </div>
                 
@@ -334,11 +330,11 @@
                         <h1>ViewStage</h1>
                     </div>
                     <div class="about-version">
-                        <span class="version-label">版本</span>
+                        <span class="version-label" data-i18n="settings.version">版本</span>
                         <span class="version-number" id="versionNumber">...</span>
                     </div>
                     <div class="about-info">
-                        <p>ViewStage 是一款用于视频演示和文档批注的应用程序。</p>
+                        <p data-i18n="about.description">ViewStage 是一款用于视频演示和文档批注的应用程序。</p>
                     </div>
                     <div class="about-links">
                         <a href="#" class="link-item" id="linkGithub">
@@ -347,28 +343,28 @@
                         </a>
                         <a href="#" class="link-item" id="linkLicense">
                             <span class="link-icon">📄</span>
-                            <span>开源许可</span>
+                            <span data-i18n="settings.openSource">开源许可</span>
                         </a>
                         <button class="link-item" id="btnCheckUpdate">
                             <span class="link-icon">↻</span>
-                            <span>检查更新</span>
+                            <span data-i18n="settings.checkUpdate">检查更新</span>
                         </button>
                     </div>
                     <div class="about-copyright">
-                        <p>© <span id="copyrightYear"></span> ViewStage. All rights reserved.</p>
+                        <p id="copyrightText">© <span id="copyrightYear"></span> ViewStage. All rights reserved.</p>
                     </div>
                 </div>
                 
                 <div class="page" id="pageUpdate">
                     <div class="update-container">
                         <div class="update-icon">↻</div>
-                        <h2 class="update-title">检查更新</h2>
-                        <p class="update-status" id="updateStatus">正在检查更新...</p>
+                        <h2 class="update-title" data-i18n="settings.checkUpdate">检查更新</h2>
+                        <p class="update-status" id="updateStatus" data-i18n="settings.checkingUpdate">正在检查更新...</p>
                         <div class="update-info" id="updateInfo" style="display: none;">
-                            <p>当前版本: <span id="currentVersion">...</span></p>
-                            <p>最新版本: <span id="latestVersion">...</span></p>
+                            <p data-i18n="settings.version">当前版本: <span id="currentVersion">...</span></p>
+                            <p data-i18n="settings.version">最新版本: <span id="latestVersion">...</span></p>
                         </div>
-                        <button class="btn-back" id="btnBackToAbout">返回</button>
+                        <button class="btn-back" id="btnBackToAbout" data-i18n="common.back">返回</button>
                     </div>
                 </div>
             </div>
@@ -376,22 +372,22 @@
 
         <div class="modal-overlay" id="modalOverlay">
             <div class="modal-dialog">
-                <div class="modal-title">确认重置</div>
-                <div class="modal-message">确定要重置应用吗？这将删除所有设置并重启应用。</div>
+                <div class="modal-title" data-i18n="settings.confirmReset">确认重置</div>
+                <div class="modal-message" data-i18n="settings.resetWarning">确定要重置应用吗？这将删除所有设置并重启应用。</div>
                 <div class="modal-buttons">
-                    <button class="modal-btn modal-btn-cancel" id="modalCancel">取消</button>
-                    <button class="modal-btn modal-btn-confirm" id="modalConfirm">确认</button>
+                    <button class="modal-btn modal-btn-cancel" id="modalCancel" data-i18n="common.cancel">取消</button>
+                    <button class="modal-btn modal-btn-confirm" id="modalConfirm" data-i18n="common.confirm">确认</button>
                 </div>
             </div>
         </div>
 
         <div class="modal-overlay" id="restartModal">
             <div class="modal-dialog">
-                <div class="modal-title">重启应用</div>
-                <div class="modal-message">语言设置已更改，需要重启应用才能生效。</div>
+                <div class="modal-title" data-i18n="settings.restartApp">重启应用</div>
+                <div class="modal-message" data-i18n="settings.languageChanged">语言设置已更改，需要重启应用才能生效。</div>
                 <div class="modal-buttons">
-                    <button class="modal-btn modal-btn-cancel" id="restartLater">稍后</button>
-                    <button class="modal-btn modal-btn-confirm" id="restartNow">立即重启</button>
+                    <button class="modal-btn modal-btn-cancel" id="restartLater" data-i18n="settings.restartLater">稍后</button>
+                    <button class="modal-btn modal-btn-confirm" id="restartNow" data-i18n="settings.restartNow">立即重启</button>
                 </div>
             </div>
         </div>
