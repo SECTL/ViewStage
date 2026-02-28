@@ -581,10 +581,7 @@ body {
     touch-action: none;
     border: none;
     outline: none;
-    will-change: transform;
-    transform: translateZ(0);
     transform-origin: 0 0;
-    backface-visibility: hidden;
 }
 
 .canvas-base {
