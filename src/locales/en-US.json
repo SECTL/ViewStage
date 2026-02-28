@@ -101,6 +101,7 @@
     "resetWarning": "Are you sure you want to reset? This will delete all settings and restart the app.",
     "restartApp": "Restart App",
     "languageChanged": "Language setting changed. Restart required to take effect.",
+    "resolutionChanged": "Resolution setting changed. Restart required to take effect.",
     "restartLater": "Later",
     "restartNow": "Restart Now",
     "saveFailed": "Save Failed",

@@ -101,6 +101,7 @@
     "resetWarning": "确定要重置应用吗？这将删除所有设置并重启应用。",
     "restartApp": "重启应用",
     "languageChanged": "语言设置已更改，需要重启应用才能生效。",
+    "resolutionChanged": "分辨率设置已更改，需要重启应用才能生效。",
     "restartLater": "稍后",
     "restartNow": "立即重启",
     "saveFailed": "保存失败",

@@ -686,15 +686,6 @@ function listenForPdfFileOpen() {
             console.log('设备像素比限制已更改:', settings.dprLimit);
         }
         
-        // 渲染分辨率更改 - 实时生效
-        if (settings.width !== undefined && settings.height !== undefined) {
-            DRAW_CONFIG.renderW = settings.width;
-            DRAW_CONFIG.renderH = settings.height;
-            console.log('渲染分辨率已更改:', settings.width, 'x', settings.height);
-            // 重新初始化 Canvas
-            resizeCanvas(DRAW_CONFIG.screenW, DRAW_CONFIG.screenH);
-        }
-        
         if (settings.pdfScale !== undefined) {
             DRAW_CONFIG.pdfScale = settings.pdfScale;
             console.log('PDF 输出分辨率已更改:', settings.pdfScale);

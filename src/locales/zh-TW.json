@@ -101,6 +101,7 @@
     "resetWarning": "確定要重置應用嗎？這將刪除所有設定並重新啟動應用。",
     "restartApp": "重新啟動應用",
     "languageChanged": "語言設定已變更，需要重新啟動應用才能生效。",
+    "resolutionChanged": "解析度設定已變更，需要重新啟動應用才能生效。",
     "restartLater": "稍後",
     "restartNow": "立即重新啟動",
     "saveFailed": "儲存失敗",
