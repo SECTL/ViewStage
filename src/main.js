@@ -4825,8 +4825,8 @@ function startCameraPreview() {
     let cachedDrawParams = null;
     
     function updateDrawParams() {
-        const canvasW = DRAW_CONFIG.canvasW;
-        const canvasH = DRAW_CONFIG.canvasH;
+        const screenW = DRAW_CONFIG.screenW;
+        const screenH = DRAW_CONFIG.screenH;
         const videoW = video.videoWidth;
         const videoH = video.videoHeight;
         
@@ -4839,24 +4839,24 @@ function startCameraPreview() {
         const effectiveVideoH = isRotated ? videoW : videoH;
         
         const videoRatio = effectiveVideoW / effectiveVideoH;
-        const canvasRatio = canvasW / canvasH;
+        const screenRatio = screenW / screenH;
         
         let drawW, drawH;
-        if (videoRatio > canvasRatio) {
-            drawW = canvasW;
-            drawH = canvasW / videoRatio;
+        if (videoRatio > screenRatio) {
+            drawW = screenW;
+            drawH = screenW / videoRatio;
         } else {
-            drawH = canvasH;
-            drawW = canvasH * videoRatio;
+            drawH = screenH;
+            drawW = screenH * videoRatio;
         }
         
-        const drawX = (canvasW - drawW) / 2;
-        const drawY = (canvasH - drawH) / 2;
+        const drawX = (screenW - drawW) / 2;
+        const drawY = (screenH - drawH) / 2;
         
         return {
-            canvasW, canvasH, drawW, drawH, drawX, drawY,
-            centerX: canvasW / 2,
-            centerY: canvasH / 2,
+            screenW, screenH, drawW, drawH, drawX, drawY,
+            centerX: screenW / 2,
+            centerY: screenH / 2,
             rotation,
             isRotated
         };
@@ -4888,13 +4888,17 @@ function startCameraPreview() {
             }
             
             if (cachedDrawParams) {
-                const { canvasW, canvasH, drawW, drawH, drawX, drawY, centerX, centerY, rotation, isRotated } = cachedDrawParams;
+                const { screenW, screenH, drawW, drawH, drawX, drawY, centerX, centerY, rotation, isRotated } = cachedDrawParams;
                 
-                // 只清除需要更新的区域，减少绘制操作
-                dom.imageCtx.clearRect(drawX, drawY, drawW, drawH);
+                // 清除整个图像层（因为 Canvas 尺寸可能比屏幕大）
+                dom.imageCtx.clearRect(0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
+                
+                // 计算 Canvas 到屏幕的缩放比例
+                const scaleX = DRAW_CONFIG.canvasW / screenW;
+                const scaleY = DRAW_CONFIG.canvasH / screenH;
                 
                 dom.imageCtx.save();
-                dom.imageCtx.translate(centerX, centerY);
+                dom.imageCtx.translate(centerX * scaleX, centerY * scaleY);
                 
                 if (state.isMirrored) {
                     dom.imageCtx.scale(-1, 1);
@@ -4904,10 +4908,11 @@ function startCameraPreview() {
                 
                 dom.imageCtx.imageSmoothingQuality = DRAW_CONFIG.imageSmoothingQuality;
                 
+                // 绘制到 Canvas 上，需要缩放到 Canvas 尺寸
                 if (isRotated) {
-                    dom.imageCtx.drawImage(video, -drawH / 2, -drawW / 2, drawH, drawW);
+                    dom.imageCtx.drawImage(video, -drawH / 2 * scaleX, -drawW / 2 * scaleY, drawH * scaleX, drawW * scaleY);
                 } else {
-                    dom.imageCtx.drawImage(video, -drawW / 2, -drawH / 2, drawW, drawH);
+                    dom.imageCtx.drawImage(video, -drawW / 2 * scaleX, -drawH / 2 * scaleY, drawW * scaleX, drawH * scaleY);
                 }
                 
                 dom.imageCtx.restore();
@@ -5270,24 +5275,31 @@ function drawImageToCenter(img) {
     clearImageLayer();
     hideNoCameraMessage();
     
-    const canvasW = DRAW_CONFIG.canvasW;
-    const canvasH = DRAW_CONFIG.canvasH;
+    const screenW = DRAW_CONFIG.screenW;
+    const screenH = DRAW_CONFIG.screenH;
     
     const imgRatio = img.width / img.height;
-    const canvasRatio = canvasW / canvasH;
+    const screenRatio = screenW / screenH;
     
     let drawW, drawH, drawX, drawY;
     
-    if (imgRatio > canvasRatio) {
-        drawW = canvasW;
-        drawH = canvasW / imgRatio;
+    if (imgRatio > screenRatio) {
+        drawW = screenW;
+        drawH = screenW / imgRatio;
     } else {
-        drawH = canvasH;
-        drawW = canvasH * imgRatio;
+        drawH = screenH;
+        drawW = screenH * imgRatio;
     }
     
-    drawX = (canvasW - drawW) / 2;
-    drawY = (canvasH - drawH) / 2;
+    // 计算 Canvas 到屏幕的缩放比例
+    const scaleX = DRAW_CONFIG.canvasW / screenW;
+    const scaleY = DRAW_CONFIG.canvasH / screenH;
+    
+    // 转换到 Canvas 坐标
+    drawX = drawX * scaleX;
+    drawY = drawY * scaleY;
+    drawW = drawW * scaleX;
+    drawH = drawH * scaleY;
     
     dom.imageCtx.drawImage(img, drawX, drawY, drawW, drawH);
 }
