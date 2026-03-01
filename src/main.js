@@ -4838,7 +4838,14 @@ function startCameraPreview() {
         if (currentTime - lastFrameTime >= currentInterval) {
             lastFrameTime = currentTime;
             
-            if (!cachedDrawParams || cachedDrawParams.rotation !== state.cameraRotation) {
+            // 检测旋转角度变化，需要清除整个图像层避免残留
+            const rotationChanged = cachedDrawParams && cachedDrawParams.rotation !== state.cameraRotation;
+            
+            if (!cachedDrawParams || rotationChanged) {
+                // 旋转角度变化时，清除整个图像层
+                if (rotationChanged) {
+                    dom.imageCtx.clearRect(0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
+                }
                 cachedDrawParams = updateDrawParams();
             }
             
