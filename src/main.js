@@ -88,9 +88,8 @@ const DRAW_CONFIG = {
     screenH: 0,                    // 屏幕高度
     renderW: 1920,                 // 渲染分辨率宽度
     renderH: 1080,                 // 渲染分辨率高度
-    canvasScale: 1,                // 画布相对渲染分辨率的缩放倍数
-    dpr: 1,                        // 设备像素比 (固定为1，减少GPU负担)
-    displayScale: 1,               // Canvas 到屏幕的缩放比例
+    canvasScale: 2,                // 画布相对屏幕的缩放倍数
+    dpr: Math.min(window.devicePixelRatio || 1, 2),  // 设备像素比 (限制最大为2，减少GPU负担)
     cameraFrameInterval: 33,       // 摄像头帧间隔 (ms) - 30fps
     cameraFrameIntervalLow: 100,   // 低帧率模式 (绘制时)
     pdfScale: 1.5,                 // PDF 渲染缩放比例
@@ -480,12 +479,6 @@ async function loadCameraSetting() {
                 console.log('已加载渲染分辨率:', settings.width, 'x', settings.height);
             }
             
-            // 加载 Canvas 参数设置
-            if (settings.canvasScale) {
-                DRAW_CONFIG.canvasScale = settings.canvasScale;
-                console.log('已加载画布缩放倍数:', settings.canvasScale, 'x');
-            }
-            
             if (settings.dprLimit) {
                 DRAW_CONFIG.dpr = Math.min(window.devicePixelRatio || 1, settings.dprLimit);
                 console.log('已加载设备像素比限制:', settings.dprLimit);
@@ -673,12 +666,6 @@ function listenForPdfFileOpen() {
         if (settings.drawFps !== undefined) {
             DRAW_CONFIG.cameraFrameIntervalLow = Math.round(1000 / settings.drawFps);
             console.log('绘画时帧率已更改:', settings.drawFps, 'FPS');
-        }
-        
-        // Canvas 参数更改
-        if (settings.canvasScale !== undefined) {
-            DRAW_CONFIG.canvasScale = settings.canvasScale;
-            console.log('画布缩放倍数已更改:', settings.canvasScale, 'x');
         }
         
         if (settings.dprLimit !== undefined) {
@@ -1157,34 +1144,43 @@ async function resizeCanvas(newScreenW, newScreenH) {
     const oldCanvasW = DRAW_CONFIG.canvasW;
     const oldCanvasH = DRAW_CONFIG.canvasH;
     
+    // 保存当前状态
+    const oldScale = state.scale;
+    const oldCanvasX = state.canvasX;
+    const oldCanvasY = state.canvasY;
+    
     DRAW_CONFIG.screenW = newScreenW;
     DRAW_CONFIG.screenH = newScreenH;
     
-    // Canvas 渲染尺寸保持不变 (使用设置的分辨率)
-    DRAW_CONFIG.canvasW = DRAW_CONFIG.renderW;
-    DRAW_CONFIG.canvasH = DRAW_CONFIG.renderH;
+    // 动态调整画布缩放倍数，根据屏幕尺寸和性能状态
+    let adaptiveCanvasScale = DRAW_CONFIG.canvasScale;
+    if (newScreenW > 1920 || newScreenH > 1080) {
+        // 大屏幕，减少画布缩放
+        adaptiveCanvasScale = Math.max(1.5, DRAW_CONFIG.canvasScale * 0.8);
+    } else if (newScreenW > 1366 || newScreenH > 768) {
+        // 中等屏幕，保持默认缩放
+        adaptiveCanvasScale = DRAW_CONFIG.canvasScale;
+    } else {
+        // 小屏幕，适当增加缩放
+        adaptiveCanvasScale = Math.min(2.5, DRAW_CONFIG.canvasScale * 1.2);
+    }
     
-    // 重新计算缩放比例
-    const scaleX = newScreenW / DRAW_CONFIG.renderW;
-    const scaleY = newScreenH / DRAW_CONFIG.renderH;
-    DRAW_CONFIG.displayScale = Math.max(scaleX, scaleY);
-    
-    // 计算居中偏移
-    const scaledW = DRAW_CONFIG.renderW * DRAW_CONFIG.displayScale;
-    const scaledH = DRAW_CONFIG.renderH * DRAW_CONFIG.displayScale;
-    const offsetX = (newScreenW - scaledW) / 2;
-    const offsetY = (newScreenH - scaledH) / 2;
+    DRAW_CONFIG.canvasW = Math.floor(newScreenW * adaptiveCanvasScale);
+    DRAW_CONFIG.canvasH = Math.floor(newScreenH * adaptiveCanvasScale);
     
     updateMoveBound();
     
-    // 调整画布大小
+    // 背景层和图像层：物理尺寸 = CSS尺寸 × dpr
     dom.bgCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
     dom.bgCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
     dom.imageCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
     dom.imageCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
-    dom.drawCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
-    dom.drawCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
     
+    // 批注层：物理尺寸 = 渲染分辨率
+    dom.drawCanvas.width = DRAW_CONFIG.renderW;
+    dom.drawCanvas.height = DRAW_CONFIG.renderH;
+    
+    // 所有层 CSS 尺寸相同
     dom.bgCanvas.style.width = DRAW_CONFIG.canvasW + 'px';
     dom.bgCanvas.style.height = DRAW_CONFIG.canvasH + 'px';
     dom.imageCanvas.style.width = DRAW_CONFIG.canvasW + 'px';
@@ -1198,7 +1194,8 @@ async function resizeCanvas(newScreenW, newScreenH) {
     dom.drawCtx.setTransform(1, 0, 0, 1, 0, 0);
     dom.bgCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
     dom.imageCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
-    dom.drawCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
+    // 批注层：计算缩放比例以匹配 CSS 尺寸
+    dom.drawCtx.scale(DRAW_CONFIG.renderW / DRAW_CONFIG.canvasW, DRAW_CONFIG.renderH / DRAW_CONFIG.canvasH);
     
     // 设置绘制质量
     dom.bgCtx.imageSmoothingEnabled = true;
@@ -1226,15 +1223,16 @@ async function resizeCanvas(newScreenW, newScreenH) {
         await redrawAllStrokes();
     }
     
-    // 更新画布位置和缩放
-    state.canvasX = offsetX;
-    state.canvasY = offsetY;
-    state.scale = DRAW_CONFIG.displayScale;
+    // 恢复画布位置和缩放
+    state.scale = oldScale;
+    state.canvasX = oldCanvasX;
+    state.canvasY = oldCanvasY;
     
     updateMoveBound();
+    clampCanvasPosition();
     updateCanvasTransform();
     
-    console.log(`窗口调整: 屏幕 ${newScreenW}x${newScreenH}, 渲染 ${DRAW_CONFIG.canvasW}x${DRAW_CONFIG.canvasH}, 缩放 ${DRAW_CONFIG.displayScale.toFixed(3)}x`);
+    console.log(`窗口调整: 屏幕 ${newScreenW}x${newScreenH}, 画布 ${DRAW_CONFIG.canvasW}x${DRAW_CONFIG.canvasH}`);
 }
 
 // 初始化 DOM 元素引用
@@ -1285,8 +1283,9 @@ function initDOM() {
 
 /**
  * 初始化三层画布
- * - Canvas 渲染尺寸 = renderW x renderH (设置的分辨率)
- * - Canvas 显示尺寸 = 屏幕尺寸 (通过 CSS transform 缩放)
+ * - 物理尺寸 = 逻辑尺寸 × DPR (Retina适配)
+ * - CSS尺寸 = 逻辑尺寸
+ * - 批注层物理尺寸 = renderW × renderH (分辨率设置)
  */
 function initCanvas() {
     const container = dom.canvasContainer;
@@ -1295,38 +1294,25 @@ function initCanvas() {
     
     DRAW_CONFIG.screenW = screenW;
     DRAW_CONFIG.screenH = screenH;
-    
-    // Canvas 渲染尺寸使用设置的分辨率
-    DRAW_CONFIG.canvasW = DRAW_CONFIG.renderW;
-    DRAW_CONFIG.canvasH = DRAW_CONFIG.renderH;
-    
-    // 计算缩放比例，使 Canvas 填充整个屏幕 (保持宽高比)
-    const scaleX = screenW / DRAW_CONFIG.renderW;
-    const scaleY = screenH / DRAW_CONFIG.renderH;
-    DRAW_CONFIG.displayScale = Math.max(scaleX, scaleY);
-    
-    // 计算居中偏移
-    const scaledW = DRAW_CONFIG.renderW * DRAW_CONFIG.displayScale;
-    const scaledH = DRAW_CONFIG.renderH * DRAW_CONFIG.displayScale;
-    const offsetX = (screenW - scaledW) / 2;
-    const offsetY = (screenH - scaledH) / 2;
+    DRAW_CONFIG.canvasW = Math.floor(screenW * DRAW_CONFIG.canvasScale);
+    DRAW_CONFIG.canvasH = Math.floor(screenH * DRAW_CONFIG.canvasScale);
     
     updateMoveBound();
     
-    // Canvas 初始位置 (居中显示)
-    state.canvasX = offsetX;
-    state.canvasY = offsetY;
-    state.scale = DRAW_CONFIG.displayScale;
+    state.canvasX = -(DRAW_CONFIG.canvasW - screenW) / 2;
+    state.canvasY = -(DRAW_CONFIG.canvasH - screenH) / 2;
     
-    // Canvas 物理尺寸 = 渲染尺寸 × dpr
+    // 背景层和图像层：物理尺寸 = CSS尺寸 × dpr
     dom.bgCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
     dom.bgCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
     dom.imageCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
     dom.imageCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
-    dom.drawCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
-    dom.drawCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
     
-    // Canvas CSS 尺寸 = 渲染尺寸
+    // 批注层：物理尺寸 = 渲染分辨率
+    dom.drawCanvas.width = DRAW_CONFIG.renderW;
+    dom.drawCanvas.height = DRAW_CONFIG.renderH;
+    
+    // 所有层 CSS 尺寸相同
     dom.bgCanvas.style.width = DRAW_CONFIG.canvasW + 'px';
     dom.bgCanvas.style.height = DRAW_CONFIG.canvasH + 'px';
     dom.imageCanvas.style.width = DRAW_CONFIG.canvasW + 'px';
@@ -1336,7 +1322,8 @@ function initCanvas() {
     
     dom.bgCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
     dom.imageCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
-    dom.drawCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
+    // 批注层：计算缩放比例以匹配 CSS 尺寸
+    dom.drawCtx.scale(DRAW_CONFIG.renderW / DRAW_CONFIG.canvasW, DRAW_CONFIG.renderH / DRAW_CONFIG.canvasH);
     
     dom.imageCtx.imageSmoothingEnabled = true;
     dom.imageCtx.imageSmoothingQuality = 'medium';
@@ -1355,7 +1342,7 @@ function initCanvas() {
     
     dom.btnMove.classList.add('primary-btn');
     
-    console.log(`画布初始化: 屏幕 ${screenW}x${screenH}, 渲染 ${DRAW_CONFIG.canvasW}x${DRAW_CONFIG.canvasH}, 缩放 ${DRAW_CONFIG.displayScale.toFixed(3)}x`);
+    console.log(`画布初始化: 屏幕 ${screenW}x${screenH}, 画布 ${DRAW_CONFIG.canvasW}x${DRAW_CONFIG.canvasH}`);
 }
 
 // 计算画布移动边界 (缩放后)
@@ -1386,34 +1373,6 @@ function clampCanvasPosition() {
     const eps = 0.001;
     state.canvasX = Math.max(state.moveBound.minX - eps, Math.min(state.moveBound.maxX + eps, state.canvasX));
     state.canvasY = Math.max(state.moveBound.minY - eps, Math.min(state.moveBound.maxY + eps, state.canvasY));
-}
-
-// 计算屏幕坐标到 Canvas 坐标的转换
-function screenToCanvas(screenX, screenY) {
-    const canvasX = (screenX - state.canvasX) / state.scale;
-    const canvasY = (screenY - state.canvasY) / state.scale;
-    return { x: canvasX, y: canvasY };
-}
-
-// 计算 Canvas 居中显示的位置和缩放
-function getCenteredCanvasState() {
-    const screenW = DRAW_CONFIG.screenW;
-    const screenH = DRAW_CONFIG.screenH;
-    const canvasW = DRAW_CONFIG.canvasW;
-    const canvasH = DRAW_CONFIG.canvasH;
-    
-    // 计算缩放比例，使 Canvas 填充整个屏幕
-    const scaleX = screenW / canvasW;
-    const scaleY = screenH / canvasH;
-    const scale = Math.max(scaleX, scaleY);
-    
-    // 计算居中偏移
-    const scaledW = canvasW * scale;
-    const scaledH = canvasH * scale;
-    const offsetX = (screenW - scaledW) / 2;
-    const offsetY = (screenH - scaledH) / 2;
-    
-    return { x: offsetX, y: offsetY, scale };
 }
 
 // 绑定所有事件
@@ -1942,8 +1901,7 @@ function bindCanvasMouseEvents() {
  */
 function handleMouseDown(e) {
     e.preventDefault();
-    const containerRect = dom.canvasContainer.getBoundingClientRect();
-    const canvasPos = screenToCanvas(e.clientX - containerRect.left, e.clientY - containerRect.top);
+    const rect = dom.drawCanvas.getBoundingClientRect();
     
     if (state.drawMode === 'move') {
         state.isDragging = true;
@@ -1953,14 +1911,14 @@ function handleMouseDown(e) {
     } else if (state.drawMode === 'comment') {
         hidePenControlPanel();
         state.isDrawing = true;
-        state.lastX = canvasPos.x;
-        state.lastY = canvasPos.y;
+        state.lastX = (e.clientX - rect.left) / getSafeScale();
+        state.lastY = (e.clientY - rect.top) / getSafeScale();
         startStroke('draw');
     } else if (state.drawMode === 'eraser') {
         hidePenControlPanel();
         state.isDrawing = true;
-        state.lastX = canvasPos.x;
-        state.lastY = canvasPos.y;
+        state.lastX = (e.clientX - rect.left) / getSafeScale();
+        state.lastY = (e.clientY - rect.top) / getSafeScale();
         startStroke('erase');
     }
 }
@@ -1983,10 +1941,9 @@ function handleMouseMove(e) {
         clampCanvasPosition();
         updateCanvasTransform();
     } else if (state.isDrawing) {
-        const containerRect = dom.canvasContainer.getBoundingClientRect();
-        const canvasPos = screenToCanvas(e.clientX - containerRect.left, e.clientY - containerRect.top);
-        const x = canvasPos.x;
-        const y = canvasPos.y;
+        const rect = dom.drawCanvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / getSafeScale();
+        const y = (e.clientY - rect.top) / getSafeScale();
         
         const minDistance = smartDrawScheduler.getMinDistance();
         const minDistSq = minDistance * minDistance;
@@ -2115,26 +2072,24 @@ function bindCanvasTouchEvents() {
 function handleTouchStart(e) {
     e.preventDefault();
     const touches = e.touches;
-    const containerRect = dom.canvasContainer.getBoundingClientRect();
+    const rect = dom.drawCanvas.getBoundingClientRect();
     
     if (touches.length === 1) {
         const touch = touches[0];
-        const canvasPos = screenToCanvas(touch.clientX - containerRect.left, touch.clientY - containerRect.top);
-        
         if (state.drawMode === 'move') {
             state.isDragging = true;
             state.startDragX = touch.clientX - state.canvasX;
             state.startDragY = touch.clientY - state.canvasY;
         } else if (state.drawMode === 'comment') {
             state.isDrawing = true;
-            state.lastX = canvasPos.x;
-            state.lastY = canvasPos.y;
+            state.lastX = (touch.clientX - rect.left) / getSafeScale();
+            state.lastY = (touch.clientY - rect.top) / getSafeScale();
             startStroke('draw');
         } else if (state.drawMode === 'eraser') {
             state.isDrawing = true;
             updateEraserHintPos(touch.clientX, touch.clientY);
-            state.lastX = canvasPos.x;
-            state.lastY = canvasPos.y;
+            state.lastX = (touch.clientX - rect.left) / getSafeScale();
+            state.lastY = (touch.clientY - rect.top) / getSafeScale();
             startStroke('erase');
         }
     } else if (touches.length === 2) {
@@ -2153,7 +2108,7 @@ function handleTouchStart(e) {
 function handleTouchMove(e) {
     e.preventDefault();
     const touches = e.touches;
-    const containerRect = dom.canvasContainer.getBoundingClientRect();
+    const rect = dom.drawCanvas.getBoundingClientRect();
     
     if (touches.length === 1 && state.isDragging) {
         const touch = touches[0];
@@ -2167,9 +2122,8 @@ function handleTouchMove(e) {
             updateEraserHintPos(touch.clientX, touch.clientY);
         }
         
-        const canvasPos = screenToCanvas(touch.clientX - containerRect.left, touch.clientY - containerRect.top);
-        const x = canvasPos.x;
-        const y = canvasPos.y;
+        const x = (touch.clientX - rect.left) / getSafeScale();
+        const y = (touch.clientY - rect.top) / getSafeScale();
         
         state.pendingDrawPoints.push({ fromX: state.lastX, fromY: state.lastY, toX: x, toY: y });
         
@@ -3769,10 +3723,9 @@ function selectImage(index) {
         updateMoveBound();
         updateCanvasTransform();
     } else {
-        const centered = getCenteredCanvasState();
-        state.scale = centered.scale;
-        state.canvasX = centered.x;
-        state.canvasY = centered.y;
+        state.scale = 1;
+        state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
+        state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
         updateMoveBound();
         updateCanvasTransform();
     }
@@ -4125,10 +4078,9 @@ function selectFolderPage(folderIndex, pageIndex) {
                 updateMoveBound();
                 updateCanvasTransform();
             } else {
-                const centered = getCenteredCanvasState();
-                state.scale = centered.scale;
-                state.canvasX = centered.x;
-                state.canvasY = centered.y;
+                state.scale = 1;
+                state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
+                state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
                 updateMoveBound();
                 updateCanvasTransform();
             }
@@ -4832,6 +4784,9 @@ function startCameraPreview() {
         
         if (!videoW || !videoH) return null;
         
+        const canvasW = DRAW_CONFIG.canvasW;
+        const canvasH = DRAW_CONFIG.canvasH;
+        
         const rotation = state.cameraRotation;
         const isRotated = rotation === 90 || rotation === 270;
         
@@ -4850,13 +4805,13 @@ function startCameraPreview() {
             drawW = screenH * videoRatio;
         }
         
-        const drawX = (screenW - drawW) / 2;
-        const drawY = (screenH - drawH) / 2;
+        const drawX = (canvasW - drawW) / 2;
+        const drawY = (canvasH - drawH) / 2;
         
         return {
-            screenW, screenH, drawW, drawH, drawX, drawY,
-            centerX: screenW / 2,
-            centerY: screenH / 2,
+            canvasW, canvasH, drawW, drawH, drawX, drawY,
+            centerX: canvasW / 2,
+            centerY: canvasH / 2,
             rotation,
             isRotated
         };
@@ -4888,17 +4843,13 @@ function startCameraPreview() {
             }
             
             if (cachedDrawParams) {
-                const { screenW, screenH, drawW, drawH, drawX, drawY, centerX, centerY, rotation, isRotated } = cachedDrawParams;
+                const { canvasW, canvasH, drawW, drawH, drawX, drawY, centerX, centerY, rotation, isRotated } = cachedDrawParams;
                 
-                // 清除整个图像层（因为 Canvas 尺寸可能比屏幕大）
-                dom.imageCtx.clearRect(0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
-                
-                // 计算 Canvas 到屏幕的缩放比例
-                const scaleX = DRAW_CONFIG.canvasW / screenW;
-                const scaleY = DRAW_CONFIG.canvasH / screenH;
+                // 只清除需要更新的区域，减少绘制操作
+                dom.imageCtx.clearRect(drawX, drawY, drawW, drawH);
                 
                 dom.imageCtx.save();
-                dom.imageCtx.translate(centerX * scaleX, centerY * scaleY);
+                dom.imageCtx.translate(centerX, centerY);
                 
                 if (state.isMirrored) {
                     dom.imageCtx.scale(-1, 1);
@@ -4908,11 +4859,10 @@ function startCameraPreview() {
                 
                 dom.imageCtx.imageSmoothingQuality = DRAW_CONFIG.imageSmoothingQuality;
                 
-                // 绘制到 Canvas 上，需要缩放到 Canvas 尺寸
                 if (isRotated) {
-                    dom.imageCtx.drawImage(video, -drawH / 2 * scaleX, -drawW / 2 * scaleY, drawH * scaleX, drawW * scaleY);
+                    dom.imageCtx.drawImage(video, -drawH / 2, -drawW / 2, drawH, drawW);
                 } else {
-                    dom.imageCtx.drawImage(video, -drawW / 2 * scaleX, -drawH / 2 * scaleY, drawW * scaleX, drawH * scaleY);
+                    dom.imageCtx.drawImage(video, -drawW / 2, -drawH / 2, drawW, drawH);
                 }
                 
                 dom.imageCtx.restore();
@@ -5176,10 +5126,9 @@ async function importImage() {
             state.strokeHistory = [];
             state.baseImageURL = null;
             state.baseImageObj = null;
-            const centered = getCenteredCanvasState();
-            state.scale = centered.scale;
-            state.canvasX = centered.x;
-            state.canvasY = centered.y;
+            state.scale = 1;
+            state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
+            state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
             updateMoveBound();
             updateCanvasTransform();
             updateUndoBtnStatus();
@@ -5229,10 +5178,9 @@ async function addImageToList(img, name, isLast = true) {
     state.strokeHistory = [];
     state.baseImageURL = null;
     state.baseImageObj = null;
-    const centered = getCenteredCanvasState();
-    state.scale = centered.scale;
-    state.canvasX = centered.x;
-    state.canvasY = centered.y;
+    state.scale = 1;
+    state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
+    state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
     updateMoveBound();
     updateCanvasTransform();
     updateUndoBtnStatus();
@@ -5281,7 +5229,7 @@ function drawImageToCenter(img) {
     const imgRatio = img.width / img.height;
     const screenRatio = screenW / screenH;
     
-    let drawW, drawH;
+    let drawW, drawH, drawX, drawY;
     
     if (imgRatio > screenRatio) {
         drawW = screenW;
@@ -5291,19 +5239,11 @@ function drawImageToCenter(img) {
         drawW = screenH * imgRatio;
     }
     
-    // 居中位置（屏幕坐标）
-    let drawX = (screenW - drawW) / 2;
-    let drawY = (screenH - drawH) / 2;
+    const canvasW = DRAW_CONFIG.canvasW;
+    const canvasH = DRAW_CONFIG.canvasH;
     
-    // 计算 Canvas 到屏幕的缩放比例
-    const scaleX = DRAW_CONFIG.canvasW / screenW;
-    const scaleY = DRAW_CONFIG.canvasH / screenH;
-    
-    // 转换到 Canvas 坐标
-    drawX = drawX * scaleX;
-    drawY = drawY * scaleY;
-    drawW = drawW * scaleX;
-    drawH = drawH * scaleY;
+    drawX = (canvasW - drawW) / 2;
+    drawY = (canvasH - drawH) / 2;
     
     dom.imageCtx.drawImage(img, drawX, drawY, drawW, drawH);
 }
