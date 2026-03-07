@@ -89,7 +89,7 @@ const DRAW_CONFIG = {
     renderW: 1920,                 // 渲染分辨率宽度
     renderH: 1080,                 // 渲染分辨率高度
     canvasScale: 2,                // 画布相对屏幕的缩放倍数
-    dpr: Math.min(window.devicePixelRatio || 1, 2),  // 设备像素比 (限制最大为2，减少GPU负担)
+    dpr: Math.min(window.devicePixelRatio || 1, 2),  // 设备像素比
     cameraFrameInterval: 33,       // 摄像头帧间隔 (ms) - 30fps
     cameraFrameIntervalLow: 100,   // 低帧率模式 (绘制时)
     pdfScale: 1.5,                 // PDF 渲染缩放比例
@@ -2212,6 +2212,8 @@ function getTouchDistance(touch1, touch2) {
 let lastCanvasTransform = { x: null, y: null, scale: null };
 let lastAppliedDpr = null;
 let dprAdjustDebounce = null;
+let isDprAdjusting = false;
+let pendingDprRequest = null;
 
 function calculateAdaptiveDpr(scale) {
     if (!DRAW_CONFIG.dynamicResolution) {
@@ -2220,61 +2222,76 @@ function calculateAdaptiveDpr(scale) {
     
     const baseDpr = DRAW_CONFIG.baseDpr;
     
+    // 放大时大幅提高DPR，抵消CSS transform的插值模糊
     if (scale >= DRAW_CONFIG.scaleThresholdUltra) {
-        return Math.min(baseDpr * 1.5, 3);
+        return Math.min(baseDpr * scale * 0.8, 4);
     } else if (scale >= DRAW_CONFIG.scaleThresholdHigh) {
-        return Math.min(baseDpr * 1.25, 2.5);
+        return Math.min(baseDpr * scale * 0.7, 3.5);
     } else if (scale > 1.2) {
-        return Math.min(baseDpr * 1.1, 2.2);
+        return Math.min(baseDpr * scale * 0.6, 3);
     } else {
         return baseDpr;
     }
 }
 
 async function adjustCanvasResolution(newDpr) {
-    if (newDpr === lastAppliedDpr) return;
+    if (newDpr === lastAppliedDpr || isDprAdjusting) {
+        pendingDprRequest = newDpr;
+        return;
+    }
     
+    isDprAdjusting = true;
     lastAppliedDpr = newDpr;
     DRAW_CONFIG.dpr = newDpr;
     
+    const hasStrokes = state.strokeHistory.length > 0 || state.baseImageObj;
+    const hasImage = state.currentImage !== null;
+    const hasCamera = state.isCameraOpen && state.cameraStream;
+    
     dom.bgCanvas.width = DRAW_CONFIG.canvasW * newDpr;
     dom.bgCanvas.height = DRAW_CONFIG.canvasH * newDpr;
+    dom.bgCtx.setTransform(1, 0, 0, 1, 0, 0);
+    dom.bgCtx.scale(newDpr, newDpr);
+    dom.bgCtx.imageSmoothingEnabled = true;
+    dom.bgCtx.imageSmoothingQuality = 'high';
+    resetBgCanvas();
+    
     dom.imageCanvas.width = DRAW_CONFIG.canvasW * newDpr;
     dom.imageCanvas.height = DRAW_CONFIG.canvasH * newDpr;
+    dom.imageCtx.setTransform(1, 0, 0, 1, 0, 0);
+    dom.imageCtx.scale(newDpr, newDpr);
+    dom.imageCtx.imageSmoothingEnabled = true;
+    dom.imageCtx.imageSmoothingQuality = 'high';
+    
+    if (hasImage) {
+        drawImageToCenter(state.currentImage);
+    } else if (hasCamera) {
+        renderFrame();
+    }
     
     dom.drawCanvas.width = DRAW_CONFIG.canvasW * newDpr;
     dom.drawCanvas.height = DRAW_CONFIG.canvasH * newDpr;
-    
-    dom.bgCtx.setTransform(1, 0, 0, 1, 0, 0);
-    dom.imageCtx.setTransform(1, 0, 0, 1, 0, 0);
     dom.drawCtx.setTransform(1, 0, 0, 1, 0, 0);
-    dom.bgCtx.scale(newDpr, newDpr);
-    dom.imageCtx.scale(newDpr, newDpr);
     dom.drawCtx.scale(newDpr, newDpr);
-    
-    dom.bgCtx.imageSmoothingEnabled = true;
-    dom.bgCtx.imageSmoothingQuality = 'high';
-    dom.imageCtx.imageSmoothingEnabled = true;
-    dom.imageCtx.imageSmoothingQuality = 'high';
     dom.drawCtx.imageSmoothingEnabled = true;
     dom.drawCtx.imageSmoothingQuality = 'high';
     dom.drawCtx.lineCap = 'round';
     dom.drawCtx.lineJoin = 'round';
     dom.drawCtx.miterLimit = 10;
     
-    resetBgCanvas();
-    
-    if (state.strokeHistory.length > 0 || state.baseImageObj) {
+    if (hasStrokes) {
         await redrawAllStrokes();
     }
     
-    if (state.currentImage) {
-        drawImageToCenter(state.currentImage);
-    } else if (state.isCameraOpen && state.cameraStream) {
-        renderFrame();
-    }
-    
     console.log(`动态分辨率调整: DPR ${newDpr.toFixed(2)}, 缩放 ${state.scale.toFixed(2)}`);
+    
+    isDprAdjusting = false;
+    
+    if (pendingDprRequest && pendingDprRequest !== newDpr) {
+        const pending = pendingDprRequest;
+        pendingDprRequest = null;
+        requestAnimationFrame(() => adjustCanvasResolution(pending));
+    }
 }
 
 function scheduleDprAdjustment(scale) {
@@ -2289,7 +2306,7 @@ function scheduleDprAdjustment(scale) {
         if (newDpr !== DRAW_CONFIG.dpr) {
             adjustCanvasResolution(newDpr);
         }
-    }, 150);
+    }, 100);
 }
 
 function updateCanvasTransform() {
