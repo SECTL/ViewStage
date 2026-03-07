@@ -90,8 +90,8 @@ const DRAW_CONFIG = {
     renderH: 1080,                 // 渲染分辨率高度
     canvasScale: 2,                // 画布相对屏幕的缩放倍数
     dpr: Math.min(window.devicePixelRatio || 1, 2),  // 设备像素比
-    cameraFrameInterval: 33,       // 摄像头帧间隔 (ms) - 30fps
-    cameraFrameIntervalLow: 100,   // 低帧率模式 (绘制时)
+    cameraFrameInterval: 50,       // 摄像头帧间隔 (ms) - 20fps (降低GPU开销)
+    cameraFrameIntervalLow: 150,   // 低帧率模式 (绘制时) - ~7fps
     pdfScale: 1.5,                 // PDF 渲染缩放比例
     enhanceContrast: 1.4,          // 增强对比度
     enhanceBrightness: 10,         // 增强亮度
@@ -265,6 +265,15 @@ let state = {
     scale: 1,                      // 当前缩放比例
     lastX: 0,                      // 上一个绘制点X
     lastY: 0,                      // 上一个绘制点Y
+    
+    // 摄像头视图状态（独立保存）
+    cameraViewState: {
+        scale: 1,
+        canvasX: 0,
+        canvasY: 0,
+        strokeHistory: [],
+        baseImageURL: null
+    },
     
     // 拖拽状态
     startDragX: 0,                 // 拖拽起始X
@@ -629,6 +638,9 @@ function listenForPdfFileOpen() {
     
     listen('mirror-changed', (event) => {
         state.isMirrored = event.payload;
+        if (state.isCameraOpen) {
+            updateCameraVideoStyle();
+        }
         console.log('镜像状态已更改:', state.isMirrored);
     }).catch(err => {
         console.error('mirror-changed 事件监听失败:', err);
@@ -885,6 +897,10 @@ async function generateThumbnailBlob(blob, maxSize = 150) {
 }
 
 async function loadPdfFromPath(filePath) {
+    // 先保存当前批注数据，再关闭摄像头
+    saveCurrentDrawData();
+    saveCurrentFolderPageDrawData();
+    
     const wasCameraOpen = state.isCameraOpen;
     
     if (state.isCameraOpen) {
@@ -1259,6 +1275,7 @@ function initDOM() {
     dom.bgCanvas = document.getElementById('bgCanvas');
     dom.imageCanvas = document.getElementById('imageCanvas');
     dom.drawCanvas = document.getElementById('drawCanvas');
+    dom.cameraVideo = document.getElementById('cameraVideo');
     dom.eraserHint = document.getElementById('eraserHint');
     dom.penControlPanel = document.getElementById('penControlPanel');
     dom.settingsPanel = document.getElementById('settingsPanel');
@@ -1321,6 +1338,15 @@ function initCanvas() {
     
     state.canvasX = -(DRAW_CONFIG.canvasW - screenW) / 2;
     state.canvasY = -(DRAW_CONFIG.canvasH - screenH) / 2;
+    
+    // 初始化摄像头视图状态
+    state.cameraViewState = {
+        scale: 1,
+        canvasX: state.canvasX,
+        canvasY: state.canvasY,
+        strokeHistory: [],
+        baseImageURL: null
+    };
     
     // 背景层和图像层：物理尺寸 = CSS尺寸 × dpr
     dom.bgCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
@@ -1958,7 +1984,22 @@ function handleMouseMove(e) {
         state.canvasX = e.clientX - state.startDragX;
         state.canvasY = e.clientY - state.startDragY;
         clampCanvasPosition();
-        updateCanvasTransform();
+        
+        // 直接更新 DOM，提高跟手性
+        const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
+        dom.bgCanvas.style.transform = transform;
+        dom.imageCanvas.style.transform = transform;
+        dom.drawCanvas.style.transform = transform;
+        
+        // 更新 video 元素
+        if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
+            updateCameraVideoStyle();
+        }
+        
+        // 更新 lastCanvasTransform
+        lastCanvasTransform.x = state.canvasX;
+        lastCanvasTransform.y = state.canvasY;
+        lastCanvasTransform.scale = state.scale;
     } else if (state.isDrawing) {
         const rect = dom.drawCanvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) / getSafeScale();
@@ -2076,7 +2117,7 @@ function handleWheel(e) {
         state.canvasY = targetY;
         
         clampCanvasPosition();
-        animateCanvasTransform(state.canvasX, state.canvasY, state.scale, 150);
+        animateCanvasTransform(state.canvasX, state.canvasY, state.scale, 100);
     }
 }
 
@@ -2134,7 +2175,22 @@ function handleTouchMove(e) {
         state.canvasX = touch.clientX - state.startDragX;
         state.canvasY = touch.clientY - state.startDragY;
         clampCanvasPosition();
-        updateCanvasTransform();
+        
+        // 直接更新 DOM，提高跟手性
+        const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
+        dom.bgCanvas.style.transform = transform;
+        dom.imageCanvas.style.transform = transform;
+        dom.drawCanvas.style.transform = transform;
+        
+        // 更新 video 元素
+        if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
+            updateCameraVideoStyle();
+        }
+        
+        // 更新 lastCanvasTransform
+        lastCanvasTransform.x = state.canvasX;
+        lastCanvasTransform.y = state.canvasY;
+        lastCanvasTransform.scale = state.scale;
     } else if (touches.length === 1 && state.isDrawing) {
         const touch = touches[0];
         if (state.drawMode === 'eraser') {
@@ -2172,7 +2228,22 @@ function handleTouchMove(e) {
         
         updateMoveBound();
         clampCanvasPosition();
-        updateCanvasTransform();
+        
+        // 直接更新 DOM，提高跟手性
+        const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
+        dom.bgCanvas.style.transform = transform;
+        dom.imageCanvas.style.transform = transform;
+        dom.drawCanvas.style.transform = transform;
+        
+        // 更新 video 元素
+        if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
+            updateCameraVideoStyle();
+        }
+        
+        // 更新 lastCanvasTransform
+        lastCanvasTransform.x = state.canvasX;
+        lastCanvasTransform.y = state.canvasY;
+        lastCanvasTransform.scale = state.scale;
     }
 }
 
@@ -2214,6 +2285,7 @@ let lastAppliedDpr = null;
 let dprAdjustDebounce = null;
 let isDprAdjusting = false;
 let pendingDprRequest = null;
+let currentAnimationId = null;
 
 function calculateAdaptiveDpr(scale) {
     if (!DRAW_CONFIG.dynamicResolution) {
@@ -2222,13 +2294,13 @@ function calculateAdaptiveDpr(scale) {
     
     const baseDpr = DRAW_CONFIG.baseDpr;
     
-    // 放大时大幅提高DPR，抵消CSS transform的插值模糊
+    // 放大时适度提高DPR，平衡清晰度和GPU开销
     if (scale >= DRAW_CONFIG.scaleThresholdUltra) {
-        return Math.min(baseDpr * scale * 0.8, 4);
+        return Math.min(baseDpr * 1.3, 2.5);
     } else if (scale >= DRAW_CONFIG.scaleThresholdHigh) {
-        return Math.min(baseDpr * scale * 0.7, 3.5);
+        return Math.min(baseDpr * 1.15, 2.2);
     } else if (scale > 1.2) {
-        return Math.min(baseDpr * scale * 0.6, 3);
+        return Math.min(baseDpr * 1.05, 2);
     } else {
         return baseDpr;
     }
@@ -2256,12 +2328,14 @@ async function adjustCanvasResolution(newDpr) {
     dom.bgCtx.imageSmoothingQuality = 'high';
     resetBgCanvas();
     
-    dom.imageCanvas.width = DRAW_CONFIG.canvasW * newDpr;
-    dom.imageCanvas.height = DRAW_CONFIG.canvasH * newDpr;
+    // 摄像头层使用较低DPR，大幅降低GPU开销
+    const imageDpr = hasCamera ? 1 : newDpr;
+    dom.imageCanvas.width = DRAW_CONFIG.canvasW * imageDpr;
+    dom.imageCanvas.height = DRAW_CONFIG.canvasH * imageDpr;
     dom.imageCtx.setTransform(1, 0, 0, 1, 0, 0);
-    dom.imageCtx.scale(newDpr, newDpr);
+    dom.imageCtx.scale(imageDpr, imageDpr);
     dom.imageCtx.imageSmoothingEnabled = true;
-    dom.imageCtx.imageSmoothingQuality = 'high';
+    dom.imageCtx.imageSmoothingQuality = 'medium';
     
     if (hasImage) {
         drawImageToCenter(state.currentImage);
@@ -2325,10 +2399,21 @@ function updateCanvasTransform() {
     dom.imageCanvas.style.transform = transform;
     dom.drawCanvas.style.transform = transform;
     
+    // video 元素也跟随 canvas 变换
+    if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
+        updateCameraVideoStyle();
+    }
+    
     scheduleDprAdjustment(state.scale);
 }
 
 function animateCanvasTransform(targetX, targetY, targetScale, duration = 250) {
+    // 取消之前的动画
+    if (currentAnimationId !== null) {
+        cancelAnimationFrame(currentAnimationId);
+        currentAnimationId = null;
+    }
+    
     const startX = state.canvasX;
     const startY = state.canvasY;
     const startScale = state.scale;
@@ -2342,6 +2427,9 @@ function animateCanvasTransform(targetX, targetY, targetScale, duration = 250) {
     dom.bgCanvas.classList.add('smooth-transform');
     dom.imageCanvas.classList.add('smooth-transform');
     dom.drawCanvas.classList.add('smooth-transform');
+    if (dom.cameraVideo) {
+        dom.cameraVideo.classList.add('smooth-transform');
+    }
     
     function animate(currentTime) {
         const elapsed = currentTime - startTime;
@@ -2365,18 +2453,27 @@ function animateCanvasTransform(targetX, targetY, targetScale, duration = 250) {
         dom.imageCanvas.style.transform = transform;
         dom.drawCanvas.style.transform = transform;
         
+        // 更新 video 元素
+        if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
+            updateCameraVideoStyle();
+        }
+        
         if (progress < 1) {
-            requestAnimationFrame(animate);
+            currentAnimationId = requestAnimationFrame(animate);
         } else {
+            currentAnimationId = null;
             dom.bgCanvas.classList.remove('smooth-transform');
             dom.imageCanvas.classList.remove('smooth-transform');
             dom.drawCanvas.classList.remove('smooth-transform');
+            if (dom.cameraVideo) {
+                dom.cameraVideo.classList.remove('smooth-transform');
+            }
             
             scheduleDprAdjustment(state.scale);
         }
     }
     
-    requestAnimationFrame(animate);
+    currentAnimationId = requestAnimationFrame(animate);
 }
 
 // 撤销功能 - 混合方案：路径记录 + ImageData压缩
@@ -3385,6 +3482,25 @@ function takePhoto() {
                 state.currentImage = null;
                 clearImageLayer();
                 clearDrawCanvas();
+                
+                // 恢复摄像头视图状态和批注
+                state.scale = state.cameraViewState.scale;
+                state.canvasX = state.cameraViewState.canvasX;
+                state.canvasY = state.cameraViewState.canvasY;
+                state.strokeHistory = structuredClone(state.cameraViewState.strokeHistory);
+                state.baseImageURL = state.cameraViewState.baseImageURL;
+                state.baseImageObj = null;
+                updateMoveBound();
+                updateCanvasTransform();
+                
+                // 恢复批注
+                if (state.strokeHistory.length > 0) {
+                    await redrawAllStrokes();
+                } else {
+                    clearDrawCanvas();
+                }
+                updateUndoBtnStatus();
+                
                 await openCamera();
                 updateSidebarSelection();
                 updatePhotoButtonState();
@@ -3411,6 +3527,25 @@ function takePhoto() {
                 state.currentImage = null;
                 clearImageLayer();
                 clearDrawCanvas();
+                
+                // 恢复摄像头视图状态和批注
+                state.scale = state.cameraViewState.scale;
+                state.canvasX = state.cameraViewState.canvasX;
+                state.canvasY = state.cameraViewState.canvasY;
+                state.strokeHistory = structuredClone(state.cameraViewState.strokeHistory);
+                state.baseImageURL = state.cameraViewState.baseImageURL;
+                state.baseImageObj = null;
+                updateMoveBound();
+                updateCanvasTransform();
+                
+                // 恢复批注
+                if (state.strokeHistory.length > 0) {
+                    await redrawAllStrokes();
+                } else {
+                    clearDrawCanvas();
+                }
+                updateUndoBtnStatus();
+                
                 await openCamera();
                 updateFolderPageSelection(-1, -1);
                 updatePhotoButtonState();
@@ -3541,6 +3676,7 @@ async function rotateImage(direction) {
         } else {
             state.cameraRotation = (state.cameraRotation + 90) % 360;
         }
+        updateCameraVideoStyle();
         console.log(`摄像头画面已旋转到 ${state.cameraRotation}°`);
         return;
     }
@@ -3807,6 +3943,17 @@ function selectImage(index) {
     if (index === state.currentImageIndex && state.currentImage) {
         (async () => {
             try {
+                // 保存摄像头视图状态和批注
+                if (state.isCameraOpen) {
+                    state.cameraViewState = {
+                        scale: state.scale,
+                        canvasX: state.canvasX,
+                        canvasY: state.canvasY,
+                        strokeHistory: structuredClone(state.strokeHistory),
+                        baseImageURL: state.baseImageURL
+                    };
+                }
+                
                 saveCurrentDrawData();
                 saveCurrentFolderPageDrawData();
                 state.currentImageIndex = -1;
@@ -3816,6 +3963,25 @@ function selectImage(index) {
                 if (state.isCameraOpen) {
                     await setCameraState(false);
                 }
+                
+                // 恢复摄像头视图状态和批注
+                state.scale = state.cameraViewState.scale;
+                state.canvasX = state.cameraViewState.canvasX;
+                state.canvasY = state.cameraViewState.canvasY;
+                state.strokeHistory = structuredClone(state.cameraViewState.strokeHistory);
+                state.baseImageURL = state.cameraViewState.baseImageURL;
+                state.baseImageObj = null;
+                updateMoveBound();
+                updateCanvasTransform();
+                
+                // 恢复批注
+                if (state.strokeHistory.length > 0) {
+                    await redrawAllStrokes();
+                } else {
+                    clearDrawCanvas();
+                }
+                updateUndoBtnStatus();
+                
                 await setCameraState(true);
                 updateSidebarSelection();
                 updatePhotoButtonState();
@@ -3826,6 +3992,17 @@ function selectImage(index) {
             }
         })();
         return;
+    }
+    
+    // 保存摄像头视图状态和批注
+    if (state.isCameraOpen) {
+        state.cameraViewState = {
+            scale: state.scale,
+            canvasX: state.canvasX,
+            canvasY: state.canvasY,
+            strokeHistory: structuredClone(state.strokeHistory),
+            baseImageURL: state.baseImageURL
+        };
     }
     
     saveCurrentDrawData();
@@ -4183,7 +4360,15 @@ function selectFolderPage(folderIndex, pageIndex) {
     
     (async () => {
         try {
+            // 保存摄像头视图状态和批注
             if (state.isCameraOpen) {
+                state.cameraViewState = {
+                    scale: state.scale,
+                    canvasX: state.canvasX,
+                    canvasY: state.canvasY,
+                    strokeHistory: structuredClone(state.strokeHistory),
+                    baseImageURL: state.baseImageURL
+                };
                 await setCameraState(false);
             }
             
@@ -4341,6 +4526,10 @@ function importPDF() {
     input.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        
+        // 先保存当前批注数据，再关闭摄像头
+        saveCurrentDrawData();
+        saveCurrentFolderPageDrawData();
         
         const wasCameraOpen = state.isCameraOpen;
         
@@ -4716,6 +4905,11 @@ async function setCameraState(open, options = {}) {
             
             state.isCameraOpen = true;
             
+            // 重置图片索引，避免摄像头的批注被错误保存到图片
+            state.currentImageIndex = -1;
+            state.currentFolderIndex = -1;
+            state.currentFolderPageIndex = -1;
+            
             hideNoCameraMessage();
             
             const videoTrack = state.cameraStream.getVideoTracks()[0];
@@ -4754,9 +4948,10 @@ async function setCameraState(open, options = {}) {
         state.isCameraOpen = false;
         state.isCameraReady = false;
         
-        const video = document.getElementById('cameraVideo');
-        if (video) {
-            video.remove();
+        // 隐藏 video 元素
+        if (dom.cameraVideo) {
+            dom.cameraVideo.style.display = 'none';
+            dom.cameraVideo.srcObject = null;
         }
         
         updatePhotoButtonState();
@@ -4781,6 +4976,9 @@ async function setCameraState(open, options = {}) {
  */
 async function openCamera() {
     if (state.isCameraOpen) {
+        // 关闭摄像头前保存批注数据
+        saveCurrentDrawData();
+        saveCurrentFolderPageDrawData();
         await setCameraState(false);
     } else {
         await setCameraState(true);
@@ -4853,154 +5051,88 @@ async function switchCamera() {
 }
 
 function createCameraVideo() {
-    const video = document.createElement('video');
-    video.id = 'cameraVideo';
-    video.style.display = 'none';
-    video.autoplay = true;
-    video.playsInline = true;
-    video.muted = true;
-    document.body.appendChild(video);
+    const video = dom.cameraVideo;
+    if (!video) {
+        console.error('找不到 video 元素');
+        return;
+    }
     
     video.srcObject = state.cameraStream;
     video.play();
     
     video.onloadedmetadata = () => {
-        startCameraPreview();
+        state.isCameraReady = true;
+        console.log('摄像头视频就绪:', video.videoWidth, 'x', video.videoHeight);
+        updateCameraVideoStyle();
+        video.style.display = 'block';
     };
 }
 
-function startCameraPreview() {
-    const video = document.getElementById('cameraVideo');
+function updateCameraVideoStyle() {
+    const video = dom.cameraVideo;
     if (!video) return;
     
     const videoW = video.videoWidth;
     const videoH = video.videoHeight;
     
-    if (!videoW || !videoH) {
-        console.warn('视频尺寸无效，等待就绪...');
-        setTimeout(() => {
-            if (state.isCameraOpen && !state.isCameraReady) {
-                const v = document.getElementById('cameraVideo');
-                if (v && v.videoWidth && v.videoHeight) {
-                    state.isCameraReady = true;
-                    console.log('摄像头视频就绪:', v.videoWidth, 'x', v.videoHeight);
-                    startCameraPreview();
-                }
-            }
-        }, 500);
-        return;
+    if (!videoW || !videoH) return;
+    
+    const rotation = state.cameraRotation;
+    const isRotated = rotation === 90 || rotation === 270;
+    
+    // 旋转时交换宽高
+    const effectiveVideoW = isRotated ? videoH : videoW;
+    const effectiveVideoH = isRotated ? videoW : videoH;
+    
+    // 在 100% 缩放时，video 适应屏幕高度
+    const screenW = DRAW_CONFIG.screenW;
+    const screenH = DRAW_CONFIG.screenH;
+    const videoRatio = effectiveVideoW / effectiveVideoH;
+    const screenRatio = screenW / screenH;
+    
+    let drawW, drawH;
+    if (videoRatio > screenRatio) {
+        drawW = screenW;
+        drawH = screenW / videoRatio;
+    } else {
+        drawH = screenH;
+        drawW = screenH * videoRatio;
     }
     
-    state.isCameraReady = true;
-    console.log('摄像头视频就绪:', videoW, 'x', videoH);
+    video.style.width = drawW + 'px';
+    video.style.height = drawH + 'px';
+    video.style.left = '0px';
+    video.style.top = '0px';
     
-    let lastFrameTime = 0;
-    let cachedDrawParams = null;
+    // 计算 video 在 canvas 中的居中偏移
+    const canvasW = DRAW_CONFIG.canvasW;
+    const canvasH = DRAW_CONFIG.canvasH;
+    const offsetX = (canvasW - drawW) / 2;
+    const offsetY = (canvasH - drawH) / 2;
     
-    function updateDrawParams() {
-        const screenW = DRAW_CONFIG.screenW;
-        const screenH = DRAW_CONFIG.screenH;
-        const videoW = video.videoWidth;
-        const videoH = video.videoHeight;
-        
-        if (!videoW || !videoH) return null;
-        
-        const canvasW = DRAW_CONFIG.canvasW;
-        const canvasH = DRAW_CONFIG.canvasH;
-        
-        const rotation = state.cameraRotation;
-        const isRotated = rotation === 90 || rotation === 270;
-        
-        const effectiveVideoW = isRotated ? videoH : videoW;
-        const effectiveVideoH = isRotated ? videoW : videoH;
-        
-        const videoRatio = effectiveVideoW / effectiveVideoH;
-        const screenRatio = screenW / screenH;
-        
-        let drawW, drawH;
-        if (videoRatio > screenRatio) {
-            drawW = screenW;
-            drawH = screenW / videoRatio;
-        } else {
-            drawH = screenH;
-            drawW = screenH * videoRatio;
-        }
-        
-        const drawX = (canvasW - drawW) / 2;
-        const drawY = (canvasH - drawH) / 2;
-        
-        return {
-            canvasW, canvasH, drawW, drawH, drawX, drawY,
-            centerX: canvasW / 2,
-            centerY: canvasH / 2,
-            rotation,
-            isRotated
-        };
+    // video 的 transform：先移动到 canvas 位置，再缩放，最后应用偏移
+    let videoTransform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale}) translate(${offsetX}px, ${offsetY}px)`;
+    
+    // 镜像
+    if (state.isMirrored) {
+        videoTransform += ' scaleX(-1)';
     }
     
-    function renderFrame(currentTime) {
-        if (!state.isCameraOpen) return;
-        
-        // 橡皮擦模式下完全暂停摄像头处理
-        if (state.drawMode === 'eraser') {
-            if (!cachedDrawParams || cachedDrawParams.rotation !== state.cameraRotation) {
-                cachedDrawParams = updateDrawParams();
-            }
-            state.cameraAnimationId = requestAnimationFrame(renderFrame);
-            return;
-        }
-        
-        // 根据绘制模式选择帧率：画笔模式使用低帧率，移动模式使用正常帧率
-        const isDrawing = state.drawMode === 'comment';
-        const currentInterval = isDrawing ? 
-            DRAW_CONFIG.cameraFrameIntervalLow : 
-            DRAW_CONFIG.cameraFrameInterval;
-        
-        if (currentTime - lastFrameTime >= currentInterval) {
-            lastFrameTime = currentTime;
-            
-            // 检测旋转角度变化，需要清除整个图像层避免残留
-            const rotationChanged = cachedDrawParams && cachedDrawParams.rotation !== state.cameraRotation;
-            
-            if (!cachedDrawParams || rotationChanged) {
-                // 旋转角度变化时，清除整个图像层
-                if (rotationChanged) {
-                    dom.imageCtx.clearRect(0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
-                }
-                cachedDrawParams = updateDrawParams();
-            }
-            
-            if (cachedDrawParams) {
-                const { canvasW, canvasH, drawW, drawH, drawX, drawY, centerX, centerY, rotation, isRotated } = cachedDrawParams;
-                
-                // 只清除需要更新的区域，减少绘制操作
-                dom.imageCtx.clearRect(drawX, drawY, drawW, drawH);
-                
-                dom.imageCtx.save();
-                dom.imageCtx.translate(centerX, centerY);
-                
-                if (state.isMirrored) {
-                    dom.imageCtx.scale(-1, 1);
-                }
-                
-                dom.imageCtx.rotate(rotation * Math.PI / 180);
-                
-                dom.imageCtx.imageSmoothingQuality = DRAW_CONFIG.imageSmoothingQuality;
-                
-                if (isRotated) {
-                    dom.imageCtx.drawImage(video, -drawH / 2, -drawW / 2, drawH, drawW);
-                } else {
-                    dom.imageCtx.drawImage(video, -drawW / 2, -drawH / 2, drawW, drawH);
-                }
-                
-                dom.imageCtx.restore();
-            }
-        }
-        
-        state.cameraAnimationId = requestAnimationFrame(renderFrame);
+    // 旋转
+    if (rotation !== 0) {
+        videoTransform += ` rotate(${rotation}deg)`;
     }
     
-    renderFrame(0);
+    video.style.transform = videoTransform;
+    video.style.transformOrigin = '0 0';
+}
+
+function startCameraPreview() {
+    const video = dom.cameraVideo;
+    if (!video) return;
+    
+    updateCameraVideoStyle();
+    video.style.display = 'block';
 }
 
 function createCameraControls() {

@@ -601,9 +601,18 @@ body {
     cursor: grab;
 }
 
+.camera-video {
+    position: absolute;
+    z-index: 2;
+    display: none;
+    pointer-events: none;
+    object-fit: contain;
+}
+
 .canvas-base.smooth-transform,
 .canvas-image.smooth-transform,
-.canvas-draw.smooth-transform {
+.canvas-draw.smooth-transform,
+.camera-video.smooth-transform {
     transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
@@ -1031,13 +1040,6 @@ body {
 .camera-close-btn:hover {
     background: rgba(255, 71, 87, 0.3);
     color: #ff4757;
-}
-
-.camera-video {
-    width: 100%;
-    max-height: 60vh;
-    object-fit: contain;
-    background: #1a1a1a;
 }
 
 .camera-controls {
