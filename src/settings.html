@@ -96,6 +96,14 @@
                 <div class="page" id="pageCanvas">
                     <h2 class="page-title" data-i18n="settings.canvasAdjust">Canvas调节</h2>
                     <div class="setting-item">
+                        <span class="setting-label" data-i18n="settings.dynamicResolution">动态分辨率</span>
+                        <label class="switch">
+                            <input type="checkbox" id="dynamicResolutionToggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="setting-hint" data-i18n="settings.dynamicResolutionHint">放大时自动提高画布分辨率以获得更清晰的显示效果</span>
+                    </div>
+                    <div class="setting-item">
                         <span class="setting-label" data-i18n="settings.canvasScale">画布缩放倍数</span>
                         <div class="slider-container">
                             <input type="range" id="canvasScaleSlider" min="1" max="3" step="0.5" value="2" class="slider">

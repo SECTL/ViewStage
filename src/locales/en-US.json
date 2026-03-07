@@ -63,6 +63,8 @@
     "blurEffect": "Blur Effect",
     "highResOptimization": "High Resolution Optimization",
     "highResOptimizationHint": "Reduce rendering precision to improve performance on high-resolution screens",
+    "dynamicResolution": "Dynamic Resolution",
+    "dynamicResolutionHint": "Automatically increase canvas resolution when zooming for clearer display",
     "settingsManagement": "Settings Management",
     "exportSettings": "Export Settings",
     "importSettings": "Import Settings",

@@ -63,6 +63,8 @@
     "blurEffect": "界面模糊效果",
     "highResOptimization": "高分辨率优化",
     "highResOptimizationHint": "降低渲染精度以提升高分辨率屏幕下的性能",
+    "dynamicResolution": "动态分辨率",
+    "dynamicResolutionHint": "放大时自动提高画布分辨率以获得更清晰的显示效果",
     "settingsManagement": "设置管理",
     "exportSettings": "导出设置",
     "importSettings": "导入设置",

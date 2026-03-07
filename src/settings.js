@@ -543,6 +543,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     highResOptimizationToggle.checked = savedHighResOpt;
                 }
                 
+                // 动态分辨率设置
+                const dynamicResolutionToggle = document.getElementById('dynamicResolutionToggle');
+                if (dynamicResolutionToggle) {
+                    const savedDynamicResolution = settings.dynamicResolution !== undefined ? settings.dynamicResolution : true;
+                    dynamicResolutionToggle.checked = savedDynamicResolution;
+                }
+                
                 // 图像处理强度设置
                 const contrastSlider = document.getElementById('contrastSlider');
                 const contrastValue = document.getElementById('contrastValue');
@@ -1055,6 +1062,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (restartModal) {
                     restartModal.classList.add('active');
                 }
+            }
+        });
+    }
+    
+    // 动态分辨率开关
+    const dynamicResolutionToggle = document.getElementById('dynamicResolutionToggle');
+    if (dynamicResolutionToggle) {
+        dynamicResolutionToggle.addEventListener('change', async () => {
+            const saved = await saveSettings({ dynamicResolution: dynamicResolutionToggle.checked });
+            if (!saved) {
+                showSettingsDialog(window.i18n?.t('settings.saveFailed') || '保存失败', window.i18n?.t('settings.saveFailedRetry') || '保存设置失败，请重试', 'error');
             }
         });
     }

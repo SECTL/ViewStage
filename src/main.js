@@ -100,7 +100,11 @@ const DRAW_CONFIG = {
     smoothStrength: 0.5,           // 绘画平滑度 (0-1, 0=无平滑, 1=最大平滑)
     blurEffect: true,              // 界面模糊效果
     highResOptimization: false,    // 高分辨率优化
-    imageSmoothingQuality: 'medium', // 图像平滑质量
+    imageSmoothingQuality: 'high', // 图像平滑质量
+    dynamicResolution: true,       // 动态分辨率调整
+    scaleThresholdHigh: 1.5,       // 高分辨率缩放阈值
+    scaleThresholdUltra: 2.5,      // 超高分辨率缩放阈值
+    baseDpr: Math.min(window.devicePixelRatio || 1, 2), // 基础设备像素比
     penColors: [                   // 画笔颜色列表
         '#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6',
         '#1abc9c', '#34495e', '#e91e63', '#00bcd4', '#8bc34a',
@@ -196,13 +200,13 @@ class SmartDrawScheduler {
         
         switch (this.drawQuality) {
             case 'low':
-                dc.imageSmoothingQuality = 'low';
-                break;
-            case 'medium':
                 dc.imageSmoothingQuality = 'medium';
                 break;
+            case 'medium':
+                dc.imageSmoothingQuality = 'high';
+                break;
             case 'high':
-                dc.imageSmoothingQuality = 'medium'; // 保持medium以避免GPU负载过高
+                dc.imageSmoothingQuality = 'high';
                 break;
         }
     }
@@ -524,7 +528,7 @@ async function loadCameraSetting() {
                 DRAW_CONFIG.highResOptimization = settings.highResOptimization;
                 if (settings.highResOptimization) {
                     DRAW_CONFIG.dpr = 1;
-                    DRAW_CONFIG.imageSmoothingQuality = 'low';
+                    DRAW_CONFIG.imageSmoothingQuality = 'medium';
                     smartDrawScheduler.minDistance = 1.5;
                     smartDrawScheduler.maxPointsPerFlush = 20;
                     POINT_OPTIMIZATION.epsilon = 0.5;
@@ -532,6 +536,11 @@ async function loadCameraSetting() {
                     batchDrawManager.minDistance = 1.0;
                 }
                 console.log('已加载高分辨率优化:', settings.highResOptimization);
+            }
+            
+            if (settings.dynamicResolution !== undefined) {
+                DRAW_CONFIG.dynamicResolution = settings.dynamicResolution;
+                console.log('已加载动态分辨率:', settings.dynamicResolution);
             }
             
             if (settings.penColors && Array.isArray(settings.penColors)) {
@@ -707,6 +716,11 @@ function listenForPdfFileOpen() {
             DRAW_CONFIG.blurEffect = settings.blurEffect;
             updateBlurEffect(settings.blurEffect);
             console.log('界面模糊效果已更改:', settings.blurEffect);
+        }
+        
+        if (settings.dynamicResolution !== undefined) {
+            DRAW_CONFIG.dynamicResolution = settings.dynamicResolution;
+            console.log('动态分辨率已更改:', settings.dynamicResolution);
         }
         
         if (settings.penColors && Array.isArray(settings.penColors)) {
@@ -1168,6 +1182,11 @@ async function resizeCanvas(newScreenW, newScreenH) {
     DRAW_CONFIG.canvasW = Math.floor(newScreenW * adaptiveCanvasScale);
     DRAW_CONFIG.canvasH = Math.floor(newScreenH * adaptiveCanvasScale);
     
+    // 根据当前缩放比例计算合适的 DPR
+    const adaptiveDpr = calculateAdaptiveDpr(oldScale);
+    DRAW_CONFIG.dpr = adaptiveDpr;
+    lastAppliedDpr = adaptiveDpr;
+    
     updateMoveBound();
     
     // 背景层和图像层：物理尺寸 = CSS尺寸 × dpr
@@ -1176,9 +1195,9 @@ async function resizeCanvas(newScreenW, newScreenH) {
     dom.imageCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
     dom.imageCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
     
-    // 批注层：物理尺寸 = 渲染分辨率
-    dom.drawCanvas.width = DRAW_CONFIG.renderW;
-    dom.drawCanvas.height = DRAW_CONFIG.renderH;
+    // 批注层：物理尺寸 = CSS尺寸 × dpr
+    dom.drawCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
+    dom.drawCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
     
     // 所有层 CSS 尺寸相同
     dom.bgCanvas.style.width = DRAW_CONFIG.canvasW + 'px';
@@ -1194,16 +1213,15 @@ async function resizeCanvas(newScreenW, newScreenH) {
     dom.drawCtx.setTransform(1, 0, 0, 1, 0, 0);
     dom.bgCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
     dom.imageCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
-    // 批注层：计算缩放比例以匹配 CSS 尺寸
-    dom.drawCtx.scale(DRAW_CONFIG.renderW / DRAW_CONFIG.canvasW, DRAW_CONFIG.renderH / DRAW_CONFIG.canvasH);
+    dom.drawCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
     
     // 设置绘制质量
     dom.bgCtx.imageSmoothingEnabled = true;
-    dom.bgCtx.imageSmoothingQuality = 'medium';
+    dom.bgCtx.imageSmoothingQuality = 'high';
     dom.imageCtx.imageSmoothingEnabled = true;
-    dom.imageCtx.imageSmoothingQuality = 'medium';
+    dom.imageCtx.imageSmoothingQuality = 'high';
     dom.drawCtx.imageSmoothingEnabled = true;
-    dom.drawCtx.imageSmoothingQuality = 'medium';
+    dom.drawCtx.imageSmoothingQuality = 'high';
     dom.drawCtx.lineCap = 'round';
     dom.drawCtx.lineJoin = 'round';
     dom.drawCtx.miterLimit = 10;
@@ -1232,7 +1250,7 @@ async function resizeCanvas(newScreenW, newScreenH) {
     clampCanvasPosition();
     updateCanvasTransform();
     
-    console.log(`窗口调整: 屏幕 ${newScreenW}x${newScreenH}, 画布 ${DRAW_CONFIG.canvasW}x${DRAW_CONFIG.canvasH}`);
+    console.log(`窗口调整: 屏幕 ${newScreenW}x${newScreenH}, 画布 ${DRAW_CONFIG.canvasW}x${DRAW_CONFIG.canvasH}, DPR ${DRAW_CONFIG.dpr.toFixed(2)}`);
 }
 
 // 初始化 DOM 元素引用
@@ -1297,6 +1315,8 @@ function initCanvas() {
     DRAW_CONFIG.canvasW = Math.floor(screenW * DRAW_CONFIG.canvasScale);
     DRAW_CONFIG.canvasH = Math.floor(screenH * DRAW_CONFIG.canvasScale);
     
+    lastAppliedDpr = DRAW_CONFIG.dpr;
+    
     updateMoveBound();
     
     state.canvasX = -(DRAW_CONFIG.canvasW - screenW) / 2;
@@ -1308,9 +1328,9 @@ function initCanvas() {
     dom.imageCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
     dom.imageCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
     
-    // 批注层：物理尺寸 = 渲染分辨率
-    dom.drawCanvas.width = DRAW_CONFIG.renderW;
-    dom.drawCanvas.height = DRAW_CONFIG.renderH;
+    // 批注层：物理尺寸 = CSS尺寸 × dpr
+    dom.drawCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
+    dom.drawCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
     
     // 所有层 CSS 尺寸相同
     dom.bgCanvas.style.width = DRAW_CONFIG.canvasW + 'px';
@@ -1322,15 +1342,14 @@ function initCanvas() {
     
     dom.bgCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
     dom.imageCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
-    // 批注层：计算缩放比例以匹配 CSS 尺寸
-    dom.drawCtx.scale(DRAW_CONFIG.renderW / DRAW_CONFIG.canvasW, DRAW_CONFIG.renderH / DRAW_CONFIG.canvasH);
+    dom.drawCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
     
     dom.imageCtx.imageSmoothingEnabled = true;
-    dom.imageCtx.imageSmoothingQuality = 'medium';
+    dom.imageCtx.imageSmoothingQuality = 'high';
     
     const dc = dom.drawCtx;
     dc.imageSmoothingEnabled = true;
-    dc.imageSmoothingQuality = 'medium';
+    dc.imageSmoothingQuality = 'high';
     dc.lineCap = 'round';
     dc.lineJoin = 'round';
     dc.miterLimit = 10;
@@ -2191,6 +2210,87 @@ function getTouchDistance(touch1, touch2) {
 }
 
 let lastCanvasTransform = { x: null, y: null, scale: null };
+let lastAppliedDpr = null;
+let dprAdjustDebounce = null;
+
+function calculateAdaptiveDpr(scale) {
+    if (!DRAW_CONFIG.dynamicResolution) {
+        return DRAW_CONFIG.baseDpr;
+    }
+    
+    const baseDpr = DRAW_CONFIG.baseDpr;
+    
+    if (scale >= DRAW_CONFIG.scaleThresholdUltra) {
+        return Math.min(baseDpr * 1.5, 3);
+    } else if (scale >= DRAW_CONFIG.scaleThresholdHigh) {
+        return Math.min(baseDpr * 1.25, 2.5);
+    } else if (scale > 1.2) {
+        return Math.min(baseDpr * 1.1, 2.2);
+    } else {
+        return baseDpr;
+    }
+}
+
+async function adjustCanvasResolution(newDpr) {
+    if (newDpr === lastAppliedDpr) return;
+    
+    lastAppliedDpr = newDpr;
+    DRAW_CONFIG.dpr = newDpr;
+    
+    dom.bgCanvas.width = DRAW_CONFIG.canvasW * newDpr;
+    dom.bgCanvas.height = DRAW_CONFIG.canvasH * newDpr;
+    dom.imageCanvas.width = DRAW_CONFIG.canvasW * newDpr;
+    dom.imageCanvas.height = DRAW_CONFIG.canvasH * newDpr;
+    
+    dom.drawCanvas.width = DRAW_CONFIG.canvasW * newDpr;
+    dom.drawCanvas.height = DRAW_CONFIG.canvasH * newDpr;
+    
+    dom.bgCtx.setTransform(1, 0, 0, 1, 0, 0);
+    dom.imageCtx.setTransform(1, 0, 0, 1, 0, 0);
+    dom.drawCtx.setTransform(1, 0, 0, 1, 0, 0);
+    dom.bgCtx.scale(newDpr, newDpr);
+    dom.imageCtx.scale(newDpr, newDpr);
+    dom.drawCtx.scale(newDpr, newDpr);
+    
+    dom.bgCtx.imageSmoothingEnabled = true;
+    dom.bgCtx.imageSmoothingQuality = 'high';
+    dom.imageCtx.imageSmoothingEnabled = true;
+    dom.imageCtx.imageSmoothingQuality = 'high';
+    dom.drawCtx.imageSmoothingEnabled = true;
+    dom.drawCtx.imageSmoothingQuality = 'high';
+    dom.drawCtx.lineCap = 'round';
+    dom.drawCtx.lineJoin = 'round';
+    dom.drawCtx.miterLimit = 10;
+    
+    resetBgCanvas();
+    
+    if (state.strokeHistory.length > 0 || state.baseImageObj) {
+        await redrawAllStrokes();
+    }
+    
+    if (state.currentImage) {
+        drawImageToCenter(state.currentImage);
+    } else if (state.isCameraOpen && state.cameraStream) {
+        renderFrame();
+    }
+    
+    console.log(`动态分辨率调整: DPR ${newDpr.toFixed(2)}, 缩放 ${state.scale.toFixed(2)}`);
+}
+
+function scheduleDprAdjustment(scale) {
+    if (!DRAW_CONFIG.dynamicResolution) return;
+    
+    if (dprAdjustDebounce) {
+        clearTimeout(dprAdjustDebounce);
+    }
+    
+    dprAdjustDebounce = setTimeout(() => {
+        const newDpr = calculateAdaptiveDpr(scale);
+        if (newDpr !== DRAW_CONFIG.dpr) {
+            adjustCanvasResolution(newDpr);
+        }
+    }, 150);
+}
 
 function updateCanvasTransform() {
     if (lastCanvasTransform.x === state.canvasX && 
@@ -2207,6 +2307,8 @@ function updateCanvasTransform() {
     dom.bgCanvas.style.transform = transform;
     dom.imageCanvas.style.transform = transform;
     dom.drawCanvas.style.transform = transform;
+    
+    scheduleDprAdjustment(state.scale);
 }
 
 function animateCanvasTransform(targetX, targetY, targetScale, duration = 250) {
@@ -2252,6 +2354,8 @@ function animateCanvasTransform(targetX, targetY, targetScale, duration = 250) {
             dom.bgCanvas.classList.remove('smooth-transform');
             dom.imageCanvas.classList.remove('smooth-transform');
             dom.drawCanvas.classList.remove('smooth-transform');
+            
+            scheduleDprAdjustment(state.scale);
         }
     }
     

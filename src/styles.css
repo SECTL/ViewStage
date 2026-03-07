@@ -582,6 +582,8 @@ body {
     border: none;
     outline: none;
     transform-origin: 0 0;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
 }
 
 .canvas-base {
