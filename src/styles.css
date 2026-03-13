@@ -581,8 +581,18 @@ body {
     touch-action: none;
     border: none;
     outline: none;
+}
+
+.canvas-wrapper {
+    position: absolute;
+    top: 0;
+    left: 0;
     transform-origin: 0 0;
     will-change: transform;
+}
+
+.canvas-wrapper.smooth-transform {
+    transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .canvas-base {
@@ -609,10 +619,7 @@ body {
     object-fit: contain;
 }
 
-.canvas-base.smooth-transform,
-.canvas-image.smooth-transform,
-.canvas-draw.smooth-transform,
-.camera-video.smooth-transform {
+.canvas-wrapper.smooth-transform {
     transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 

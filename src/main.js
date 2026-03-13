@@ -99,7 +99,6 @@ const DRAW_CONFIG = {
     enhanceSharpen: 0,             // 增强锐化 (0-100)
     smoothStrength: 0.5,           // 绘画平滑度 (0-1, 0=无平滑, 1=最大平滑)
     blurEffect: true,              // 界面模糊效果
-    highResOptimization: false,    // 高分辨率优化
     imageSmoothingQuality: 'high', // 图像平滑质量
     dynamicResolution: true,       // 动态分辨率调整
     scaleThresholdHigh: 1.5,       // 高分辨率缩放阈值
@@ -109,12 +108,96 @@ const DRAW_CONFIG = {
         '#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6',
         '#1abc9c', '#34495e', '#e91e63', '#00bcd4', '#8bc34a',
         '#ff5722', '#673ab7', '#795548', '#000000', '#ffffff'
-    ]
+    ],
+    realPenEffect: true,           // 真实笔触效果开关
+    velocitySensitivity: 0.8,      // 速度敏感度 (0-1, 越大速度影响越明显)
+    pressureSensitivity: 0.6,      // 压感敏感度 (0-1, 越大压感影响越明显)
+    minWidthRatio: 0.3,            // 最小线宽比例 (相对于基础线宽)
+    maxWidthRatio: 1.5,            // 最大线宽比例 (相对于基础线宽)
+    velocityFilterStrength: 0.3    // 速度滤波强度 (0-1, 越大越平滑)
 };
 
 function getSafeScale() {
     return Math.max(0.001, state.scale || 1);
 }
+
+// ==================== 真实笔触效果管理器 ====================
+// 根据速度和压感动态调整线宽，模拟真实笔触效果
+
+class RealPenManager {
+    constructor() {
+        this.lastTime = 0;
+        this.lastX = 0;
+        this.lastY = 0;
+        this.filteredVelocity = 0;
+        this.velocityHistory = [];
+        this.maxVelocityHistory = 5;
+    }
+    
+    reset() {
+        this.lastTime = 0;
+        this.lastX = 0;
+        this.lastY = 0;
+        this.filteredVelocity = 0;
+        this.velocityHistory = [];
+    }
+    
+    updatePosition(x, y, timestamp) {
+        if (this.lastTime === 0) {
+            this.lastTime = timestamp;
+            this.lastX = x;
+            this.lastY = y;
+            return 0;
+        }
+        
+        const dt = timestamp - this.lastTime;
+        if (dt <= 0) {
+            return this.filteredVelocity;
+        }
+        
+        const dx = x - this.lastX;
+        const dy = y - this.lastY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const velocity = distance / dt * 1000;
+        
+        this.velocityHistory.push(velocity);
+        if (this.velocityHistory.length > this.maxVelocityHistory) {
+            this.velocityHistory.shift();
+        }
+        
+        const filterStrength = DRAW_CONFIG.velocityFilterStrength;
+        this.filteredVelocity = this.filteredVelocity * filterStrength + velocity * (1 - filterStrength);
+        
+        this.lastTime = timestamp;
+        this.lastX = x;
+        this.lastY = y;
+        
+        return this.filteredVelocity;
+    }
+    
+    calculateLineWidth(baseWidth, velocity, pressure = 0.5) {
+        if (!DRAW_CONFIG.realPenEffect) {
+            return baseWidth;
+        }
+        
+        const minRatio = DRAW_CONFIG.minWidthRatio;
+        const maxRatio = DRAW_CONFIG.maxWidthRatio;
+        const velocitySensitivity = DRAW_CONFIG.velocitySensitivity;
+        const pressureSensitivity = DRAW_CONFIG.pressureSensitivity;
+        
+        const normalizedVelocity = Math.min(velocity / 2000, 1);
+        const velocityFactor = 1 - normalizedVelocity * velocitySensitivity;
+        
+        const pressureFactor = 0.5 + (pressure - 0.5) * pressureSensitivity * 2;
+        
+        const combinedFactor = velocityFactor * pressureFactor;
+        const widthRatio = minRatio + (maxRatio - minRatio) * Math.max(0, Math.min(1, combinedFactor));
+        
+        return baseWidth * widthRatio;
+    }
+}
+
+const realPenManager = new RealPenManager();
 
 // ==================== 智能绘制调度器 ====================
 // 根据实时帧率动态调整绘制参数，优化性能
@@ -246,8 +329,273 @@ class SmartDrawScheduler {
     }
 }
 
+// 脏区域管理器 - 用于增量渲染
+class DirtyRegionManager {
+    constructor() {
+        this.dirtyRects = [];
+        this.maxRects = 10;
+    }
+    
+    addRect(x, y, width, height, padding = 5) {
+        const rect = {
+            x: Math.max(0, x - padding),
+            y: Math.max(0, y - padding),
+            width: width + padding * 2,
+            height: height + padding * 2
+        };
+        this.dirtyRects.push(rect);
+        
+        if (this.dirtyRects.length > this.maxRects) {
+            this.mergeRects();
+        }
+    }
+    
+    addPoint(x, y, size = 5) {
+        this.addRect(x - size/2, y - size/2, size, size, size/2);
+    }
+    
+    addLine(x1, y1, x2, y2, lineWidth = 2) {
+        const minX = Math.min(x1, x2);
+        const minY = Math.min(y1, y2);
+        const maxX = Math.max(x1, x2);
+        const maxY = Math.max(y1, y2);
+        this.addRect(minX, minY, maxX - minX, maxY - minY, lineWidth);
+    }
+    
+    addStrokePoints(points, lineWidth = 2) {
+        if (!points || points.length === 0) return;
+        
+        for (const point of points) {
+            if (point.x !== undefined) {
+                this.addPoint(point.x, point.y, lineWidth);
+            } else {
+                this.addLine(point.fromX, point.fromY, point.toX, point.toY, lineWidth);
+            }
+        }
+    }
+    
+    mergeRects() {
+        if (this.dirtyRects.length <= 1) return;
+        
+        const merged = [];
+        const used = new Set();
+        
+        for (let i = 0; i < this.dirtyRects.length; i++) {
+            if (used.has(i)) continue;
+            
+            let rect = { ...this.dirtyRects[i] };
+            
+            for (let j = i + 1; j < this.dirtyRects.length; j++) {
+                if (used.has(j)) continue;
+                
+                const other = this.dirtyRects[j];
+                if (this.rectsOverlap(rect, other)) {
+                    rect = this.mergeTwoRects(rect, other);
+                    used.add(j);
+                }
+            }
+            
+            merged.push(rect);
+            used.add(i);
+        }
+        
+        this.dirtyRects = merged;
+    }
+    
+    rectsOverlap(a, b) {
+        return !(a.x + a.width < b.x || 
+                 b.x + b.width < a.x || 
+                 a.y + a.height < b.y || 
+                 b.y + b.height < a.y);
+    }
+    
+    mergeTwoRects(a, b) {
+        const x = Math.min(a.x, b.x);
+        const y = Math.min(a.y, b.y);
+        const width = Math.max(a.x + a.width, b.x + b.width) - x;
+        const height = Math.max(a.y + a.height, b.y + b.height) - y;
+        return { x, y, width, height };
+    }
+    
+    getMergedRect() {
+        if (this.dirtyRects.length === 0) return null;
+        
+        this.mergeRects();
+        
+        if (this.dirtyRects.length === 1) {
+            return this.dirtyRects[0];
+        }
+        
+        let result = this.dirtyRects[0];
+        for (let i = 1; i < this.dirtyRects.length; i++) {
+            result = this.mergeTwoRects(result, this.dirtyRects[i]);
+        }
+        return result;
+    }
+    
+    getClipRects() {
+        this.mergeRects();
+        return this.dirtyRects;
+    }
+    
+    clear() {
+        this.dirtyRects = [];
+    }
+    
+    isEmpty() {
+        return this.dirtyRects.length === 0;
+    }
+    
+    getBoundingRect() {
+        if (this.dirtyRects.length === 0) return null;
+        
+        let minX = Infinity, minY = Infinity;
+        let maxX = -Infinity, maxY = -Infinity;
+        
+        for (const rect of this.dirtyRects) {
+            minX = Math.min(minX, rect.x);
+            minY = Math.min(minY, rect.y);
+            maxX = Math.max(maxX, rect.x + rect.width);
+            maxY = Math.max(maxY, rect.y + rect.height);
+        }
+        
+        return {
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY
+        };
+    }
+}
+
 // 全局智能绘制调度器
 const smartDrawScheduler = new SmartDrawScheduler();
+
+// 全局脏区域管理器
+const dirtyRegionManager = new DirtyRegionManager();
+
+// 浅拷贝笔画数组（替代 structuredClone 提升性能）
+function cloneStrokes(strokes) {
+    if (!strokes || strokes.length === 0) return [];
+    return strokes.map(stroke => ({
+        type: stroke.type,
+        points: stroke.points ? [...stroke.points] : [],
+        color: stroke.color,
+        lineWidth: stroke.lineWidth,
+        eraserSize: stroke.eraserSize,
+        bounds: stroke.bounds ? { ...stroke.bounds } : undefined,
+        savedStrokeHistory: stroke.savedStrokeHistory,
+        savedBaseImageURL: stroke.savedBaseImageURL
+    }));
+}
+
+// 四叉树空间索引（用于快速查找与脏区域相交的笔画）
+class StrokeQuadTree {
+    constructor(boundary, capacity = 8, maxDepth = 6, depth = 0) {
+        this.boundary = boundary;
+        this.capacity = capacity;
+        this.maxDepth = maxDepth;
+        this.depth = depth;
+        this.strokes = [];
+        this.children = null;
+    }
+    
+    insert(stroke) {
+        if (!stroke.bounds) return false;
+        
+        if (!this.intersects(stroke.bounds)) return false;
+        
+        if (this.children) {
+            return this.insertToChildren(stroke);
+        }
+        
+        this.strokes.push(stroke);
+        
+        if (this.strokes.length > this.capacity && this.depth < this.maxDepth) {
+            this.subdivide();
+        }
+        
+        return true;
+    }
+    
+    insertToChildren(stroke) {
+        let inserted = false;
+        for (const child of this.children) {
+            if (child.insert(stroke)) {
+                inserted = true;
+            }
+        }
+        return inserted;
+    }
+    
+    subdivide() {
+        const { x, y, width, height } = this.boundary;
+        const hw = width / 2;
+        const hh = height / 2;
+        
+        this.children = [
+            new StrokeQuadTree({ x, y, width: hw, height: hh }, this.capacity, this.maxDepth, this.depth + 1),
+            new StrokeQuadTree({ x: x + hw, y, width: hw, height: hh }, this.capacity, this.maxDepth, this.depth + 1),
+            new StrokeQuadTree({ x, y: y + hh, width: hw, height: hh }, this.capacity, this.maxDepth, this.depth + 1),
+            new StrokeQuadTree({ x: x + hw, y: y + hh, width: hw, height: hh }, this.capacity, this.maxDepth, this.depth + 1)
+        ];
+        
+        for (const stroke of this.strokes) {
+            this.insertToChildren(stroke);
+        }
+        this.strokes = [];
+    }
+    
+    query(range, found = new Set()) {
+        if (!this.intersects(range)) return found;
+        
+        for (const stroke of this.strokes) {
+            if (this.strokeIntersects(stroke, range)) {
+                found.add(stroke);
+            }
+        }
+        
+        if (this.children) {
+            for (const child of this.children) {
+                child.query(range, found);
+            }
+        }
+        
+        return found;
+    }
+    
+    intersects(bounds) {
+        const padding = 5;
+        return !(bounds.maxX + padding < this.boundary.x ||
+                 bounds.minX - padding > this.boundary.x + this.boundary.width ||
+                 bounds.maxY + padding < this.boundary.y ||
+                 bounds.minY - padding > this.boundary.y + this.boundary.height);
+    }
+    
+    strokeIntersects(stroke, range) {
+        if (!stroke.bounds) return true;
+        const padding = Math.max(stroke.lineWidth || 5, stroke.eraserSize || 5);
+        return !(stroke.bounds.maxX + padding < range.x ||
+                 stroke.bounds.minX - padding > range.x + range.width ||
+                 stroke.bounds.maxY + padding < range.y ||
+                 stroke.bounds.minY - padding > range.y + range.height);
+    }
+    
+    clear() {
+        this.strokes = [];
+        this.children = null;
+    }
+    
+    build(strokes) {
+        this.clear();
+        for (const stroke of strokes) {
+            this.insert(stroke);
+        }
+    }
+}
+
+// 全局四叉树索引
+let strokeQuadTree = null;
 
 // ==================== 全局状态 ====================
 // 应用状态管理：模式、画布变换、批注历史、摄像头、图像管理等
@@ -330,7 +678,13 @@ let state = {
     
     // 绘制优化
     pendingDrawPoints: [],         // 待绘制点队列 (RAF批量处理)
-    drawRafId: null                // requestAnimationFrame ID
+    drawRafId: null,               // requestAnimationFrame ID
+    
+    // 真实笔触效果
+    currentPressure: 0.5,          // 当前压感值 (0-1)
+    currentVelocity: 0,            // 当前速度
+    currentLineWidth: 0,           // 当前动态线宽
+    lastLineWidth: 0               // 上一个点的线宽
 };
 
 let dom = {};  // DOM 元素引用缓存
@@ -531,20 +885,6 @@ async function loadCameraSetting() {
                 DRAW_CONFIG.blurEffect = settings.blurEffect;
                 console.log('已加载界面模糊效果:', settings.blurEffect);
                 updateBlurEffect(settings.blurEffect);
-            }
-            
-            if (settings.highResOptimization !== undefined) {
-                DRAW_CONFIG.highResOptimization = settings.highResOptimization;
-                if (settings.highResOptimization) {
-                    DRAW_CONFIG.dpr = 1;
-                    DRAW_CONFIG.imageSmoothingQuality = 'medium';
-                    smartDrawScheduler.minDistance = 1.5;
-                    smartDrawScheduler.maxPointsPerFlush = 20;
-                    POINT_OPTIMIZATION.epsilon = 0.5;
-                    POINT_OPTIMIZATION.minDistance = 2;
-                    batchDrawManager.minDistance = 1.0;
-                }
-                console.log('已加载高分辨率优化:', settings.highResOptimization);
             }
             
             if (settings.dynamicResolution !== undefined) {
@@ -1272,6 +1612,7 @@ async function resizeCanvas(newScreenW, newScreenH) {
 // 初始化 DOM 元素引用
 function initDOM() {
     dom.canvasContainer = document.getElementById('canvasContainer');
+    dom.canvasWrapper = document.getElementById('canvasWrapper');
     dom.bgCanvas = document.getElementById('bgCanvas');
     dom.imageCanvas = document.getElementById('imageCanvas');
     dom.drawCanvas = document.getElementById('drawCanvas');
@@ -1931,11 +2272,154 @@ function updateEraserHintPos(clientX, clientY) {
 // 鼠标、触控事件处理：绘制、拖拽、缩放
 
 function bindCanvasMouseEvents() {
-    dom.drawCanvas.addEventListener('mousedown', handleMouseDown);
-    dom.drawCanvas.addEventListener('mousemove', handleMouseMove);
-    dom.drawCanvas.addEventListener('mouseup', handleMouseUp);
-    dom.drawCanvas.addEventListener('mouseleave', handleMouseLeave);
+    // 优先使用 Pointer Events（支持压感）
+    if (window.PointerEvent) {
+        dom.drawCanvas.addEventListener('pointerdown', handlePointerDown);
+        dom.drawCanvas.addEventListener('pointermove', handlePointerMove);
+        dom.drawCanvas.addEventListener('pointerup', handlePointerUp);
+        dom.drawCanvas.addEventListener('pointerleave', handlePointerLeave);
+        dom.drawCanvas.addEventListener('pointercancel', handlePointerUp);
+    } else {
+        // 降级到传统鼠标事件
+        dom.drawCanvas.addEventListener('mousedown', handleMouseDown);
+        dom.drawCanvas.addEventListener('mousemove', handleMouseMove);
+        dom.drawCanvas.addEventListener('mouseup', handleMouseUp);
+        dom.drawCanvas.addEventListener('mouseleave', handleMouseLeave);
+    }
     dom.drawCanvas.addEventListener('wheel', handleWheel, { passive: false });
+}
+
+/**
+ * Pointer 按下处理
+ */
+function handlePointerDown(e) {
+    e.preventDefault();
+    const rect = dom.drawCanvas.getBoundingClientRect();
+    
+    // 保存压感值
+    state.currentPressure = e.pressure || 0.5;
+    
+    if (state.drawMode === 'move') {
+        state.isDragging = true;
+        state.startDragX = e.clientX - state.canvasX;
+        state.startDragY = e.clientY - state.canvasY;
+        dom.drawCanvas.classList.add('dragging');
+    } else if (state.drawMode === 'comment') {
+        hidePenControlPanel();
+        state.isDrawing = true;
+        state.lastX = (e.clientX - rect.left) / getSafeScale();
+        state.lastY = (e.clientY - rect.top) / getSafeScale();
+        startStroke('draw');
+    } else if (state.drawMode === 'eraser') {
+        hidePenControlPanel();
+        state.isDrawing = true;
+        state.lastX = (e.clientX - rect.left) / getSafeScale();
+        state.lastY = (e.clientY - rect.top) / getSafeScale();
+        startStroke('erase');
+    }
+}
+
+/**
+ * Pointer 移动处理
+ */
+function handlePointerMove(e) {
+    e.preventDefault();
+    
+    // 更新压感值
+    state.currentPressure = e.pressure || 0.5;
+    
+    if (state.drawMode === 'eraser') {
+        updateEraserHintPos(e.clientX, e.clientY);
+    }
+    
+    if (state.isDragging) {
+        state.canvasX = e.clientX - state.startDragX;
+        state.canvasY = e.clientY - state.startDragY;
+        clampCanvasPosition();
+        
+        const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
+        dom.canvasWrapper.style.transform = transform;
+        
+        if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
+            updateCameraVideoStyle();
+        }
+        
+        lastCanvasTransform.x = state.canvasX;
+        lastCanvasTransform.y = state.canvasY;
+        lastCanvasTransform.scale = state.scale;
+    } else if (state.isDrawing) {
+        const rect = dom.drawCanvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / getSafeScale();
+        const y = (e.clientY - rect.top) / getSafeScale();
+        
+        const minDistance = smartDrawScheduler.getMinDistance();
+        const minDistSq = minDistance * minDistance;
+        const dx = x - state.lastX;
+        const dy = y - state.lastY;
+        const distSq = dx * dx + dy * dy;
+        
+        if (distSq > minDistSq) {
+            // 先调用 addStrokePoint 来计算动态线宽
+            addStrokePoint(state.lastX, state.lastY, x, y, state.currentPressure);
+            
+            // 收集点数据（包含线宽信息）
+            state.pendingDrawPoints.push({ 
+                fromX: state.lastX, 
+                fromY: state.lastY, 
+                toX: x, 
+                toY: y,
+                fromWidth: state.lastLineWidth,
+                toWidth: state.currentLineWidth
+            });
+            
+            pointCollector.addPoint(state.lastX, state.lastY, x, y);
+            
+            state.lastX = x;
+            state.lastY = y;
+            
+            if (!state.drawRafId) {
+                state.drawRafId = requestAnimationFrame(flushDrawPoints);
+            }
+        }
+    }
+}
+
+/**
+ * Pointer 抬起处理
+ */
+async function handlePointerUp(e) {
+    if (state.isDragging) {
+        state.isDragging = false;
+        dom.drawCanvas.classList.remove('dragging');
+    }
+    if (state.isDrawing) {
+        state.isDrawing = false;
+        if (state.drawRafId) {
+            cancelAnimationFrame(state.drawRafId);
+            state.drawRafId = null;
+        }
+        await flushDrawPoints();
+        await endStroke();
+    }
+}
+
+/**
+ * Pointer 离开处理
+ */
+async function handlePointerLeave(e) {
+    if (state.isDragging) {
+        state.isDragging = false;
+        dom.drawCanvas.classList.remove('dragging');
+    }
+    if (state.isDrawing) {
+        state.isDrawing = false;
+        if (state.drawRafId) {
+            cancelAnimationFrame(state.drawRafId);
+            state.drawRafId = null;
+        }
+        await flushDrawPoints();
+        await endStroke();
+    }
 }
 
 /**
@@ -1985,11 +2469,9 @@ function handleMouseMove(e) {
         state.canvasY = e.clientY - state.startDragY;
         clampCanvasPosition();
         
-        // 直接更新 DOM，提高跟手性
+        // 直接更新容器 transform，提高跟手性
         const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
-        dom.bgCanvas.style.transform = transform;
-        dom.imageCanvas.style.transform = transform;
-        dom.drawCanvas.style.transform = transform;
+        dom.canvasWrapper.style.transform = transform;
         
         // 更新 video 元素
         if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
@@ -2012,11 +2494,20 @@ function handleMouseMove(e) {
         const distSq = dx * dx + dy * dy;
         
         if (distSq > minDistSq) {
-            state.pendingDrawPoints.push({ fromX: state.lastX, fromY: state.lastY, toX: x, toY: y });
+            // 先调用 addStrokePoint 来计算动态线宽
+            addStrokePoint(state.lastX, state.lastY, x, y);
+            
+            // 收集点数据（包含线宽信息）
+            state.pendingDrawPoints.push({ 
+                fromX: state.lastX, 
+                fromY: state.lastY, 
+                toX: x, 
+                toY: y,
+                fromWidth: state.lastLineWidth,
+                toWidth: state.currentLineWidth
+            });
             
             pointCollector.addPoint(state.lastX, state.lastY, x, y);
-            
-            addStrokePoint(state.lastX, state.lastY, x, y);
             
             state.lastX = x;
             state.lastY = y;
@@ -2045,7 +2536,18 @@ async function flushDrawPoints() {
         const color = state.drawMode === 'comment' ? DRAW_CONFIG.penColor : '#000000';
         const lineWidth = state.drawMode === 'comment' ? DRAW_CONFIG.penWidth : DRAW_CONFIG.eraserSize;
         
-        batchDrawManager.addCommand(type, point.fromX, point.fromY, point.toX, point.toY, color, lineWidth);
+        // 传递可变线宽参数
+        batchDrawManager.addCommand(
+            type, 
+            point.fromX, 
+            point.fromY, 
+            point.toX, 
+            point.toY, 
+            color, 
+            lineWidth,
+            point.fromWidth,
+            point.toWidth
+        );
     }
     
     await batchDrawManager.endDrawing();
@@ -2176,11 +2678,9 @@ function handleTouchMove(e) {
         state.canvasY = touch.clientY - state.startDragY;
         clampCanvasPosition();
         
-        // 直接更新 DOM，提高跟手性
+        // 直接更新容器 transform，提高跟手性
         const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
-        dom.bgCanvas.style.transform = transform;
-        dom.imageCanvas.style.transform = transform;
-        dom.drawCanvas.style.transform = transform;
+        dom.canvasWrapper.style.transform = transform;
         
         // 更新 video 元素
         if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
@@ -2200,11 +2700,23 @@ function handleTouchMove(e) {
         const x = (touch.clientX - rect.left) / getSafeScale();
         const y = (touch.clientY - rect.top) / getSafeScale();
         
-        state.pendingDrawPoints.push({ fromX: state.lastX, fromY: state.lastY, toX: x, toY: y });
+        // 获取触控压感（如果有的话）
+        const pressure = (touch.force > 0) ? touch.force : 0.5;
+        
+        // 先调用 addStrokePoint 来计算动态线宽
+        addStrokePoint(state.lastX, state.lastY, x, y, pressure);
+        
+        // 收集点数据（包含线宽信息）
+        state.pendingDrawPoints.push({ 
+            fromX: state.lastX, 
+            fromY: state.lastY, 
+            toX: x, 
+            toY: y,
+            fromWidth: state.lastLineWidth,
+            toWidth: state.currentLineWidth
+        });
         
         pointCollector.addPoint(state.lastX, state.lastY, x, y);
-        
-        addStrokePoint(state.lastX, state.lastY, x, y);
         
         state.lastX = x;
         state.lastY = y;
@@ -2229,11 +2741,9 @@ function handleTouchMove(e) {
         updateMoveBound();
         clampCanvasPosition();
         
-        // 直接更新 DOM，提高跟手性
+        // 直接更新容器 transform，提高跟手性
         const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
-        dom.bgCanvas.style.transform = transform;
-        dom.imageCanvas.style.transform = transform;
-        dom.drawCanvas.style.transform = transform;
+        dom.canvasWrapper.style.transform = transform;
         
         // 更新 video 元素
         if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
@@ -2294,13 +2804,13 @@ function calculateAdaptiveDpr(scale) {
     
     const baseDpr = DRAW_CONFIG.baseDpr;
     
-    // 放大时适度提高DPR，平衡清晰度和GPU开销
+    // 放大时大幅提高DPR，确保清晰度
     if (scale >= DRAW_CONFIG.scaleThresholdUltra) {
-        return Math.min(baseDpr * 1.3, 2.5);
+        return Math.min(baseDpr * 2.5, 5);
     } else if (scale >= DRAW_CONFIG.scaleThresholdHigh) {
-        return Math.min(baseDpr * 1.15, 2.2);
+        return Math.min(baseDpr * 2, 4);
     } else if (scale > 1.2) {
-        return Math.min(baseDpr * 1.05, 2);
+        return Math.min(baseDpr * 1.5, 3);
     } else {
         return baseDpr;
     }
@@ -2394,12 +2904,11 @@ function updateCanvasTransform() {
     lastCanvasTransform.y = state.canvasY;
     lastCanvasTransform.scale = state.scale;
     
+    // 只对容器设置 transform，减少 DOM 操作
     const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
-    dom.bgCanvas.style.transform = transform;
-    dom.imageCanvas.style.transform = transform;
-    dom.drawCanvas.style.transform = transform;
+    dom.canvasWrapper.style.transform = transform;
     
-    // video 元素也跟随 canvas 变换
+    // video 元素需要单独处理（因为它有额外的偏移）
     if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
         updateCameraVideoStyle();
     }
@@ -2424,12 +2933,7 @@ function animateCanvasTransform(targetX, targetY, targetScale, duration = 250) {
     
     const startTime = performance.now();
     
-    dom.bgCanvas.classList.add('smooth-transform');
-    dom.imageCanvas.classList.add('smooth-transform');
-    dom.drawCanvas.classList.add('smooth-transform');
-    if (dom.cameraVideo) {
-        dom.cameraVideo.classList.add('smooth-transform');
-    }
+    dom.canvasWrapper.classList.add('smooth-transform');
     
     function animate(currentTime) {
         const elapsed = currentTime - startTime;
@@ -2448,10 +2952,9 @@ function animateCanvasTransform(targetX, targetY, targetScale, duration = 250) {
         lastCanvasTransform.y = state.canvasY;
         lastCanvasTransform.scale = state.scale;
         
+        // 只对容器设置 transform
         const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
-        dom.bgCanvas.style.transform = transform;
-        dom.imageCanvas.style.transform = transform;
-        dom.drawCanvas.style.transform = transform;
+        dom.canvasWrapper.style.transform = transform;
         
         // 更新 video 元素
         if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
@@ -2462,12 +2965,7 @@ function animateCanvasTransform(targetX, targetY, targetScale, duration = 250) {
             currentAnimationId = requestAnimationFrame(animate);
         } else {
             currentAnimationId = null;
-            dom.bgCanvas.classList.remove('smooth-transform');
-            dom.imageCanvas.classList.remove('smooth-transform');
-            dom.drawCanvas.classList.remove('smooth-transform');
-            if (dom.cameraVideo) {
-                dom.cameraVideo.classList.remove('smooth-transform');
-            }
+            dom.canvasWrapper.classList.remove('smooth-transform');
             
             scheduleDprAdjustment(state.scale);
         }
@@ -2483,15 +2981,61 @@ function startStroke(type) {
         points: [],
         color: DRAW_CONFIG.penColor,
         lineWidth: DRAW_CONFIG.penWidth,
-        eraserSize: DRAW_CONFIG.eraserSize
+        eraserSize: DRAW_CONFIG.eraserSize,
+        // 边界框（用于脏区域渲染）
+        bounds: {
+            minX: Infinity,
+            minY: Infinity,
+            maxX: -Infinity,
+            maxY: -Infinity
+        },
+        // 真实笔触效果数据
+        variableWidths: DRAW_CONFIG.realPenEffect ? [] : null
     };
+    
+    // 重置真实笔触效果状态
+    realPenManager.reset();
+    state.currentPressure = 0.5;
+    state.currentVelocity = 0;
+    state.currentLineWidth = DRAW_CONFIG.penWidth;
+    state.lastLineWidth = DRAW_CONFIG.penWidth;
     
     // 开始批处理绘制
     batchDrawManager.startDrawing();
 }
 
-function addStrokePoint(fromX, fromY, toX, toY) {
+function addStrokePoint(fromX, fromY, toX, toY, pressure = 0.5) {
     if (state.currentStroke) {
+        // 更新边界框
+        const bounds = state.currentStroke.bounds;
+        bounds.minX = Math.min(bounds.minX, fromX, toX);
+        bounds.minY = Math.min(bounds.minY, fromY, toY);
+        bounds.maxX = Math.max(bounds.maxX, fromX, toX);
+        bounds.maxY = Math.max(bounds.maxY, fromY, toY);
+        
+        // 计算动态线宽
+        if (DRAW_CONFIG.realPenEffect && state.currentStroke.type === 'draw') {
+            const timestamp = performance.now();
+            state.currentVelocity = realPenManager.updatePosition(toX, toY, timestamp);
+            state.currentPressure = pressure;
+            
+            const baseWidth = state.currentStroke.lineWidth;
+            state.lastLineWidth = state.currentLineWidth;
+            state.currentLineWidth = realPenManager.calculateLineWidth(
+                baseWidth,
+                state.currentVelocity,
+                pressure
+            );
+            
+            // 保存可变线宽数据
+            if (state.currentStroke.variableWidths) {
+                state.currentStroke.variableWidths.push({
+                    fromWidth: state.lastLineWidth,
+                    toWidth: state.currentLineWidth
+                });
+            }
+        }
+        
         // 检查是否需要添加连接点
         if (state.currentStroke.points.length > 0) {
             const lastPoint = state.currentStroke.points[state.currentStroke.points.length - 1];
@@ -2505,6 +3049,14 @@ function addStrokePoint(fromX, fromY, toX, toY) {
                     toX: fromX,
                     toY: fromY
                 });
+                
+                // 也添加对应的线宽数据
+                if (state.currentStroke.variableWidths) {
+                    state.currentStroke.variableWidths.push({
+                        fromWidth: state.lastLineWidth,
+                        toWidth: state.currentLineWidth
+                    });
+                }
             }
         }
         
@@ -2573,52 +3125,85 @@ async function processEraserStroke(eraserStroke) {
     updateUndoBtnStatus();
 }
 
-async function redrawAllStrokes() {
+async function redrawAllStrokes(dirtyRect = null) {
     const ctx = dom.drawCtx;
-    ctx.clearRect(0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
     
-    if (state.baseImageObj) {
-        ctx.drawImage(state.baseImageObj, 0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
+    // 如果有脏区域，只清除和重绘该区域
+    if (dirtyRect) {
+        const { x, y, width, height } = dirtyRect;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, width, height);
+        ctx.clip();
+        ctx.clearRect(x, y, width, height);
+    } else {
+        ctx.clearRect(0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
     }
     
-    if (state.strokeHistory.length === 0) return;
-    
-    const eraseStrokes = new Map();
-    const drawStrokes = new Map();
-    
-    for (const stroke of state.strokeHistory) {
-        if (stroke.type === 'erase') {
-            const sizeKey = stroke.eraserSize || DRAW_CONFIG.eraserSize;
-            if (!eraseStrokes.has(sizeKey)) {
-                eraseStrokes.set(sizeKey, []);
-            }
-            eraseStrokes.get(sizeKey).push(stroke);
-        } else if (stroke.type === 'draw' || stroke.type === 'comment') {
-            const stateKey = `${stroke.color || DRAW_CONFIG.penColor}-${stroke.lineWidth || DRAW_CONFIG.penWidth}`;
-            if (!drawStrokes.has(stateKey)) {
-                drawStrokes.set(stateKey, {
-                    color: stroke.color || DRAW_CONFIG.penColor,
-                    lineWidth: stroke.lineWidth || DRAW_CONFIG.penWidth,
-                    strokes: []
-                });
-            }
-            drawStrokes.get(stateKey).strokes.push(stroke);
+    if (state.baseImageObj) {
+        if (dirtyRect) {
+            ctx.drawImage(state.baseImageObj, 0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
+        } else {
+            ctx.drawImage(state.baseImageObj, 0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
         }
     }
     
-    ctx.save();
+    if (state.strokeHistory.length === 0) {
+        if (dirtyRect) {
+            ctx.restore();
+        }
+        return;
+    }
+    
+    // 过滤出需要重绘的笔画（在脏区域内或有交集）
+    let strokesToRedraw = state.strokeHistory;
+    if (dirtyRect) {
+        // 使用四叉树空间索引快速查询
+        if (!strokeQuadTree || strokeQuadTree.strokes.length === 0 && !strokeQuadTree.children) {
+            strokeQuadTree = new StrokeQuadTree({ x: 0, y: 0, width: DRAW_CONFIG.canvasW, height: DRAW_CONFIG.canvasH });
+            strokeQuadTree.build(state.strokeHistory);
+        }
+        strokesToRedraw = Array.from(strokeQuadTree.query(dirtyRect));
+    }
+    
+    // 分离可变线宽笔画和固定线宽笔画
+    const eraseStrokes = [];
+    const variableWidthStrokes = [];
+    const fixedWidthStrokes = new Map();
+    
+    for (const stroke of strokesToRedraw) {
+        if (stroke.type === 'erase') {
+            eraseStrokes.push(stroke);
+        } else if (stroke.type === 'draw' || stroke.type === 'comment') {
+            // 检查是否有可变线宽数据
+            if (stroke.variableWidths && stroke.variableWidths.length > 0) {
+                variableWidthStrokes.push(stroke);
+            } else {
+                const stateKey = `${stroke.color || DRAW_CONFIG.penColor}-${stroke.lineWidth || DRAW_CONFIG.penWidth}`;
+                if (!fixedWidthStrokes.has(stateKey)) {
+                    fixedWidthStrokes.set(stateKey, {
+                        color: stroke.color || DRAW_CONFIG.penColor,
+                        lineWidth: stroke.lineWidth || DRAW_CONFIG.penWidth,
+                        strokes: []
+                    });
+                }
+                fixedWidthStrokes.get(stateKey).strokes.push(stroke);
+            }
+        }
+    }
+    
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     
-    for (const [eraserSize, strokes] of eraseStrokes) {
+    // 批量绘制橡皮擦笔画
+    for (const stroke of eraseStrokes) {
+        const eraserSize = stroke.eraserSize || DRAW_CONFIG.eraserSize;
         ctx.globalCompositeOperation = 'destination-out';
         ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
         ctx.lineWidth = eraserSize;
         
         const erasePath = new Path2D();
-        for (const stroke of strokes) {
-            if (!stroke.points || stroke.points.length < 1) continue;
-            
+        if (stroke.points && stroke.points.length >= 1) {
             const firstPoint = stroke.points[0];
             if (firstPoint.x !== undefined) {
                 erasePath.moveTo(firstPoint.x, firstPoint.y);
@@ -2639,7 +3224,46 @@ async function redrawAllStrokes() {
     
     ctx.globalCompositeOperation = 'source-over';
     
-    for (const [stateKey, group] of drawStrokes) {
+    // 绘制可变线宽笔画
+    for (const stroke of variableWidthStrokes) {
+        if (!stroke.points || stroke.points.length === 0) continue;
+        
+        ctx.fillStyle = stroke.color || DRAW_CONFIG.penColor;
+        
+        for (let i = 0; i < stroke.points.length && i < stroke.variableWidths.length; i++) {
+            const point = stroke.points[i];
+            const widthInfo = stroke.variableWidths[i];
+            
+            // 使用多边形绘制可变线宽线段
+            const x1 = point.fromX, y1 = point.fromY;
+            const x2 = point.toX, y2 = point.toY;
+            const w1 = widthInfo.fromWidth, w2 = widthInfo.toWidth;
+            
+            const angle = Math.atan2(y2 - y1, x2 - x1);
+            const perpAngle = angle + Math.PI / 2;
+            const hw1 = w1 / 2, hw2 = w2 / 2;
+            const cos = Math.cos(perpAngle), sin = Math.sin(perpAngle);
+            
+            ctx.beginPath();
+            ctx.moveTo(x1 + cos * hw1, y1 + sin * hw1);
+            ctx.lineTo(x2 + cos * hw2, y2 + sin * hw2);
+            ctx.lineTo(x2 - cos * hw2, y2 - sin * hw2);
+            ctx.lineTo(x1 - cos * hw1, y1 - sin * hw1);
+            ctx.closePath();
+            ctx.fill();
+            
+            // 绘制两端圆形
+            ctx.beginPath();
+            ctx.arc(x1, y1, hw1, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x2, y2, hw2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
+    // 批量绘制固定线宽笔画
+    for (const [stateKey, group] of fixedWidthStrokes) {
         ctx.strokeStyle = group.color;
         ctx.lineWidth = group.lineWidth;
         
@@ -2665,19 +3289,22 @@ async function redrawAllStrokes() {
         ctx.stroke(drawPath);
     }
     
-    ctx.restore();
+    if (dirtyRect) {
+        ctx.restore();
+    }
 }
 
 async function drawEraserStroke(stroke) {
     if (!stroke.points || stroke.points.length < 1) return;
     
     const ctx = dom.drawCtx;
-    ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
-    ctx.lineWidth = stroke.eraserSize || DRAW_CONFIG.eraserSize;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    setContextState(dom.drawCtx, {
+        globalCompositeOperation: 'destination-out',
+        strokeStyle: 'rgba(0, 0, 0, 1)',
+        lineWidth: stroke.eraserSize || DRAW_CONFIG.eraserSize,
+        lineCap: 'round',
+        lineJoin: 'round'
+    });
     
     const path = new Path2D();
     
@@ -2696,20 +3323,19 @@ async function drawEraserStroke(stroke) {
         }
     }
     
-    ctx.stroke(path);
-    ctx.restore();
+    dom.drawCtx.stroke(path);
 }
 
 async function drawStroke(stroke) {
     if (!stroke.points || stroke.points.length < 1) return;
     
-    const ctx = dom.drawCtx;
-    ctx.save();
-    ctx.strokeStyle = stroke.color || DRAW_CONFIG.penColor;
-    ctx.lineWidth = stroke.lineWidth || DRAW_CONFIG.penWidth;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.globalCompositeOperation = 'source-over';
+    setContextState(dom.drawCtx, {
+        strokeStyle: stroke.color || DRAW_CONFIG.penColor,
+        lineWidth: stroke.lineWidth || DRAW_CONFIG.penWidth,
+        lineCap: 'round',
+        lineJoin: 'round',
+        globalCompositeOperation: 'source-over'
+    });
     
     const path = new Path2D();
     
@@ -2728,8 +3354,7 @@ async function drawStroke(stroke) {
         }
     }
     
-    ctx.stroke(path);
-    ctx.restore();
+    dom.drawCtx.stroke(path);
 }
 
 let compactIdleId = null;
@@ -2778,33 +3403,57 @@ function distance(x1, y1, x2, y2) {
 }
 
 /**
- * Douglas-Peucker 点简化算法 (降级方案)
+ * Douglas-Peucker 点简化算法（迭代实现，避免递归调用栈溢出）
  */
 function simplifyPoints(points, epsilon) {
     if (points.length <= 2) return points;
     
-    let maxDist = 0;
-    let maxIndex = 0;
+    // 使用迭代实现，避免递归调用栈溢出
+    const result = new Array(points.length);
+    result[0] = points[0];
+    result[points.length - 1] = points[points.length - 1];
     
-    for (let i = 1; i < points.length - 1; i++) {
-        const dist = perpendicularDistance(
-            points[i].fromX, points[i].fromY,
-            points[0].fromX, points[0].fromY,
-            points[points.length - 1].toX, points[points.length - 1].toY
-        );
-        if (dist > maxDist) {
-            maxDist = dist;
-            maxIndex = i;
+    // 使用栈来存储待处理的区间
+    const stack = [{ start: 0, end: points.length - 1 }];
+    
+    while (stack.length > 0) {
+        const { start, end } = stack.pop();
+        
+        if (end - start <= 1) continue;
+        
+        let maxDist = 0;
+        let maxIndex = start;
+        
+        // 找到距离最远的点
+        for (let i = start + 1; i < end; i++) {
+            const dist = perpendicularDistance(
+                points[i].fromX, points[i].fromY,
+                points[start].fromX, points[start].fromY,
+                points[end].toX, points[end].toY
+            );
+            if (dist > maxDist) {
+                maxDist = dist;
+                maxIndex = i;
+            }
+        }
+        
+        // 如果最大距离大于阈值，保留该点并继续处理子区间
+        if (maxDist > epsilon) {
+            result[maxIndex] = points[maxIndex];
+            stack.push({ start: maxIndex, end: end });
+            stack.push({ start: start, end: maxIndex });
         }
     }
     
-    if (maxDist > epsilon) {
-        const left = simplifyPoints(points.slice(0, maxIndex + 1), epsilon);
-        const right = simplifyPoints(points.slice(maxIndex), epsilon);
-        return [...left.slice(0, -1), ...right];
-    } else {
-        return [points[0], points[points.length - 1]];
+    // 过滤掉未标记的点，保持原始顺序
+    const simplified = [];
+    for (let i = 0; i < points.length; i++) {
+        if (result[i] !== undefined) {
+            simplified.push(result[i]);
+        }
     }
+    
+    return simplified;
 }
 
 /**
@@ -2958,16 +3607,28 @@ class BatchDrawManager {
         this.isDrawing = false;     // 是否正在绘制中
         this.pendingFlush = false;  // 是否有待处理的flush
         this.minDistance = 0.5;     // 最小点间距，用于过滤冗余点（增加以减少点数量）
+        this.variableWidthCommands = []; // 可变线宽命令队列
     }
     
     /**
-     * 添加绘制命令
+     * 添加绘制命令（支持可变线宽）
      */
-    addCommand(type, fromX, fromY, toX, toY, color, lineWidth) {
+    addCommand(type, fromX, fromY, toX, toY, color, lineWidth, fromWidth = null, toWidth = null) {
         // 计算距离，过滤太近的点
         const distance = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
         if (distance < this.minDistance) {
             return; // 跳过太近的点
+        }
+        
+        // 如果启用了真实笔触效果且有可变线宽，使用可变线宽模式
+        if (DRAW_CONFIG.realPenEffect && fromWidth !== null && toWidth !== null) {
+            this.variableWidthCommands.push({
+                type,
+                fromX, fromY, toX, toY,
+                color,
+                fromWidth, toWidth
+            });
+            return;
         }
         
         // 生成状态键
@@ -3068,6 +3729,45 @@ class BatchDrawManager {
     }
     
     /**
+     * 绘制可变线宽线段（使用多边形模拟）
+     */
+    drawVariableWidthLine(ctx, x1, y1, x2, y2, w1, w2, color, isErase) {
+        if (isErase) {
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+        } else {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = color;
+        }
+        
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const perpAngle = angle + Math.PI / 2;
+        
+        const hw1 = w1 / 2;
+        const hw2 = w2 / 2;
+        
+        const cos = Math.cos(perpAngle);
+        const sin = Math.sin(perpAngle);
+        
+        ctx.beginPath();
+        ctx.moveTo(x1 + cos * hw1, y1 + sin * hw1);
+        ctx.lineTo(x2 + cos * hw2, y2 + sin * hw2);
+        ctx.lineTo(x2 - cos * hw2, y2 - sin * hw2);
+        ctx.lineTo(x1 - cos * hw1, y1 - sin * hw1);
+        ctx.closePath();
+        ctx.fill();
+        
+        // 绘制两端圆形
+        ctx.beginPath();
+        ctx.arc(x1, y1, hw1, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.beginPath();
+        ctx.arc(x2, y2, hw2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    /**
      * 执行单个批处理
      */
     flushBatch(stateKey) {
@@ -3076,8 +3776,6 @@ class BatchDrawManager {
         
         const ctx = dom.drawCtx;
         const isErase = batch.type === 'erase';
-        
-        ctx.save();
         
         if (isErase) {
             ctx.globalCompositeOperation = 'destination-out';
@@ -3098,8 +3796,6 @@ class BatchDrawManager {
         }
         ctx.stroke(path);
         
-        ctx.restore();
-        
         batch.commands = [];
     }
     
@@ -3107,17 +3803,38 @@ class BatchDrawManager {
      * 执行所有批处理
      */
     flushAll() {
-        if (this.batches.size === 0) return;
-        
         const ctx = dom.drawCtx;
         
-        ctx.save();
+        // 先绘制可变线宽命令
+        if (this.variableWidthCommands.length > 0) {
+            for (const cmd of this.variableWidthCommands) {
+                this.drawVariableWidthLine(
+                    ctx,
+                    cmd.fromX, cmd.fromY,
+                    cmd.toX, cmd.toY,
+                    cmd.fromWidth, cmd.toWidth,
+                    cmd.color,
+                    cmd.type === 'erase'
+                );
+            }
+            this.variableWidthCommands = [];
+        }
+        
+        if (this.batches.size === 0) {
+            ctx.globalCompositeOperation = 'source-over';
+            return;
+        }
+        
+        // 不变的状态设置移到循环外部
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         
         for (const [stateKey, batch] of this.batches) {
             if (batch.commands.length === 0) continue;
             
             const isErase = batch.type === 'erase';
             
+            // 只设置变化的状态
             if (isErase) {
                 ctx.globalCompositeOperation = 'destination-out';
                 ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
@@ -3127,8 +3844,6 @@ class BatchDrawManager {
             }
             
             ctx.lineWidth = batch.lineWidth;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
             
             const path = new Path2D();
             for (const cmd of batch.commands) {
@@ -3140,7 +3855,8 @@ class BatchDrawManager {
             batch.commands = [];
         }
         
-        ctx.restore();
+        // 恢复默认状态
+        ctx.globalCompositeOperation = 'source-over';
         
         this.batches.clear();
     }
@@ -3150,6 +3866,7 @@ class BatchDrawManager {
      */
     clear() {
         this.batches.clear();
+        this.variableWidthCommands = [];
     }
     
     /**
@@ -3228,59 +3945,85 @@ async function drawStrokes(ctx, strokes) {
         }
     }
     
+    // 按状态分组，使用 Path2D 批量绘制
+    const eraseStrokes = new Map();
+    const drawStrokes = new Map();
+    
     for (const stroke of visibleStrokes) {
-        if (stroke.type === 'draw' || stroke.type === 'comment') {
-            setContextState(ctx, {
-                strokeStyle: stroke.color,
-                lineWidth: stroke.lineWidth,
-                lineCap: 'round',
-                lineJoin: 'round',
-                globalCompositeOperation: 'source-over'
-            });
-            
-            ctx.beginPath();
-            const firstPoint = stroke.points[0];
-            if (firstPoint.x !== undefined) {
-                ctx.moveTo(firstPoint.x, firstPoint.y);
-                for (let i = 1; i < stroke.points.length; i++) {
-                    ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-                }
-            } else {
-                for (const point of stroke.points) {
-                    ctx.moveTo(point.fromX, point.fromY);
-                    ctx.lineTo(point.toX, point.toY);
-                }
+        if (stroke.type === 'erase') {
+            const sizeKey = stroke.eraserSize || DRAW_CONFIG.eraserSize;
+            if (!eraseStrokes.has(sizeKey)) {
+                eraseStrokes.set(sizeKey, []);
             }
-            ctx.stroke();
-        } else if (stroke.type === 'erase') {
-            setContextState(ctx, {
-                strokeStyle: '#000000',
-                lineWidth: stroke.eraserSize,
-                lineCap: 'round',
-                lineJoin: 'round',
-                globalCompositeOperation: 'destination-out'
-            });
-            
-            ctx.beginPath();
-            const firstPoint = stroke.points[0];
-            if (firstPoint.x !== undefined) {
-                ctx.moveTo(firstPoint.x, firstPoint.y);
-                for (let i = 1; i < stroke.points.length; i++) {
-                    ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-                }
-            } else {
-                for (const point of stroke.points) {
-                    ctx.moveTo(point.fromX, point.fromY);
-                    ctx.lineTo(point.toX, point.toY);
-                }
+            eraseStrokes.get(sizeKey).push(stroke);
+        } else if (stroke.type === 'draw' || stroke.type === 'comment') {
+            const stateKey = `${stroke.color || DRAW_CONFIG.penColor}-${stroke.lineWidth || DRAW_CONFIG.penWidth}`;
+            if (!drawStrokes.has(stateKey)) {
+                drawStrokes.set(stateKey, {
+                    color: stroke.color || DRAW_CONFIG.penColor,
+                    lineWidth: stroke.lineWidth || DRAW_CONFIG.penWidth,
+                    strokes: []
+                });
             }
-            ctx.stroke();
+            drawStrokes.get(stateKey).strokes.push(stroke);
         }
     }
     
-    setContextState(ctx, {
-        globalCompositeOperation: 'source-over'
-    });
+    // 设置通用状态
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    
+    // 批量绘制橡皮擦笔画
+    for (const [eraserSize, strokes] of eraseStrokes) {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
+        ctx.lineWidth = eraserSize;
+        
+        const path = new Path2D();
+        for (const stroke of strokes) {
+            if (!stroke.points || stroke.points.length < 1) continue;
+            
+            const firstPoint = stroke.points[0];
+            if (firstPoint.x !== undefined) {
+                path.moveTo(firstPoint.x, firstPoint.y);
+                for (let i = 1; i < stroke.points.length; i++) {
+                    path.lineTo(stroke.points[i].x, stroke.points[i].y);
+                }
+            } else {
+                for (const point of stroke.points) {
+                    path.moveTo(point.fromX, point.fromY);
+                    path.lineTo(point.toX, point.toY);
+                }
+            }
+        }
+        ctx.stroke(path);
+    }
+    
+    // 批量绘制普通笔画
+    ctx.globalCompositeOperation = 'source-over';
+    for (const [stateKey, group] of drawStrokes) {
+        ctx.strokeStyle = group.color;
+        ctx.lineWidth = group.lineWidth;
+        
+        const path = new Path2D();
+        for (const stroke of group.strokes) {
+            if (!stroke.points || stroke.points.length < 1) continue;
+            
+            const firstPoint = stroke.points[0];
+            if (firstPoint.x !== undefined) {
+                path.moveTo(firstPoint.x, firstPoint.y);
+                for (let i = 1; i < stroke.points.length; i++) {
+                    path.lineTo(stroke.points[i].x, stroke.points[i].y);
+                }
+            } else {
+                for (const point of stroke.points) {
+                    path.moveTo(point.fromX, point.fromY);
+                    path.lineTo(point.toX, point.toY);
+                }
+            }
+        }
+        ctx.stroke(path);
+    }
 }
 
 /**
@@ -3401,8 +4144,16 @@ async function undo() {
             await redrawAllStrokes();
         }
     } else {
+        // 计算被撤销笔画的边界框
+        const dirtyRect = lastStroke.bounds ? {
+            x: lastStroke.bounds.minX,
+            y: lastStroke.bounds.minY,
+            width: lastStroke.bounds.maxX - lastStroke.bounds.minX,
+            height: lastStroke.bounds.maxY - lastStroke.bounds.minY
+        } : null;
+        
         state.strokeHistory.pop();
-        await redrawAllStrokes();
+        await redrawAllStrokes(dirtyRect);
     }
     
     updateUndoBtnStatus();
@@ -3430,7 +4181,7 @@ function clearAllDrawings() {
     
     const clearStroke = {
         type: 'clear',
-        savedStrokeHistory: structuredClone(state.strokeHistory),
+        savedStrokeHistory: cloneStrokes(state.strokeHistory),
         savedBaseImageURL: state.baseImageURL
     };
     
@@ -3442,7 +4193,7 @@ function clearAllDrawings() {
     updateUndoBtnStatus();
     
     if (state.currentImageIndex >= 0 && state.currentImageIndex < state.imageList.length) {
-        state.imageList[state.currentImageIndex].strokeHistory = structuredClone(state.strokeHistory);
+        state.imageList[state.currentImageIndex].strokeHistory = cloneStrokes(state.strokeHistory);
         state.imageList[state.currentImageIndex].baseImageURL = null;
     }
     
@@ -3450,7 +4201,7 @@ function clearAllDrawings() {
         if (state.currentFolderIndex < state.fileList.length) {
             const folder = state.fileList[state.currentFolderIndex];
             if (state.currentFolderPageIndex < folder.pages.length) {
-                folder.pages[state.currentFolderPageIndex].strokeHistory = structuredClone(state.strokeHistory);
+                folder.pages[state.currentFolderPageIndex].strokeHistory = cloneStrokes(state.strokeHistory);
                 folder.pages[state.currentFolderPageIndex].baseImageURL = null;
             }
         }
@@ -3487,7 +4238,7 @@ function takePhoto() {
                 state.scale = state.cameraViewState.scale;
                 state.canvasX = state.cameraViewState.canvasX;
                 state.canvasY = state.cameraViewState.canvasY;
-                state.strokeHistory = structuredClone(state.cameraViewState.strokeHistory);
+                state.strokeHistory = cloneStrokes(state.cameraViewState.strokeHistory);
                 state.baseImageURL = state.cameraViewState.baseImageURL;
                 state.baseImageObj = null;
                 updateMoveBound();
@@ -3532,7 +4283,7 @@ function takePhoto() {
                 state.scale = state.cameraViewState.scale;
                 state.canvasX = state.cameraViewState.canvasX;
                 state.canvasY = state.cameraViewState.canvasY;
-                state.strokeHistory = structuredClone(state.cameraViewState.strokeHistory);
+                state.strokeHistory = cloneStrokes(state.cameraViewState.strokeHistory);
                 state.baseImageURL = state.cameraViewState.baseImageURL;
                 state.baseImageObj = null;
                 updateMoveBound();
@@ -3949,7 +4700,7 @@ function selectImage(index) {
                         scale: state.scale,
                         canvasX: state.canvasX,
                         canvasY: state.canvasY,
-                        strokeHistory: structuredClone(state.strokeHistory),
+                        strokeHistory: cloneStrokes(state.strokeHistory),
                         baseImageURL: state.baseImageURL
                     };
                 }
@@ -3968,7 +4719,7 @@ function selectImage(index) {
                 state.scale = state.cameraViewState.scale;
                 state.canvasX = state.cameraViewState.canvasX;
                 state.canvasY = state.cameraViewState.canvasY;
-                state.strokeHistory = structuredClone(state.cameraViewState.strokeHistory);
+                state.strokeHistory = cloneStrokes(state.cameraViewState.strokeHistory);
                 state.baseImageURL = state.cameraViewState.baseImageURL;
                 state.baseImageObj = null;
                 updateMoveBound();
@@ -4000,7 +4751,7 @@ function selectImage(index) {
             scale: state.scale,
             canvasX: state.canvasX,
             canvasY: state.canvasY,
-            strokeHistory: structuredClone(state.strokeHistory),
+            strokeHistory: cloneStrokes(state.strokeHistory),
             baseImageURL: state.baseImageURL
         };
     }
@@ -4052,7 +4803,7 @@ function selectImage(index) {
 
 function saveCurrentDrawData() {
     if (state.currentImageIndex >= 0 && state.currentImageIndex < state.imageList.length) {
-        state.imageList[state.currentImageIndex].strokeHistory = structuredClone(state.strokeHistory);
+        state.imageList[state.currentImageIndex].strokeHistory = cloneStrokes(state.strokeHistory);
         state.imageList[state.currentImageIndex].baseImageURL = state.baseImageURL;
         state.imageList[state.currentImageIndex].viewState = {
             scale: state.scale,
@@ -4066,7 +4817,7 @@ async function restoreDrawData(index) {
     if (index >= 0 && index < state.imageList.length) {
         const imgData = state.imageList[index];
         if (imgData.strokeHistory && imgData.strokeHistory.length > 0) {
-            state.strokeHistory = structuredClone(imgData.strokeHistory);
+            state.strokeHistory = cloneStrokes(imgData.strokeHistory);
         } else {
             state.strokeHistory = [];
         }
@@ -4366,7 +5117,7 @@ function selectFolderPage(folderIndex, pageIndex) {
                     scale: state.scale,
                     canvasX: state.canvasX,
                     canvasY: state.canvasY,
-                    strokeHistory: structuredClone(state.strokeHistory),
+                    strokeHistory: cloneStrokes(state.strokeHistory),
                     baseImageURL: state.baseImageURL
                 };
                 await setCameraState(false);
@@ -4434,7 +5185,7 @@ function saveCurrentFolderPageDrawData() {
         if (state.currentFolderIndex < state.fileList.length) {
             const folder = state.fileList[state.currentFolderIndex];
             if (state.currentFolderPageIndex < folder.pages.length) {
-                folder.pages[state.currentFolderPageIndex].strokeHistory = structuredClone(state.strokeHistory);
+                folder.pages[state.currentFolderPageIndex].strokeHistory = cloneStrokes(state.strokeHistory);
                 folder.pages[state.currentFolderPageIndex].baseImageURL = state.baseImageURL;
                 folder.pages[state.currentFolderPageIndex].viewState = {
                     scale: state.scale,
@@ -4452,7 +5203,7 @@ async function restoreFolderPageDrawData(folderIndex, pageIndex) {
         if (pageIndex >= 0 && pageIndex < folder.pages.length) {
             const page = folder.pages[pageIndex];
             if (page.strokeHistory && page.strokeHistory.length > 0) {
-                state.strokeHistory = structuredClone(page.strokeHistory);
+                state.strokeHistory = cloneStrokes(page.strokeHistory);
             } else {
                 state.strokeHistory = [];
             }
@@ -5110,8 +5861,8 @@ function updateCameraVideoStyle() {
     const offsetX = (canvasW - drawW) / 2;
     const offsetY = (canvasH - drawH) / 2;
     
-    // video 的 transform：先移动到 canvas 位置，再缩放，最后应用偏移
-    let videoTransform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale}) translate(${offsetX}px, ${offsetY}px)`;
+    // video 只需要设置额外偏移，容器已经应用了主要的 transform
+    let videoTransform = `translate(${offsetX}px, ${offsetY}px)`;
     
     // 镜像
     if (state.isMirrored) {

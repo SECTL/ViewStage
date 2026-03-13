@@ -15,10 +15,12 @@
     <div class="container">
         <div class="main-function">
             <div class="canvas-container" id="canvasContainer">
-                <canvas id="bgCanvas" class="canvas-base"></canvas>
-                <canvas id="imageCanvas" class="canvas-image"></canvas>
-                <video id="cameraVideo" class="camera-video" autoplay playsinline muted></video>
-                <canvas id="drawCanvas" class="canvas-draw"></canvas>
+                <div class="canvas-wrapper" id="canvasWrapper">
+                    <canvas id="bgCanvas" class="canvas-base"></canvas>
+                    <canvas id="imageCanvas" class="canvas-image"></canvas>
+                    <video id="cameraVideo" class="camera-video" autoplay playsinline muted></video>
+                    <canvas id="drawCanvas" class="canvas-draw"></canvas>
+                </div>
                 <div class="eraser-hint" id="eraserHint"></div>
             </div>
             
