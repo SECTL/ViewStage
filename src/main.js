@@ -16,6 +16,7 @@
 
 // 导入WASM点处理器
 import wasmPointProcessor from './wasm-processor.js';
+import './batch-draw.js';
 
 // ==================== PDF.js 配置 ====================
 // PDF.js 库初始化和等待加载
@@ -78,7 +79,7 @@ async function initCacheDir() {
 
 const DRAW_CONFIG = {
     penColor: '#3498db',           // 默认笔色
-    penWidth: 2,                   // 默认笔宽 (px)
+    penWidth: 5,                   // 默认笔宽 (px)
     eraserSize: 15,                // 橡皮大小 (px)
     minScale: 0.5,                 // 最小缩放比例
     maxScale: 5,                   // 最大缩放比例
@@ -109,13 +110,12 @@ const DRAW_CONFIG = {
         '#1abc9c', '#34495e', '#e91e63', '#00bcd4', '#8bc34a',
         '#ff5722', '#673ab7', '#795548', '#000000', '#ffffff'
     ],
-    realPenEffect: true,           // 真实笔触效果开关
-    velocitySensitivity: 0.8,      // 速度敏感度 (0-1, 越大速度影响越明显)
-    pressureSensitivity: 0.6,      // 压感敏感度 (0-1, 越大压感影响越明显)
-    minWidthRatio: 0.3,            // 最小线宽比例 (相对于基础线宽)
-    maxWidthRatio: 1.5,            // 最大线宽比例 (相对于基础线宽)
-    velocityFilterStrength: 0.3    // 速度滤波强度 (0-1, 越大越平滑)
+    // 钢笔效果配置
+    penSmoothness: 0.8             // 钢笔平滑度 (0-1, 越高越平滑)
 };
+
+// 将配置暴露到全局，供 batch-draw.js 使用
+window.DRAW_CONFIG = DRAW_CONFIG;
 
 function getSafeScale() {
     return Math.max(0.001, state.scale || 1);
@@ -126,74 +126,22 @@ function getSafeScale() {
 
 class RealPenManager {
     constructor() {
-        this.lastTime = 0;
-        this.lastX = 0;
-        this.lastY = 0;
-        this.filteredVelocity = 0;
-        this.velocityHistory = [];
-        this.maxVelocityHistory = 5;
+        // 钢笔模式不需要速度计算
     }
     
     reset() {
-        this.lastTime = 0;
-        this.lastX = 0;
-        this.lastY = 0;
-        this.filteredVelocity = 0;
-        this.velocityHistory = [];
+        // 钢笔模式不需要重置
     }
     
     updatePosition(x, y, timestamp) {
-        if (this.lastTime === 0) {
-            this.lastTime = timestamp;
-            this.lastX = x;
-            this.lastY = y;
-            return 0;
-        }
-        
-        const dt = timestamp - this.lastTime;
-        if (dt <= 0) {
-            return this.filteredVelocity;
-        }
-        
-        const dx = x - this.lastX;
-        const dy = y - this.lastY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const velocity = distance / dt * 1000;
-        
-        this.velocityHistory.push(velocity);
-        if (this.velocityHistory.length > this.maxVelocityHistory) {
-            this.velocityHistory.shift();
-        }
-        
-        const filterStrength = DRAW_CONFIG.velocityFilterStrength;
-        this.filteredVelocity = this.filteredVelocity * filterStrength + velocity * (1 - filterStrength);
-        
-        this.lastTime = timestamp;
-        this.lastX = x;
-        this.lastY = y;
-        
-        return this.filteredVelocity;
+        // 钢笔模式不需要速度计算
+        return 0;
     }
     
     calculateLineWidth(baseWidth, velocity, pressure = 0.5) {
-        if (!DRAW_CONFIG.realPenEffect) {
-            return baseWidth;
-        }
-        
-        const minRatio = DRAW_CONFIG.minWidthRatio;
-        const maxRatio = DRAW_CONFIG.maxWidthRatio;
-        const velocitySensitivity = DRAW_CONFIG.velocitySensitivity;
-        const pressureSensitivity = DRAW_CONFIG.pressureSensitivity;
-        
-        const normalizedVelocity = Math.min(velocity / 2000, 1);
-        const velocityFactor = 1 - normalizedVelocity * velocitySensitivity;
-        
-        const pressureFactor = 0.5 + (pressure - 0.5) * pressureSensitivity * 2;
-        
-        const combinedFactor = velocityFactor * pressureFactor;
-        const widthRatio = minRatio + (maxRatio - minRatio) * Math.max(0, Math.min(1, combinedFactor));
-        
-        return baseWidth * widthRatio;
+        // 钢笔模式：固定线宽 + 轻微压感 (0.9-1.1 倍)
+        const pressureFactor = 0.9 + (pressure * 0.2);
+        return baseWidth * pressureFactor;
     }
 }
 
@@ -468,9 +416,6 @@ class DirtyRegionManager {
     }
 }
 
-// 全局智能绘制调度器
-const smartDrawScheduler = new SmartDrawScheduler();
-
 // 全局脏区域管理器
 const dirtyRegionManager = new DirtyRegionManager();
 
@@ -676,18 +621,18 @@ let state = {
     currentFolderIndex: -1,        // 当前文件夹索引
     currentFolderPageIndex: -1,    // 当前页索引
     
-    // 绘制优化
-    pendingDrawPoints: [],         // 待绘制点队列 (RAF批量处理)
-    drawRafId: null,               // requestAnimationFrame ID
-    
     // 真实笔触效果
     currentPressure: 0.5,          // 当前压感值 (0-1)
-    currentVelocity: 0,            // 当前速度
+    currentVelocity: 0,            // 当前速度（钢笔模式不使用）
     currentLineWidth: 0,           // 当前动态线宽
     lastLineWidth: 0               // 上一个点的线宽
 };
 
 let dom = {};  // DOM 元素引用缓存
+
+// 将 dom 暴露到全局，供 batch-draw.js 使用
+window.dom = dom;
+
 let cachedCanvasRect = null;  // 缓存的画布边界矩形
 
 let offscreenCanvasPool = [];
@@ -2007,7 +1952,7 @@ async function closeWindow() {
 
 // 笔触控制事件
 function bindPenControlEvents() {
-    initTriangleSlider(dom.penSizeSliderWrapper, dom.penSizeThumb, dom.penSizeValue, 1, 20, DRAW_CONFIG.penWidth, (value) => {
+    initTriangleSlider(dom.penSizeSliderWrapper, dom.penSizeThumb, dom.penSizeValue, 2, 21, DRAW_CONFIG.penWidth, (value) => {
         DRAW_CONFIG.penWidth = value;
         if (state.drawMode === 'comment') {
             setPenStyle();
@@ -2352,34 +2297,34 @@ function handlePointerMove(e) {
         const x = (e.clientX - rect.left) / getSafeScale();
         const y = (e.clientY - rect.top) / getSafeScale();
         
-        const minDistance = smartDrawScheduler.getMinDistance();
-        const minDistSq = minDistance * minDistance;
         const dx = x - state.lastX;
         const dy = y - state.lastY;
         const distSq = dx * dx + dy * dy;
         
-        if (distSq > minDistSq) {
+        // 钢笔效果：更小的距离阈值，使线条更流畅（0.3px）
+        if (distSq > 0.09) {
             // 先调用 addStrokePoint 来计算动态线宽
             addStrokePoint(state.lastX, state.lastY, x, y, state.currentPressure);
             
-            // 收集点数据（包含线宽信息）
-            state.pendingDrawPoints.push({ 
-                fromX: state.lastX, 
-                fromY: state.lastY, 
-                toX: x, 
-                toY: y,
-                fromWidth: state.lastLineWidth,
-                toWidth: state.currentLineWidth
-            });
+            // 直接绘制，不收集点
+            const type = state.drawMode === 'eraser' ? 'erase' : 'draw';
+            const color = state.drawMode === 'comment' ? DRAW_CONFIG.penColor : '#000000';
+            const lineWidth = state.drawMode === 'comment' ? DRAW_CONFIG.penWidth : DRAW_CONFIG.eraserSize;
             
-            pointCollector.addPoint(state.lastX, state.lastY, x, y);
+            batchDrawManager.addCommand(
+                type, 
+                state.lastX, 
+                state.lastY, 
+                x, 
+                y, 
+                color, 
+                lineWidth,
+                state.lastLineWidth,
+                state.currentLineWidth
+            );
             
             state.lastX = x;
             state.lastY = y;
-            
-            if (!state.drawRafId) {
-                state.drawRafId = requestAnimationFrame(flushDrawPoints);
-            }
         }
     }
 }
@@ -2487,81 +2432,40 @@ function handleMouseMove(e) {
         const x = (e.clientX - rect.left) / getSafeScale();
         const y = (e.clientY - rect.top) / getSafeScale();
         
-        const minDistance = smartDrawScheduler.getMinDistance();
-        const minDistSq = minDistance * minDistance;
         const dx = x - state.lastX;
         const dy = y - state.lastY;
         const distSq = dx * dx + dy * dy;
         
-        if (distSq > minDistSq) {
+        // 钢笔效果：更小的距离阈值，使线条更流畅（0.3px）
+        if (distSq > 0.09) {
             // 先调用 addStrokePoint 来计算动态线宽
             addStrokePoint(state.lastX, state.lastY, x, y);
             
-            // 收集点数据（包含线宽信息）
-            state.pendingDrawPoints.push({ 
-                fromX: state.lastX, 
-                fromY: state.lastY, 
-                toX: x, 
-                toY: y,
-                fromWidth: state.lastLineWidth,
-                toWidth: state.currentLineWidth
-            });
+            // 直接绘制，不收集点
+            const type = state.drawMode === 'eraser' ? 'erase' : 'draw';
+            const color = state.drawMode === 'comment' ? DRAW_CONFIG.penColor : '#000000';
+            const lineWidth = state.drawMode === 'comment' ? DRAW_CONFIG.penWidth : DRAW_CONFIG.eraserSize;
             
-            pointCollector.addPoint(state.lastX, state.lastY, x, y);
+            batchDrawManager.addCommand(
+                type, 
+                state.lastX, 
+                state.lastY, 
+                x, 
+                y, 
+                color, 
+                lineWidth,
+                state.lastLineWidth,
+                state.currentLineWidth
+            );
             
             state.lastX = x;
             state.lastY = y;
-            
-            if (!state.drawRafId) {
-                state.drawRafId = requestAnimationFrame(flushDrawPoints);
-            }
         }
     }
 }
 
 async function flushDrawPoints() {
-    if (state.pendingDrawPoints.length === 0) {
-        state.drawRafId = null;
-        return;
-    }
-    
-    const startTime = performance.now();
-    
-    const maxPointsPerFlush = smartDrawScheduler.getMaxPointsPerFlush();
-    const pointsToProcess = state.pendingDrawPoints.slice(0, maxPointsPerFlush);
-    const remainingPoints = state.pendingDrawPoints.slice(maxPointsPerFlush);
-    
-    for (const point of pointsToProcess) {
-        const type = state.drawMode === 'eraser' ? 'erase' : 'draw';
-        const color = state.drawMode === 'comment' ? DRAW_CONFIG.penColor : '#000000';
-        const lineWidth = state.drawMode === 'comment' ? DRAW_CONFIG.penWidth : DRAW_CONFIG.eraserSize;
-        
-        // 传递可变线宽参数
-        batchDrawManager.addCommand(
-            type, 
-            point.fromX, 
-            point.fromY, 
-            point.toX, 
-            point.toY, 
-            color, 
-            lineWidth,
-            point.fromWidth,
-            point.toWidth
-        );
-    }
-    
-    await batchDrawManager.endDrawing();
-    
-    const drawTime = performance.now() - startTime;
-    smartDrawScheduler.recordPerformance(drawTime);
-    
-    state.pendingDrawPoints = remainingPoints;
-    
-    if (state.pendingDrawPoints.length > 0) {
-        state.drawRafId = requestAnimationFrame(flushDrawPoints);
-    } else {
-        state.drawRafId = null;
-    }
+    // 不再需要此函数，绘制已即时完成
 }
 
 async function handleMouseUp(e) {
@@ -2571,11 +2475,7 @@ async function handleMouseUp(e) {
     }
     if (state.isDrawing) {
         state.isDrawing = false;
-        if (state.drawRafId) {
-            cancelAnimationFrame(state.drawRafId);
-            state.drawRafId = null;
-        }
-        await flushDrawPoints();
+        await batchDrawManager.endDrawing();
         await endStroke();
     }
 }
@@ -2587,11 +2487,7 @@ async function handleMouseLeave(e) {
     }
     if (state.isDrawing) {
         state.isDrawing = false;
-        if (state.drawRafId) {
-            cancelAnimationFrame(state.drawRafId);
-            state.drawRafId = null;
-        }
-        await flushDrawPoints();
+        await batchDrawManager.endDrawing();
         await endStroke();
     }
 }
@@ -2703,26 +2599,34 @@ function handleTouchMove(e) {
         // 获取触控压感（如果有的话）
         const pressure = (touch.force > 0) ? touch.force : 0.5;
         
-        // 先调用 addStrokePoint 来计算动态线宽
-        addStrokePoint(state.lastX, state.lastY, x, y, pressure);
+        const dx = x - state.lastX;
+        const dy = y - state.lastY;
+        const distSq = dx * dx + dy * dy;
         
-        // 收集点数据（包含线宽信息）
-        state.pendingDrawPoints.push({ 
-            fromX: state.lastX, 
-            fromY: state.lastY, 
-            toX: x, 
-            toY: y,
-            fromWidth: state.lastLineWidth,
-            toWidth: state.currentLineWidth
-        });
-        
-        pointCollector.addPoint(state.lastX, state.lastY, x, y);
-        
-        state.lastX = x;
-        state.lastY = y;
-        
-        if (!state.drawRafId) {
-            state.drawRafId = requestAnimationFrame(flushDrawPoints);
+        // 钢笔效果：更小的距离阈值，使线条更流畅（0.3px）
+        if (distSq > 0.09) {
+            // 先调用 addStrokePoint 来计算动态线宽
+            addStrokePoint(state.lastX, state.lastY, x, y, pressure);
+            
+            // 直接绘制，不收集点
+            const type = state.drawMode === 'eraser' ? 'erase' : 'draw';
+            const color = state.drawMode === 'comment' ? DRAW_CONFIG.penColor : '#000000';
+            const lineWidth = state.drawMode === 'comment' ? DRAW_CONFIG.penWidth : DRAW_CONFIG.eraserSize;
+            
+            batchDrawManager.addCommand(
+                type, 
+                state.lastX, 
+                state.lastY, 
+                x, 
+                y, 
+                color, 
+                lineWidth,
+                state.lastLineWidth,
+                state.currentLineWidth
+            );
+            
+            state.lastX = x;
+            state.lastY = y;
         }
     } else if (touches.length === 2 && state.isScaling) {
         const currentDistance = getTouchDistance(touches[0], touches[1]);
@@ -2974,7 +2878,7 @@ function animateCanvasTransform(targetX, targetY, targetScale, duration = 250) {
     currentAnimationId = requestAnimationFrame(animate);
 }
 
-// 撤销功能 - 混合方案：路径记录 + ImageData压缩
+// 撤销功能 - 混合方案：路径记录 + ImageData 压缩
 function startStroke(type) {
     state.currentStroke = {
         type: type,
@@ -2989,14 +2893,12 @@ function startStroke(type) {
             maxX: -Infinity,
             maxY: -Infinity
         },
-        // 真实笔触效果数据
-        variableWidths: DRAW_CONFIG.realPenEffect ? [] : null
+        // 钢笔模式：不需要可变线宽数据
+        variableWidths: null
     };
     
-    // 重置真实笔触效果状态
-    realPenManager.reset();
+    // 重置状态
     state.currentPressure = 0.5;
-    state.currentVelocity = 0;
     state.currentLineWidth = DRAW_CONFIG.penWidth;
     state.lastLineWidth = DRAW_CONFIG.penWidth;
     
@@ -3013,27 +2915,17 @@ function addStrokePoint(fromX, fromY, toX, toY, pressure = 0.5) {
         bounds.maxX = Math.max(bounds.maxX, fromX, toX);
         bounds.maxY = Math.max(bounds.maxY, fromY, toY);
         
-        // 计算动态线宽
-        if (DRAW_CONFIG.realPenEffect && state.currentStroke.type === 'draw') {
-            const timestamp = performance.now();
-            state.currentVelocity = realPenManager.updatePosition(toX, toY, timestamp);
+        // 钢笔模式：计算轻微压感变化的线宽
+        if (state.currentStroke.type === 'draw') {
             state.currentPressure = pressure;
-            
             const baseWidth = state.currentStroke.lineWidth;
+            
             state.lastLineWidth = state.currentLineWidth;
             state.currentLineWidth = realPenManager.calculateLineWidth(
                 baseWidth,
-                state.currentVelocity,
+                0,  // 钢笔模式不需要速度
                 pressure
             );
-            
-            // 保存可变线宽数据
-            if (state.currentStroke.variableWidths) {
-                state.currentStroke.variableWidths.push({
-                    fromWidth: state.lastLineWidth,
-                    toWidth: state.currentLineWidth
-                });
-            }
         }
         
         // 检查是否需要添加连接点
@@ -3049,14 +2941,6 @@ function addStrokePoint(fromX, fromY, toX, toY, pressure = 0.5) {
                     toX: fromX,
                     toY: fromY
                 });
-                
-                // 也添加对应的线宽数据
-                if (state.currentStroke.variableWidths) {
-                    state.currentStroke.variableWidths.push({
-                        fromWidth: state.lastLineWidth,
-                        toWidth: state.currentLineWidth
-                    });
-                }
             }
         }
         
@@ -3115,14 +2999,103 @@ async function endStroke() {
     
     await batchDrawManager.endDrawing();
     
-    pointCollector.clear();
-    
     batchDrawManager.clear();
 }
 
+/**
+ * 处理橡皮擦笔画 - 只在实际擦除到内容时记录步骤
+ */
 async function processEraserStroke(eraserStroke) {
-    state.strokeHistory.push(eraserStroke);
-    updateUndoBtnStatus();
+    // 检测橡皮擦路径是否与现有笔画相交
+    const hasIntersection = checkEraserIntersection(eraserStroke);
+    
+    // 只有实际擦除到内容时才记录撤销步骤
+    if (hasIntersection) {
+        state.strokeHistory.push(eraserStroke);
+        updateUndoBtnStatus();
+        console.log('橡皮擦擦除了内容，记录撤销步骤');
+    } else {
+        console.log('橡皮擦未擦除到内容，不记录撤销步骤');
+    }
+}
+
+/**
+ * 检测橡皮擦是否与现有笔画相交
+ */
+function checkEraserIntersection(eraserStroke) {
+    if (state.strokeHistory.length === 0) {
+        return false; // 没有任何笔画，肯定不相交
+    }
+    
+    const eraserPoints = eraserStroke.points;
+    if (!eraserPoints || eraserPoints.length === 0) {
+        return false;
+    }
+    
+    const eraserSize = eraserStroke.eraserSize || DRAW_CONFIG.eraserSize;
+    const eraserRadius = eraserSize / 2;
+    
+    // 遍历所有现有笔画（不包括橡皮擦笔画）
+    for (const stroke of state.strokeHistory) {
+        if (stroke.type === 'erase' || stroke.type === 'clear') {
+            continue; // 跳过橡皮擦和清空操作
+        }
+        
+        const points = stroke.points;
+        if (!points || points.length === 0) {
+            continue;
+        }
+        
+        // 检查橡皮擦路径上的每个点
+        for (const eraserPoint of eraserPoints) {
+            const ex = eraserPoint.fromX || eraserPoint.x;
+            const ey = eraserPoint.fromY || eraserPoint.y;
+            
+            // 检查笔画的每个线段
+            for (const point of points) {
+                const x1 = point.fromX || point.x;
+                const y1 = point.fromY || point.y;
+                const x2 = point.toX || point.x;
+                const y2 = point.toY || point.y;
+                
+                // 检测点到线段的距离
+                const distance = pointToSegmentDistance(ex, ey, x1, y1, x2, y2);
+                
+                // 考虑橡皮擦的半径和笔画的线宽
+                const strokeWidth = (stroke.lineWidth || DRAW_CONFIG.penWidth) / 2;
+                const maxDistance = eraserRadius + strokeWidth;
+                
+                if (distance <= maxDistance) {
+                    return true; // 检测到相交
+                }
+            }
+        }
+    }
+    
+    return false; // 没有检测到相交
+}
+
+/**
+ * 计算点到线段的最短距离
+ */
+function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    
+    if (dx === 0 && dy === 0) {
+        // 线段退化为点
+        return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+    }
+    
+    // 计算投影参数 t
+    const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
+    
+    // 计算投影点
+    const projX = x1 + t * dx;
+    const projY = y1 + t * dy;
+    
+    // 返回距离
+    return Math.sqrt((px - projX) ** 2 + (py - projY) ** 2);
 }
 
 async function redrawAllStrokes(dirtyRect = null) {
@@ -3588,8 +3561,7 @@ class PointCollector {
     }
 }
 
-// 全局点收集器
-const pointCollector = new PointCollector();
+
 
 // ==================== 批处理绘制系统 ====================
 // 批量绘制命令管理：减少Canvas状态切换，提高绘制效率
@@ -3877,9 +3849,6 @@ class BatchDrawManager {
     }
 }
 
-// 全局批处理管理器
-const batchDrawManager = new BatchDrawManager();
-
 /**
  * 设置上下文状态（只更新变化的属性）
  * @param {CanvasRenderingContext2D} ctx - 目标上下文
@@ -4144,16 +4113,9 @@ async function undo() {
             await redrawAllStrokes();
         }
     } else {
-        // 计算被撤销笔画的边界框
-        const dirtyRect = lastStroke.bounds ? {
-            x: lastStroke.bounds.minX,
-            y: lastStroke.bounds.minY,
-            width: lastStroke.bounds.maxX - lastStroke.bounds.minX,
-            height: lastStroke.bounds.maxY - lastStroke.bounds.minY
-        } : null;
-        
         state.strokeHistory.pop();
-        await redrawAllStrokes(dirtyRect);
+        // 撤销时重绘整个批注层，不使用局部重绘
+        await redrawAllStrokes();
     }
     
     updateUndoBtnStatus();
