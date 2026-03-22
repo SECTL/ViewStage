@@ -76,8 +76,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const cameraSettingItems = [
             document.querySelector('#cameraSelect')?.closest('.setting-item'),
             document.querySelector('#cameraResolutionSelect')?.closest('.setting-item'),
-            document.querySelector('#moveFpsSelect')?.closest('.setting-item'),
-            document.querySelector('#drawFpsSelect')?.closest('.setting-item'),
             document.querySelector('#mirrorToggle')?.closest('.setting-item'),
         ];
         
@@ -153,8 +151,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const cameraSelected = document.getElementById('cameraSelected');
                 const cameraOptionsContainer = document.getElementById('cameraOptions');
                 const cameraResolutionSelected = document.getElementById('cameraResolutionSelected');
-                const moveFpsSelected = document.getElementById('moveFpsSelected');
-                const drawFpsSelected = document.getElementById('drawFpsSelected');
                 
                 let hasCameraPermission = false;
                 let hasCamera = false;
@@ -180,14 +176,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         if (!hasCameraPermission) {
                             cameraSelected.textContent = window.i18n?.t('settings.noCameraPermission') || '无摄像头权限';
                             cameraResolutionSelected.textContent = '-';
-                            moveFpsSelected.textContent = '-';
-                            drawFpsSelected.textContent = '-';
                             disableCameraSettings();
                         } else if (videoDevices.length === 0) {
                             cameraSelected.textContent = window.i18n?.t('settings.noCameraDetected') || '未检测到摄像头';
                             cameraResolutionSelected.textContent = '-';
-                            moveFpsSelected.textContent = '-';
-                            drawFpsSelected.textContent = '-';
                             disableCameraSettings();
                         } else {
                             videoDevices.forEach((device, index) => {
@@ -236,8 +228,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         console.error('获取摄像头列表失败:', error);
                         cameraSelected.textContent = window.i18n?.t('settings.getFailed') || '获取失败';
                         cameraResolutionSelected.textContent = '-';
-                        moveFpsSelected.textContent = '-';
-                        drawFpsSelected.textContent = '-';
                         disableCameraSettings();
                     }
                 }
@@ -332,85 +322,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         if (stream) {
                             stream.getTracks().forEach(t => t.stop());
                         }
-                    }
-                }
-                
-                // 帧率设置
-                const moveFpsOptionsContainer = document.getElementById('moveFpsOptions');
-                const drawFpsOptionsContainer = document.getElementById('drawFpsOptions');
-                
-                if (hasCameraPermission && hasCamera) {
-                    // 获取摄像头最大帧率
-                    let maxFps = 30;
-                    let fpsStream = null;
-                    let fpsTrack = null;
-                    try {
-                        fpsStream = await navigator.mediaDevices.getUserMedia({ video: true });
-                        fpsTrack = fpsStream.getVideoTracks()[0];
-                        const capabilities = fpsTrack.getCapabilities();
-                        if (capabilities.frameRate && capabilities.frameRate.max) {
-                            maxFps = Math.min(capabilities.frameRate.max, 60);
-                        }
-                    } catch (e) {
-                        console.log('无法获取摄像头帧率能力，使用默认值');
-                    } finally {
-                        if (fpsTrack) {
-                            fpsTrack.stop();
-                        }
-                        if (fpsStream) {
-                            fpsStream.getTracks().forEach(t => t.stop());
-                        }
-                    }
-                    
-                    // 生成帧率选项
-                    const fpsOptions = [];
-                    const fpsValues = [5, 10, 15, 20, 24, 30, 60];
-                    fpsValues.forEach(fps => {
-                        if (fps <= maxFps) {
-                            fpsOptions.push(fps);
-                        }
-                    });
-                    
-                    // 移动时帧率选项
-                    if (moveFpsSelected && moveFpsOptionsContainer) {
-                        moveFpsOptionsContainer.innerHTML = '';
-                        fpsOptions.forEach(fps => {
-                            const option = document.createElement('div');
-                            option.className = 'select-option';
-                            option.dataset.value = fps;
-                            option.textContent = `${fps} FPS`;
-                            moveFpsOptionsContainer.appendChild(option);
-                        });
-                        
-                        const savedMoveFps = settings.moveFps || 30;
-                        const moveFpsOptionElements = moveFpsOptionsContainer.querySelectorAll('.select-option');
-                        moveFpsOptionElements.forEach(option => {
-                            if (parseInt(option.dataset.value) === savedMoveFps) {
-                                moveFpsSelected.textContent = option.textContent;
-                                option.classList.add('selected');
-                            }
-                        });
-                    }
-                    
-                    // 绘画时帧率选项
-                    if (drawFpsSelected && drawFpsOptionsContainer) {
-                        drawFpsOptionsContainer.innerHTML = '';
-                        fpsOptions.forEach(fps => {
-                            const option = document.createElement('div');
-                            option.className = 'select-option';
-                            option.dataset.value = fps;
-                            option.textContent = `${fps} FPS`;
-                            drawFpsOptionsContainer.appendChild(option);
-                        });
-                        
-                        const savedDrawFps = settings.drawFps || 10;
-                        const drawFpsOptionElements = drawFpsOptionsContainer.querySelectorAll('.select-option');
-                        drawFpsOptionElements.forEach(option => {
-                            if (parseInt(option.dataset.value) === savedDrawFps) {
-                                drawFpsSelected.textContent = option.textContent;
-                                option.classList.add('selected');
-                            }
-                        });
                     }
                 }
                 
@@ -781,70 +692,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             cameraResolutionSelect.classList.remove('open');
             
             await saveSettings({ cameraWidth: width, cameraHeight: height });
-        });
-    }
-    
-    // 移动时帧率选择
-    const moveFpsSelect = document.getElementById('moveFpsSelect');
-    const moveFpsSelected = document.getElementById('moveFpsSelected');
-    
-    if (moveFpsSelect && moveFpsSelected) {
-        moveFpsSelected.addEventListener('click', () => {
-            moveFpsSelect.classList.toggle('open');
-        });
-        
-        document.addEventListener('click', (e) => {
-            if (!moveFpsSelect.contains(e.target)) {
-                moveFpsSelect.classList.remove('open');
-            }
-        });
-        
-        moveFpsSelect.addEventListener('click', async (e) => {
-            const option = e.target.closest('.select-option');
-            if (!option) return;
-            
-            const value = parseInt(option.dataset.value);
-            moveFpsSelected.textContent = option.textContent;
-            
-            const moveFpsOptions = moveFpsSelect.querySelectorAll('.select-option');
-            moveFpsOptions.forEach(opt => opt.classList.remove('selected'));
-            option.classList.add('selected');
-            
-            moveFpsSelect.classList.remove('open');
-            
-            await saveSettings({ moveFps: value });
-        });
-    }
-    
-    // 绘画时帧率选择
-    const drawFpsSelect = document.getElementById('drawFpsSelect');
-    const drawFpsSelected = document.getElementById('drawFpsSelected');
-    
-    if (drawFpsSelect && drawFpsSelected) {
-        drawFpsSelected.addEventListener('click', () => {
-            drawFpsSelect.classList.toggle('open');
-        });
-        
-        document.addEventListener('click', (e) => {
-            if (!drawFpsSelect.contains(e.target)) {
-                drawFpsSelect.classList.remove('open');
-            }
-        });
-        
-        drawFpsSelect.addEventListener('click', async (e) => {
-            const option = e.target.closest('.select-option');
-            if (!option) return;
-            
-            const value = parseInt(option.dataset.value);
-            drawFpsSelected.textContent = option.textContent;
-            
-            const drawFpsOptions = drawFpsSelect.querySelectorAll('.select-option');
-            drawFpsOptions.forEach(opt => opt.classList.remove('selected'));
-            option.classList.add('selected');
-            
-            drawFpsSelect.classList.remove('open');
-            
-            await saveSettings({ drawFps: value });
         });
     }
     

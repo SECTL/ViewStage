@@ -73,8 +73,6 @@
     "penColors": "畫筆顏色",
     "defaultCamera": "預設攝影機",
     "cameraResolution": "攝影機解析度",
-    "moveFps": "移動時幀率",
-    "drawFps": "繪畫時幀率",
     "pdfOutputResolution": "PDF 輸出解析度",
     "mirror": "畫面鏡像",
     "defaultRotation": "預設旋轉角度",

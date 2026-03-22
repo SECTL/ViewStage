@@ -41,8 +41,6 @@ const defaultConfig = {
     defaultCamera: "",
     cameraWidth: 1280,
     cameraHeight: 720,
-    moveFps: 30,
-    drawFps: 10,
     pdfScale: 1.5,
     contrast: 1.4,
     brightness: 10,
@@ -464,8 +462,6 @@ async function initCameraSelect() {
     const cameraOptions = document.getElementById('cameraOptions');
     const cameraSelected = document.getElementById('cameraSelected');
     const cameraResolutionSelected = document.getElementById('cameraResolutionSelected');
-    const moveFpsSelected = document.getElementById('moveFpsSelected');
-    const drawFpsSelected = document.getElementById('drawFpsSelected');
 
     let stream = null;
     let track = null;
@@ -482,8 +478,6 @@ async function initCameraSelect() {
         if (videoDevices.length === 0) {
             cameraSelected.textContent = window.i18n?.t('settings.noCameraDetected') || '未检测到摄像头';
             cameraResolutionSelected.textContent = '-';
-            moveFpsSelected.textContent = '-';
-            drawFpsSelected.textContent = '-';
             disableCameraSettings();
             return;
         }
@@ -501,7 +495,6 @@ async function initCameraSelect() {
         cameraSelected.textContent = videoDevices[0].label || `${cameraText} 1`;
         
         await initCameraResolutionSelect(track);
-        await initFpsSelect(track);
         
         setupCustomSelects();
     } catch (error) {
@@ -516,8 +509,6 @@ async function initCameraSelect() {
         }
         
         cameraResolutionSelected.textContent = '-';
-        moveFpsSelected.textContent = '-';
-        drawFpsSelected.textContent = '-';
         
         disableCameraSettings();
     } finally {
@@ -534,8 +525,6 @@ function disableCameraSettings() {
     const cameraSettingItems = [
         document.querySelector('#cameraSelect')?.closest('.setting-item'),
         document.querySelector('#cameraResolutionSelect')?.closest('.setting-item'),
-        document.querySelector('#moveFpsSelect')?.closest('.setting-item'),
-        document.querySelector('#drawFpsSelect')?.closest('.setting-item'),
     ];
     
     cameraSettingItems.forEach(item => {
@@ -605,44 +594,6 @@ async function initCameraResolutionSelect(track) {
     }
 }
 
-async function initFpsSelect(track) {
-    const moveFpsOptions = document.getElementById('moveFpsOptions');
-    const moveFpsSelected = document.getElementById('moveFpsSelected');
-    const drawFpsOptions = document.getElementById('drawFpsOptions');
-    const drawFpsSelected = document.getElementById('drawFpsSelected');
-    
-    let maxFps = 30;
-    const capabilities = track.getCapabilities();
-    if (capabilities.frameRate && capabilities.frameRate.max) {
-        maxFps = Math.min(capabilities.frameRate.max, 60);
-    }
-    
-    const fpsOptions = [];
-    const fpsValues = [5, 10, 15, 20, 24, 30, 60];
-    fpsValues.forEach(fps => {
-        if (fps <= maxFps) {
-            fpsOptions.push(fps);
-        }
-    });
-    
-    moveFpsOptions.innerHTML = '';
-    drawFpsOptions.innerHTML = '';
-    
-    fpsOptions.forEach((fps, index) => {
-        const moveOption = document.createElement('div');
-        moveOption.className = 'select-option' + (fps === 30 ? ' selected' : '');
-        moveOption.dataset.value = fps;
-        moveOption.textContent = `${fps} FPS`;
-        moveFpsOptions.appendChild(moveOption);
-        
-        const drawOption = document.createElement('div');
-        drawOption.className = 'select-option' + (fps === 10 ? ' selected' : '');
-        drawOption.dataset.value = fps;
-        drawOption.textContent = `${fps} FPS`;
-        drawFpsOptions.appendChild(drawOption);
-    });
-}
-
 function setupPage4Buttons() {
     document.getElementById('btnBack4').addEventListener('click', () => {
         showPage3FromPage4();
@@ -651,8 +602,6 @@ function setupPage4Buttons() {
     document.getElementById('btnNext4').addEventListener('click', async () => {
         const cameraSelect = document.getElementById('cameraSelect');
         const cameraResolutionSelect = document.getElementById('cameraResolutionSelect');
-        const moveFpsSelect = document.getElementById('moveFpsSelect');
-        const drawFpsSelect = document.getElementById('drawFpsSelect');
         const assocPdf = document.getElementById('assocPdf');
         
         const cameraOption = cameraSelect.querySelector('.select-option.selected');
@@ -664,16 +613,6 @@ function setupPage4Buttons() {
         if (resolutionOption) {
             cachedSettings.cameraWidth = parseInt(resolutionOption.dataset.width);
             cachedSettings.cameraHeight = parseInt(resolutionOption.dataset.height);
-        }
-        
-        const moveFpsOption = moveFpsSelect.querySelector('.select-option.selected');
-        if (moveFpsOption) {
-            cachedSettings.moveFps = parseInt(moveFpsOption.dataset.value);
-        }
-        
-        const drawFpsOption = drawFpsSelect.querySelector('.select-option.selected');
-        if (drawFpsOption) {
-            cachedSettings.drawFps = parseInt(drawFpsOption.dataset.value);
         }
         
         cachedSettings.fileAssociations = assocPdf.checked;

@@ -73,8 +73,6 @@
     "penColors": "Pen Colors",
     "defaultCamera": "Default Camera",
     "cameraResolution": "Camera Resolution",
-    "moveFps": "Move FPS",
-    "drawFps": "Draw FPS",
     "pdfOutputResolution": "PDF Output Resolution",
     "mirror": "Mirror Image",
     "defaultRotation": "Default Rotation",
