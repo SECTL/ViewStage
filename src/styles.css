@@ -588,6 +588,10 @@ body {
     will-change: transform;
 }
 
+.canvas-wrapper.drawing {
+    will-change: transform;
+}
+
 .canvas-wrapper.smooth-transform {
     transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }

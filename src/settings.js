@@ -413,6 +413,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 }
                 
+                // 高帧率绘制设置
+                const highFrameRateToggle = document.getElementById('highFrameRateToggle');
+                if (highFrameRateToggle) {
+                    highFrameRateToggle.checked = settings.highFrameRate || false;
+                }
+                
                 // 默认旋转角度设置
                 const defaultRotationSelected = document.getElementById('defaultRotationSelected');
                 const defaultRotationOptionsContainer = document.getElementById('defaultRotationOptions');
@@ -427,13 +433,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                             option.classList.remove('selected');
                         }
                     });
-                }
-                
-                // 高分辨率优化设置
-                const highResOptimizationToggle = document.getElementById('highResOptimizationToggle');
-                if (highResOptimizationToggle) {
-                    const savedHighResOpt = settings.highResOptimization !== undefined ? settings.highResOptimization : false;
-                    highResOptimizationToggle.checked = savedHighResOpt;
                 }
                 
                 // 图像处理强度设置
@@ -821,6 +820,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     
+    // 高帧率绘制开关
+    const highFrameRateToggle = document.getElementById('highFrameRateToggle');
+    if (highFrameRateToggle) {
+        highFrameRateToggle.addEventListener('change', async () => {
+            const saved = await saveSettings({ highFrameRate: highFrameRateToggle.checked });
+            if (saved) {
+                const restartModal = document.getElementById('restartModal');
+                if (restartModal) {
+                    restartModal.classList.add('active');
+                }
+            }
+        });
+    }
+    
     // 默认旋转角度选择
     const defaultRotationSelect = document.getElementById('defaultRotationSelect');
     const defaultRotationSelected = document.getElementById('defaultRotationSelected');
@@ -848,20 +861,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.addEventListener('click', (e) => {
             if (!defaultRotationSelect.contains(e.target)) {
                 defaultRotationSelect.classList.remove('open');
-            }
-        });
-    }
-    
-    // 高分辨率优化开关
-    const highResOptimizationToggle = document.getElementById('highResOptimizationToggle');
-    if (highResOptimizationToggle) {
-        highResOptimizationToggle.addEventListener('change', async () => {
-            const saved = await saveSettings({ highResOptimization: highResOptimizationToggle.checked });
-            if (saved) {
-                const restartModal = document.getElementById('restartModal');
-                if (restartModal) {
-                    restartModal.classList.add('active');
-                }
             }
         });
     }

@@ -1148,6 +1148,7 @@ fn get_default_config() -> serde_json::Value {
         "sharpen": 0,
         "canvasScale": 2,
         "dprLimit": 2,
+        "highFrameRate": false,
         "smoothStrength": 0.5,
         "blurEffect": true,
         "penColors": [
