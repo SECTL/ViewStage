@@ -23,18 +23,10 @@ jobs:
         with:
           toolchain: stable
           target: x86_64-pc-windows-msvc
-
-      # 3. 添加 wasm32-unknown-unknown 目标
-      - name: Add wasm32-unknown-unknown target
-        run: rustup target add wasm32-unknown-unknown
-
+          
       # 4. 安装 cargo-tauri CLI 工具
       - name: Install tauri-cli
         run: cargo install tauri-cli --locked
-
-      # 5. 安装 wasm-pack
-      - name: Install wasm-pack
-        run: cargo install wasm-pack
 
       # 6. 缓存 Rust 依赖
       - name: Cache Rust dependencies
@@ -43,22 +35,6 @@ jobs:
           workspaces: |
             './src-tauri -> target'
             './wasm-viewstage -> wasm-viewstage/target'
-
-      # 7. 编译 WASM 模块
-      - name: Build WASM module
-        run: wasm-pack build --target web
-        working-directory: ./wasm-viewstage
-
-      # 8. 复制 WASM 文件到 src/wasm 目录
-      - name: Copy WASM files to src/wasm directory
-        run: |
-          New-Item -ItemType Directory -Path "src/wasm" -Force
-          Copy-Item -Path "wasm-viewstage/pkg/wasm_viewstage.js" -Destination "src/wasm/" -Force
-          Copy-Item -Path "wasm-viewstage/pkg/wasm_viewstage.d.ts" -Destination "src/wasm/" -Force
-          Copy-Item -Path "wasm-viewstage/pkg/wasm_viewstage_bg.wasm" -Destination "src/wasm/" -Force
-          Copy-Item -Path "wasm-viewstage/pkg/wasm_viewstage_bg.wasm.d.ts" -Destination "src/wasm/" -Force
-          Write-Host "WASM files copied to src/wasm:"
-          Get-ChildItem -Path "src/wasm" -File
 
       # 9. 编译命令
       - name: Build Tauri app with cargo tauri build
