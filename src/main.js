@@ -117,8 +117,6 @@ const DRAW_CONFIG = {
     renderH: 1080,                 // 渲染分辨率高度
     canvasScale: 2,                // 画布相对屏幕的缩放倍数
     dpr: Math.min(window.devicePixelRatio || 1, 2),  // 设备像素比
-    cameraFrameInterval: 50,       // 摄像头帧间隔 (ms) - 20fps (降低GPU开销)
-    cameraFrameIntervalLow: 150,   // 低帧率模式 (绘制时) - ~7fps
     pdfScale: 1.5,                 // PDF 渲染缩放比例
     enhanceContrast: 1.4,          // 增强对比度
     enhanceBrightness: 10,         // 增强亮度
@@ -883,17 +881,6 @@ async function loadCameraSetting() {
                 console.log('已加载摄像头分辨率:', settings.cameraWidth, 'x', settings.cameraHeight);
             }
             
-            // 加载帧率设置
-            if (settings.moveFps) {
-                DRAW_CONFIG.cameraFrameInterval = Math.round(1000 / settings.moveFps);
-                console.log('已加载移动时帧率:', settings.moveFps, 'FPS');
-            }
-            
-            if (settings.drawFps) {
-                DRAW_CONFIG.cameraFrameIntervalLow = Math.round(1000 / settings.drawFps);
-                console.log('已加载绘画时帧率:', settings.drawFps, 'FPS');
-            }
-            
             // 加载默认旋转角度
             if (settings.defaultRotation !== undefined) {
                 state.cameraRotation = settings.defaultRotation;
@@ -1062,16 +1049,6 @@ function listenForPdfFileOpen() {
             state.cameraHeight = settings.cameraHeight;
             console.log('摄像头分辨率已更改:', settings.cameraWidth, 'x', settings.cameraHeight);
             needRestartCamera = true;
-        }
-        
-        if (settings.moveFps !== undefined) {
-            DRAW_CONFIG.cameraFrameInterval = Math.round(1000 / settings.moveFps);
-            console.log('移动时帧率已更改:', settings.moveFps, 'FPS');
-        }
-        
-        if (settings.drawFps !== undefined) {
-            DRAW_CONFIG.cameraFrameIntervalLow = Math.round(1000 / settings.drawFps);
-            console.log('绘画时帧率已更改:', settings.drawFps, 'FPS');
         }
         
         if (settings.dprLimit !== undefined) {
@@ -2430,8 +2407,8 @@ function handlePointerMove(e) {
         const dy = y - state.lastY;
         const distSq = dx * dx + dy * dy;
         
-        // 钢笔效果：更小的距离阈值，使线条更流畅（0.3px）
-        if (distSq > 0.09) {
+        // 增大距离阈值到2px，减少GPU绘制调用
+        if (distSq > 4) {
             // 先调用 addStrokePoint 来计算动态线宽
             addStrokePoint(state.lastX, state.lastY, x, y, state.currentPressure);
             
@@ -2447,9 +2424,7 @@ function handlePointerMove(e) {
                 x, 
                 y, 
                 color, 
-                lineWidth,
-                state.lastLineWidth,
-                state.currentLineWidth
+                lineWidth
             );
             
             state.lastX = x;

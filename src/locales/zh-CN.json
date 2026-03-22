@@ -73,8 +73,6 @@
     "penColors": "画笔颜色",
     "defaultCamera": "默认摄像头",
     "cameraResolution": "摄像头分辨率",
-    "moveFps": "移动时帧率",
-    "drawFps": "绘画时帧率",
     "pdfOutputResolution": "PDF 输出分辨率",
     "mirror": "画面镜像",
     "defaultRotation": "默认旋转角度",
