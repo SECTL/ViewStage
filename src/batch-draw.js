@@ -1,79 +1,142 @@
-/**
- * 实时绘制管理器
- * 简单直接绘制，减少GPU开销
- */
 class RealtimeBatchDrawManager {
     constructor() {
         this.ctx = null;
         this.lastType = null;
         this.lastColor = null;
         this.lastLineWidth = null;
+        
+        this.pendingCommands = [];
+        this.drawRafId = null;
+        this.highFrameRate = false;  // 默认30FPS
+        this.lastDrawTime = 0;
     }
     
     getCtx() {
         if (!this.ctx) {
-            this.ctx = window.dom.drawCtx;
+            this.ctx = window.dom?.drawCtx;
         }
         return this.ctx;
     }
     
-    /**
-     * 添加绘制命令 - 直接绘制
-     */
+    setFrameRate(highFrameRate) {
+        this.highFrameRate = highFrameRate;
+    }
+    
+    getDrawInterval() {
+        return this.highFrameRate ? 1000 / 60 : 1000 / 30;  // 60FPS 或 30FPS
+    }
+    
     addCommand(type, fromX, fromY, toX, toY, color, lineWidth) {
+        this.pendingCommands.push({
+            type, fromX, fromY, toX, toY, color, lineWidth
+        });
+        
+        this.scheduleBatchDraw();
+    }
+    
+    scheduleBatchDraw() {
+        if (this.drawRafId !== null) return;
+        
+        const now = performance.now();
+        const timeSinceLastDraw = now - this.lastDrawTime;
+        const drawInterval = this.getDrawInterval();
+        
+        if (timeSinceLastDraw >= drawInterval) {
+            this.flushPending();
+        } else {
+            this.drawRafId = requestAnimationFrame(() => {
+                this.drawRafId = null;
+                this.flushPending();
+            });
+        }
+    }
+    
+    flushPending() {
+        if (this.pendingCommands.length === 0) return;
+        
         const ctx = this.getCtx();
-        if (!ctx) return;
+        if (!ctx) {
+            this.pendingCommands = [];
+            return;
+        }
         
-        // 只在状态变化时设置
-        if (type !== this.lastType) {
-            if (type === 'erase') {
-                ctx.globalCompositeOperation = 'destination-out';
-                ctx.strokeStyle = 'rgba(0,0,0,1)';
-            } else {
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.strokeStyle = color || '#3498db';
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        const commands = this.pendingCommands;
+        this.pendingCommands = [];
+        this.lastDrawTime = performance.now();
+        
+        let currentType = null;
+        let currentColor = null;
+        let currentLineWidth = null;
+        let currentPath = null;
+        
+        const flushPath = () => {
+            if (currentPath) {
+                ctx.stroke(currentPath);
+                currentPath = null;
             }
-            this.lastType = type;
-            this.lastColor = null; // 重置颜色缓存
+        };
+        
+        for (const cmd of commands) {
+            if (cmd.type !== currentType || 
+                (cmd.type !== 'erase' && cmd.color !== currentColor) ||
+                cmd.lineWidth !== currentLineWidth) {
+                
+                flushPath();
+                
+                currentType = cmd.type;
+                currentColor = cmd.color;
+                currentLineWidth = cmd.lineWidth;
+                
+                if (cmd.type === 'erase') {
+                    ctx.globalCompositeOperation = 'destination-out';
+                    ctx.strokeStyle = 'rgba(0,0,0,1)';
+                } else {
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.strokeStyle = cmd.color || '#3498db';
+                }
+                ctx.lineWidth = cmd.lineWidth;
+            }
+            
+            if (!currentPath) {
+                currentPath = new Path2D();
+            }
+            currentPath.moveTo(cmd.fromX, cmd.fromY);
+            currentPath.lineTo(cmd.toX, cmd.toY);
         }
         
-        // 只在颜色变化时设置
-        if (type !== 'erase' && color !== this.lastColor) {
-            ctx.strokeStyle = color;
-            this.lastColor = color;
-        }
-        
-        // 只在线宽变化时设置
-        if (lineWidth !== this.lastLineWidth) {
-            ctx.lineWidth = lineWidth;
-            this.lastLineWidth = lineWidth;
-        }
-        
-        // 直接绘制线段
-        ctx.beginPath();
-        ctx.moveTo(fromX, fromY);
-        ctx.lineTo(toX, toY);
-        ctx.stroke();
+        flushPath();
     }
     
     startDrawing() {
-        const ctx = this.getCtx();
-        if (ctx) {
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-        }
+        this.pendingCommands = [];
+        this.lastDrawTime = performance.now();
     }
     
     async endDrawing() {
+        if (this.drawRafId !== null) {
+            cancelAnimationFrame(this.drawRafId);
+            this.drawRafId = null;
+        }
+        
+        this.flushPending();
+        
         this.lastType = null;
         this.lastColor = null;
         this.lastLineWidth = null;
     }
     
     clear() {
+        this.pendingCommands = [];
         this.lastType = null;
         this.lastColor = null;
         this.lastLineWidth = null;
+        if (this.drawRafId !== null) {
+            cancelAnimationFrame(this.drawRafId);
+            this.drawRafId = null;
+        }
     }
 }
 

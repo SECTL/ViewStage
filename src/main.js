@@ -27,7 +27,7 @@ function scheduleTransformUpdate(x, y, scale) {
         transformRafId = requestAnimationFrame(() => {
             if (pendingTransform) {
                 const { x, y, scale } = pendingTransform;
-                dom.canvasWrapper.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+                dom.canvasWrapper.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
                 lastCanvasTransform.x = x;
                 lastCanvasTransform.y = y;
                 lastCanvasTransform.scale = scale;
@@ -657,6 +657,14 @@ async function loadCameraSetting() {
                 });
                 console.log('已加载画笔颜色:', DRAW_CONFIG.penColors);
                 updateColorButtons();
+            }
+            
+            // 加载高帧率绘制设置
+            if (settings.highFrameRate !== undefined) {
+                if (window.batchDrawManager) {
+                    window.batchDrawManager.setFrameRate(settings.highFrameRate);
+                }
+                console.log('已加载高帧率绘制设置:', settings.highFrameRate);
             }
         } catch (error) {
             console.error('加载摄像头设置失败:', error);
@@ -1955,6 +1963,25 @@ function setEraserStyle() {
     dc.globalCompositeOperation = 'destination-out';
 }
 
+function setSmoothingQuality(quality) {
+    if (dom.imageCtx) {
+        dom.imageCtx.imageSmoothingQuality = quality;
+    }
+    if (dom.drawCtx) {
+        dom.drawCtx.imageSmoothingQuality = quality;
+    }
+}
+
+function startDrawingMode() {
+    setSmoothingQuality('low');
+    dom.canvasWrapper.classList.add('drawing');
+}
+
+function endDrawingMode() {
+    setSmoothingQuality('high');
+    dom.canvasWrapper.classList.remove('drawing');
+}
+
 // 橡皮提示框
 function updateEraserHintSize() {
     const size = DRAW_CONFIG.eraserSize;
@@ -2083,12 +2110,14 @@ function handlePointerDown(e) {
     } else if (state.drawMode === 'comment') {
         hidePenControlPanel();
         state.isDrawing = true;
+        startDrawingMode();
         state.lastX = (e.clientX - rect.left) / getSafeScale();
         state.lastY = (e.clientY - rect.top) / getSafeScale();
         startStroke('draw');
     } else if (state.drawMode === 'eraser') {
         hidePenControlPanel();
         state.isDrawing = true;
+        startDrawingMode();
         state.lastX = (e.clientX - rect.left) / getSafeScale();
         state.lastY = (e.clientY - rect.top) / getSafeScale();
         startStroke('erase');
@@ -2113,7 +2142,7 @@ function handlePointerMove(e) {
         state.canvasY = e.clientY - state.startDragY;
         clampCanvasPosition();
         
-        const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
+        const transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
         dom.canvasWrapper.style.transform = transform;
         
         if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
@@ -2169,6 +2198,7 @@ async function handlePointerUp(e) {
     }
     if (state.isDrawing) {
         state.isDrawing = false;
+        endDrawingMode();
         if (state.drawRafId) {
             cancelAnimationFrame(state.drawRafId);
             state.drawRafId = null;
@@ -2188,6 +2218,7 @@ async function handlePointerLeave(e) {
     }
     if (state.isDrawing) {
         state.isDrawing = false;
+        endDrawingMode();
         if (state.drawRafId) {
             cancelAnimationFrame(state.drawRafId);
             state.drawRafId = null;
@@ -2216,12 +2247,14 @@ function handleMouseDown(e) {
     } else if (state.drawMode === 'comment') {
         hidePenControlPanel();
         state.isDrawing = true;
+        startDrawingMode();
         state.lastX = (e.clientX - rect.left) / getSafeScale();
         state.lastY = (e.clientY - rect.top) / getSafeScale();
         startStroke('draw');
     } else if (state.drawMode === 'eraser') {
         hidePenControlPanel();
         state.isDrawing = true;
+        startDrawingMode();
         state.lastX = (e.clientX - rect.left) / getSafeScale();
         state.lastY = (e.clientY - rect.top) / getSafeScale();
         startStroke('erase');
@@ -2246,7 +2279,7 @@ function handleMouseMove(e) {
         clampCanvasPosition();
         
         // 直接更新容器 transform，提高跟手性
-        const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
+        const transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
         dom.canvasWrapper.style.transform = transform;
         
         // 更新 video 元素
@@ -2307,6 +2340,7 @@ async function handleMouseUp(e) {
     }
     if (state.isDrawing) {
         state.isDrawing = false;
+        endDrawingMode();
         await batchDrawManager.endDrawing();
         await endStroke();
     }
@@ -2320,6 +2354,7 @@ async function handleMouseLeave(e) {
     }
     if (state.isDrawing) {
         state.isDrawing = false;
+        endDrawingMode();
         await batchDrawManager.endDrawing();
         await endStroke();
     }
@@ -2376,11 +2411,13 @@ function handleTouchStart(e) {
             dom.drawCanvas.classList.add('dragging');
         } else if (state.drawMode === 'comment') {
             state.isDrawing = true;
+            startDrawingMode();
             state.lastX = (touch.clientX - rect.left) / getSafeScale();
             state.lastY = (touch.clientY - rect.top) / getSafeScale();
             startStroke('draw');
         } else if (state.drawMode === 'eraser') {
             state.isDrawing = true;
+            startDrawingMode();
             updateEraserHintPos(touch.clientX, touch.clientY);
             state.lastX = (touch.clientX - rect.left) / getSafeScale();
             state.lastY = (touch.clientY - rect.top) / getSafeScale();
@@ -2412,7 +2449,7 @@ function handleTouchMove(e) {
         clampCanvasPosition();
         
         // 直接更新容器 transform，提高跟手性
-        const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
+        const transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
         dom.canvasWrapper.style.transform = transform;
         
         // 更新 video 元素
@@ -2504,6 +2541,7 @@ async function handleTouchEnd(e) {
         
         if (state.isDrawing) {
             state.isDrawing = false;
+            endDrawingMode();
             if (state.drawRafId) {
                 cancelAnimationFrame(state.drawRafId);
                 state.drawRafId = null;
@@ -2540,7 +2578,7 @@ function updateCanvasTransform() {
     lastCanvasTransform.scale = state.scale;
     
     // 只对容器设置 transform，减少 DOM 操作
-    const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
+    const transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
     dom.canvasWrapper.style.transform = transform;
     
     // video 元素需要单独处理（因为它有额外的偏移）
@@ -2586,7 +2624,7 @@ function animateCanvasTransform(targetX, targetY, targetScale, duration = 250) {
         lastCanvasTransform.scale = state.scale;
         
         // 只对容器设置 transform
-        const transform = `translate(${state.canvasX}px, ${state.canvasY}px) scale(${state.scale})`;
+        const transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
         dom.canvasWrapper.style.transform = transform;
         
         // 更新 video 元素
@@ -2913,17 +2951,19 @@ async function redrawAllStrokes(dirtyRect = null) {
     
     ctx.globalCompositeOperation = 'source-over';
     
-    // 绘制可变线宽笔画
+    // 绘制可变线宽笔画 - 优化：合并路径减少 GPU 调用
     for (const stroke of variableWidthStrokes) {
         if (!stroke.points || stroke.points.length === 0) continue;
         
         ctx.fillStyle = stroke.color || DRAW_CONFIG.penColor;
         
+        const polygonPath = new Path2D();
+        const circlePath = new Path2D();
+        
         for (let i = 0; i < stroke.points.length && i < stroke.variableWidths.length; i++) {
             const point = stroke.points[i];
             const widthInfo = stroke.variableWidths[i];
             
-            // 使用多边形绘制可变线宽线段
             const x1 = point.fromX, y1 = point.fromY;
             const x2 = point.toX, y2 = point.toY;
             const w1 = widthInfo.fromWidth, w2 = widthInfo.toWidth;
@@ -2933,22 +2973,20 @@ async function redrawAllStrokes(dirtyRect = null) {
             const hw1 = w1 / 2, hw2 = w2 / 2;
             const cos = Math.cos(perpAngle), sin = Math.sin(perpAngle);
             
-            ctx.beginPath();
-            ctx.moveTo(x1 + cos * hw1, y1 + sin * hw1);
-            ctx.lineTo(x2 + cos * hw2, y2 + sin * hw2);
-            ctx.lineTo(x2 - cos * hw2, y2 - sin * hw2);
-            ctx.lineTo(x1 - cos * hw1, y1 - sin * hw1);
-            ctx.closePath();
-            ctx.fill();
+            polygonPath.moveTo(x1 + cos * hw1, y1 + sin * hw1);
+            polygonPath.lineTo(x2 + cos * hw2, y2 + sin * hw2);
+            polygonPath.lineTo(x2 - cos * hw2, y2 - sin * hw2);
+            polygonPath.lineTo(x1 - cos * hw1, y1 - sin * hw1);
+            polygonPath.closePath();
             
-            // 绘制两端圆形
-            ctx.beginPath();
-            ctx.arc(x1, y1, hw1, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(x2, y2, hw2, 0, Math.PI * 2);
-            ctx.fill();
+            circlePath.moveTo(x1 + hw1, y1);
+            circlePath.arc(x1, y1, hw1, 0, Math.PI * 2);
+            circlePath.moveTo(x2 + hw2, y2);
+            circlePath.arc(x2, y2, hw2, 0, Math.PI * 2);
         }
+        
+        ctx.fill(polygonPath);
+        ctx.fill(circlePath);
     }
     
     // 批量绘制固定线宽笔画
