@@ -5,17 +5,12 @@
  * - 三层Canvas：背景层(bgCanvas) → 图像层(imageCanvas) → 批注层(drawCanvas)
  * - 批注系统：笔画记录 + 压缩存储 + 撤销支持
  * - 图像处理：Rust后端并行处理（增强、缩略图、旋转）
- * - 点处理：WASM高性能计算（距离计算、点简化、坐标量化、碰撞检测）
  * 
  * 性能优化策略：
- * - 智能调度：根据帧率动态调整绘制参数
  * - 批量处理：使用RAF批量绘制减少重绘次数
  * - 内存优化：使用Blob URL替代Data URL存储图片
- * - WASM加速：复杂计算移至WebAssembly
  */
 
-// 导入WASM点处理器
-import wasmPointProcessor from './wasm-processor.js';
 import './batch-draw.js';
 
 // ==================== 全局变量 ====================
@@ -3350,18 +3345,17 @@ const POINT_OPTIMIZATION = {
     batchInterval: 30, // 批量收集间隔 (ms) - 减小以提高响应速度
 };
 
-// ==================== WASM 降级方案 ====================
-// 以下函数仅在 WASM 加载失败时使用
+// ==================== 点处理工具函数 ====================
 
 /**
- * 坐标量化 (降级方案)
+ * 坐标量化
  */
 function quantizeCoord(coord) {
     return Math.round(coord / POINT_OPTIMIZATION.quantization) * POINT_OPTIMIZATION.quantization;
 }
 
 /**
- * 计算两点之间的距离 (降级方案)
+ * 计算两点之间的距离
  */
 function distance(x1, y1, x2, y2) {
     const dx = x2 - x1;
@@ -3466,83 +3460,37 @@ class PointCollector {
         this.lastY = 0;
     }
     
-    async addPoint(fromX, fromY, toX, toY) {
-        try {
-            const config = {
-                epsilon: POINT_OPTIMIZATION.epsilon,
-                minDistance: POINT_OPTIMIZATION.minDistance,
-                quantization: POINT_OPTIMIZATION.quantization
-            };
-            
-            const points = [{
-                fromX: fromX,
-                fromY: fromY,
-                toX: toX,
-                toY: toY
-            }];
-            
-            const result = await wasmPointProcessor.collectPoints(
-                points,
-                config,
-                this.lastTime,
-                this.lastX,
-                this.lastY
-            );
-            
-            if (result.error) {
-                throw new Error(result.error);
-            }
-            
-            if (result.collectedPoints && result.collectedPoints.length > 0) {
-                const collectedPoint = result.collectedPoints[0];
-                this.points.push({
-                    fromX: collectedPoint.fromX,
-                    fromY: collectedPoint.fromY,
-                    toX: collectedPoint.toX,
-                    toY: collectedPoint.toY
-                });
-                
-                this.lastTime = result.lastTime;
-                this.lastX = result.lastX;
-                this.lastY = result.lastY;
-                
-                return true;
-            }
-        } catch (error) {
-            console.warn('WASM点收集失败，使用前端降级方案:', error);
-            const qFromX = quantizeCoord(fromX);
-            const qFromY = quantizeCoord(fromY);
-            const qToX = quantizeCoord(toX);
-            const qToY = quantizeCoord(toY);
-            
-            if (distance(qFromX, qFromY, qToX, qToY) < POINT_OPTIMIZATION.minDistance) {
-                return false;
-            }
-            
-            const now = Date.now();
-            if (now - this.lastTime < POINT_OPTIMIZATION.batchInterval) {
-                return false;
-            }
-            
-            this.lastTime = now;
-            this.lastX = qToX;
-            this.lastY = qToY;
-            
-            this.points.push({
-                fromX: qFromX,
-                fromY: qFromY,
-                toX: qToX,
-                toY: qToY
-            });
-            
-            if (this.points.length > POINT_OPTIMIZATION.maxPointsPerStroke) {
-                this.points = simplifyPoints(this.points, POINT_OPTIMIZATION.epsilon);
-            }
-            
-            return true;
+    addPoint(fromX, fromY, toX, toY) {
+        const qFromX = quantizeCoord(fromX);
+        const qFromY = quantizeCoord(fromY);
+        const qToX = quantizeCoord(toX);
+        const qToY = quantizeCoord(toY);
+        
+        if (distance(qFromX, qFromY, qToX, qToY) < POINT_OPTIMIZATION.minDistance) {
+            return false;
         }
         
-        return false;
+        const now = Date.now();
+        if (now - this.lastTime < POINT_OPTIMIZATION.batchInterval) {
+            return false;
+        }
+        
+        this.lastTime = now;
+        this.lastX = qToX;
+        this.lastY = qToY;
+        
+        this.points.push({
+            fromX: qFromX,
+            fromY: qFromY,
+            toX: qToX,
+            toY: qToY
+        });
+        
+        if (this.points.length > POINT_OPTIMIZATION.maxPointsPerStroke) {
+            this.points = simplifyPoints(this.points, POINT_OPTIMIZATION.epsilon);
+        }
+        
+        return true;
     }
     
     getPoints() {
@@ -3605,64 +3553,6 @@ class BatchDrawManager {
         // 检查批处理大小
         if (batch.commands.length >= this.maxBatchSize) {
             this.flushBatch(stateKey);
-        }
-    }
-    
-    /**
-     * 使用WASM优化绘制命令
-     */
-    async optimizeCommands() {
-        try {
-            // 收集所有命令
-            let allCommands = [];
-            for (const [stateKey, batch] of this.batches) {
-                for (const cmd of batch.commands) {
-                    allCommands.push({
-                        type: batch.type,
-                        fromX: cmd.fromX,
-                        fromY: cmd.fromY,
-                        toX: cmd.toX,
-                        toY: cmd.toY,
-                        color: batch.color,
-                        lineWidth: batch.lineWidth
-                    });
-                }
-            }
-            
-            // 使用WASM优化命令
-            const optimizedCommands = await wasmPointProcessor.batchProcessDrawCommands(
-                allCommands,
-                this.minDistance,
-                this.maxBatchSize
-            );
-            
-            // 清空现有批处理
-            this.batches.clear();
-            
-            // 重新分组优化后的命令
-            for (const cmd of optimizedCommands) {
-                const stateKey = `${cmd.type}-${cmd.color}-${cmd.line_width}`;
-                if (!this.batches.has(stateKey)) {
-                    this.batches.set(stateKey, {
-                        type: cmd.type,
-                        color: cmd.color,
-                        lineWidth: cmd.line_width,
-                        commands: []
-                    });
-                }
-                const batch = this.batches.get(stateKey);
-                batch.commands.push({
-                    fromX: cmd.fromX,
-                    fromY: cmd.fromY,
-                    toX: cmd.toX,
-                    toY: cmd.toY
-                });
-            }
-            
-            console.log('使用WASM优化绘制命令，从', allCommands.length, '个命令优化到', optimizedCommands.length, '个命令');
-        } catch (error) {
-            console.warn('WASM命令优化失败，使用原始命令:', error);
-            // 继续使用原始命令
         }
     }
     
@@ -3883,19 +3773,8 @@ async function drawStrokes(ctx, strokes) {
         height: DRAW_CONFIG.canvasH
     };
     
-    let visibleStrokes = strokes;
-    
-    if (totalStrokes > 20) {
-        try {
-            visibleStrokes = await wasmPointProcessor.cullStrokesByViewport(strokes, viewport);
-            if (visibleStrokes.length < strokes.length) {
-                console.log(`视口裁剪: ${strokes.length} -> ${visibleStrokes.length} 笔画`);
-            }
-        } catch (error) {
-            console.warn('WASM视口裁剪失败，使用全部笔画:', error);
-            visibleStrokes = strokes;
-        }
-    }
+    // 直接使用全部笔画
+    const visibleStrokes = strokes;
     
     // 按状态分组，使用 Path2D 批量绘制
     const eraseStrokes = new Map();
