@@ -105,14 +105,6 @@ body {
     opacity: 0;
 }
 
-.toolbar-left:hover,
-.toolbar-center:hover,
-.toolbar-right:hover {
-    background: rgba(80, 80, 80, 0.8);
-    border-color: rgba(255, 255, 255, 0.2);
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
-}
-
 .toolbar-left {
     justify-content: flex-start;
     margin-left: 0;
@@ -132,21 +124,11 @@ body {
 
 /* 工具栏分隔线 */
 .toolbar-separator {
-    width: 1px;
-    height: 30px;
-    background: rgba(255, 255, 255, 0.2);
-    margin: 0 0;
-    transition: width 0.3s ease, margin 0.3s ease, opacity 0.3s ease;
-}
-
-/* 加粗分隔线 */
-.toolbar-separator-bold {
     width: 2px;
     height: 35px;
-    background: rgba(52, 152, 219, 0.6);
+    background: rgba(255, 255, 255, 0.3);
     margin: 0 0;
     border-radius: 1px;
-    box-shadow: 0 0 6px rgba(52, 152, 219, 0.4);
 }
 
 .toolbar-btn {
@@ -171,10 +153,8 @@ body {
 }
 
 .toolbar-btn:hover {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(52, 152, 219, 0.6);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.2);
+    background: rgba(150, 150, 150, 0.3);
+    border-color: rgba(150, 150, 150, 0.6);
 }
 
 .toolbar-btn:active {
@@ -188,13 +168,6 @@ body {
     background: rgba(133, 143, 149, 0.4);
     border-color: #ffffff;
     box-shadow: 0 0 0 2px rgba(133, 143, 149, 0.4);
-    
-}
-
-.toolbar-btn.primary-btn:hover {
-    background: #2980b9;
-    border-color: #2980b9;
-    box-shadow: 0 6px 16px rgba(52, 152, 219, 0.4);
 }
 
 .toolbar-btn svg {
@@ -203,12 +176,6 @@ body {
     flex-shrink: 0;
     transition: all 0.3s ease;
 }
-
-.toolbar-btn:hover svg {
-    transform: scale(1.1);
-    filter: drop-shadow(0 0 4px rgba(52, 152, 219, 0.6));
-}
-
 
 /* 文件导入、切换侧边栏 */
 
@@ -764,13 +731,6 @@ body {
     background: transparent;
     transform: none;
     box-shadow: none;
-}
-
-/* ========== 拍照按钮摄像头激活状态 ========== */
-.toolbar-btn.camera-active {
-    background: rgba(76, 209, 55, 0.25) !important;
-    border-color: #4cd137 !important;
-    box-shadow: 0 0 0 2px rgba(76, 209, 55, 0.4), 0 0 12px rgba(76, 209, 55, 0.3) !important;
 }
 
 /* ========== 加载动画 ========== */

@@ -3887,7 +3887,7 @@ function updatePhotoButtonState() {
     if (!btnPhoto) return;
     
     let newState;
-    let html, title, addClass, removeClass;
+    let html, title;
     
     const photoText = window.i18n?.t('toolbar.photo') || '拍照';
     const switchToCameraText = window.i18n?.t('camera.switchToCamera') || '切换到摄像头';
@@ -3896,21 +3896,15 @@ function updatePhotoButtonState() {
         newState = 'camera';
         html = `<img src="assets/icon/camera.svg" width="16" height="16" alt="${photoText}" style="filter: invert(1);">${photoText}`;
         title = window.i18n?.t('camera.captureFrame') || '捕获摄像头画面';
-        addClass = 'camera-active';
-        removeClass = '';
     } else if ((state.currentImageIndex >= 0 && state.imageList.length > 0) || 
                (state.currentFolderIndex >= 0 && state.currentFolderPageIndex >= 0)) {
         newState = 'switch';
         html = `<img src="assets/icon/camera-fill.svg" width="16" height="16" alt="${switchToCameraText}" style="filter: invert(1);">${switchToCameraText}`;
         title = window.i18n?.t('camera.switchToCamera') || '返回摄像头';
-        addClass = '';
-        removeClass = 'camera-active';
     } else {
         newState = 'save';
         html = `<img src="assets/icon/camera.svg" width="16" height="16" alt="${photoText}" style="filter: invert(1);">${photoText}`;
         title = window.i18n?.t('camera.saveScreenshot') || '保存画布截图';
-        addClass = '';
-        removeClass = 'camera-active';
     }
     
     if (lastPhotoButtonState === newState) return;
@@ -3918,8 +3912,6 @@ function updatePhotoButtonState() {
     
     btnPhoto.innerHTML = html;
     btnPhoto.title = title;
-    if (addClass) btnPhoto.classList.add(addClass);
-    if (removeClass) btnPhoto.classList.remove(removeClass);
 }
 
 // 设置功能
