@@ -753,49 +753,6 @@ body {
     border-color: rgba(52, 152, 219, 0.4);
 }
 
-.toolbar-btn.enhance-btn {
-    transition: opacity 0.5s ease, transform 0.5s ease;
-    flex-shrink: 0;
-}
-
-.toolbar-btn.enhance-btn.primary-btn {
-    background: rgba(155, 89, 182, 0.25);
-    border-color: #9b59b6;
-    box-shadow: 0 0 0 2px rgba(155, 89, 182, 0.4);
-    border-radius: 20px;
-}
-
-.toolbar-btn.enhance-btn.primary-btn:hover {
-    background: #8e44ad;
-    border-color: #8e44ad;
-    box-shadow: 0 6px 16px rgba(155, 89, 182, 0.4);
-}
-
-.toolbar-btn.enhance-btn.fade-out {
-    opacity: 0;
-    transform: scale(0.8);
-    pointer-events: none;
-    position: absolute;
-    visibility: hidden;
-}
-
-.toolbar-btn.enhance-btn.fade-in {
-    opacity: 1;
-    transform: scale(1);
-    position: relative;
-    visibility: visible;
-}
-
-.toolbar-separator.enhance-separator {
-    transition: width 0.5s ease, margin 0.5s ease, opacity 0.5s ease;
-}
-
-.toolbar-center.compact .enhance-separator {
-    width: 0 !important;
-    margin: 0 !important;
-    opacity: 0 !important;
-}
-
 /* ========== 按钮禁用状态 ========== */
 .toolbar-btn:disabled {
     opacity: 0.4;

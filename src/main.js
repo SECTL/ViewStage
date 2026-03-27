@@ -113,10 +113,6 @@ const DRAW_CONFIG = {
     canvasScale: 2,                // 画布相对屏幕的缩放倍数
     dpr: Math.min(window.devicePixelRatio || 1, 2),  // 设备像素比
     pdfScale: 1.5,                 // PDF 渲染缩放比例
-    enhanceContrast: 1.4,          // 增强对比度
-    enhanceBrightness: 10,         // 增强亮度
-    enhanceSaturation: 1.2,        // 增强饱和度
-    enhanceSharpen: 0,             // 增强锐化 (0-100)
     imageSmoothingQuality: 'high', // 图像平滑质量
     baseDpr: Math.min(window.devicePixelRatio || 1, 2), // 基础设备像素比
     canvasBgColor: '#2a2a2a',      // 画布背景颜色
@@ -350,9 +346,6 @@ let state = {
     cameraWidth: 1280,             // 摄像头宽度
     cameraHeight: 720,             // 摄像头高度
     wasCameraOpenBeforeMinimize: false, // 最小化前摄像头是否开启
-    
-    // 图像增强
-    enhanceEnabled: false,         // 是否启用文档增强
     
     // 图像管理
     currentImage: null,            // 当前显示的图像 Image 对象
@@ -629,26 +622,6 @@ async function loadCameraSetting() {
                 console.log('已加载 PDF 输出分辨率:', settings.pdfScale);
             }
             
-            if (settings.contrast) {
-                DRAW_CONFIG.enhanceContrast = settings.contrast;
-                console.log('已加载增强对比度:', settings.contrast);
-            }
-            
-            if (settings.brightness) {
-                DRAW_CONFIG.enhanceBrightness = settings.brightness;
-                console.log('已加载增强亮度:', settings.brightness);
-            }
-            
-            if (settings.saturation) {
-                DRAW_CONFIG.enhanceSaturation = settings.saturation;
-                console.log('已加载增强饱和度:', settings.saturation);
-            }
-            
-            if (settings.sharpen !== undefined) {
-                DRAW_CONFIG.enhanceSharpen = settings.sharpen;
-                console.log('已加载增强锐化:', settings.sharpen);
-            }
-            
             if (settings.penColors && Array.isArray(settings.penColors)) {
                 DRAW_CONFIG.penColors = settings.penColors.map(color => {
                     if (typeof color === 'object' && color.r !== undefined) {
@@ -758,13 +731,6 @@ function listenForPdfFileOpen() {
         console.error('mirror-changed 事件监听失败:', err);
     });
     
-    listen('enhance-changed', (event) => {
-        state.enhanceEnabled = event.payload;
-        console.log('增强状态已更改:', state.enhanceEnabled);
-    }).catch(err => {
-        console.error('enhance-changed 事件监听失败:', err);
-    });
-    
     listen('switch-camera', () => {
         switchCamera();
         console.log('切换摄像头');
@@ -800,26 +766,6 @@ function listenForPdfFileOpen() {
         if (settings.pdfScale !== undefined) {
             DRAW_CONFIG.pdfScale = settings.pdfScale;
             console.log('PDF 输出分辨率已更改:', settings.pdfScale);
-        }
-        
-        if (settings.contrast !== undefined) {
-            DRAW_CONFIG.enhanceContrast = settings.contrast;
-            console.log('增强对比度已更改:', settings.contrast);
-        }
-        
-        if (settings.brightness !== undefined) {
-            DRAW_CONFIG.enhanceBrightness = settings.brightness;
-            console.log('增强亮度已更改:', settings.brightness);
-        }
-        
-        if (settings.saturation !== undefined) {
-            DRAW_CONFIG.enhanceSaturation = settings.saturation;
-            console.log('增强饱和度已更改:', settings.saturation);
-        }
-        
-        if (settings.sharpen !== undefined) {
-            DRAW_CONFIG.enhanceSharpen = settings.sharpen;
-            console.log('增强锐化已更改:', settings.sharpen);
         }
         
         if (settings.penColors && Array.isArray(settings.penColors)) {
@@ -1152,7 +1098,6 @@ async function loadPdfFromPath(filePath) {
                     
                     drawImageToCenter(img);
                     updatePhotoButtonState();
-                    updateEnhanceButtonState();
                 };
                 img.src = firstPage.full;
             }
@@ -1258,7 +1203,6 @@ async function loadPdfFromPath(filePath) {
                 
                 drawImageToCenter(img);
                 updatePhotoButtonState();
-                updateEnhanceButtonState();
             };
             img.src = firstPage.full;
         }
@@ -1425,7 +1369,6 @@ function initDOM() {
     dom.btnSave = document.getElementById('btnSave');
     dom.btnMinimize = document.getElementById('btnMinimize');
     dom.btnMenu = document.getElementById('btnMenu');
-    dom.btnEnhance = document.getElementById('btnEnhance');
     
     if (!dom.imageCanvas || !dom.drawCanvas || !dom.canvasContainer) {
         console.error('必需的 Canvas 元素未找到');
@@ -1604,10 +1547,6 @@ function bindSettingsEvents() {
     
     document.getElementById('btnRotateRight')?.addEventListener('click', () => {
         rotateImage('right');
-    });
-    
-    dom.btnEnhance?.addEventListener('click', () => {
-        toggleEnhance();
     });
 }
 
@@ -3867,7 +3806,6 @@ function takePhoto() {
                 await openCamera();
                 updateSidebarSelection();
                 updatePhotoButtonState();
-                updateEnhanceButtonState();
                 console.log('返回摄像头');
             } catch (error) {
                 console.error('返回摄像头失败:', error);
@@ -3912,7 +3850,6 @@ function takePhoto() {
                 await openCamera();
                 updateFolderPageSelection(-1, -1);
                 updatePhotoButtonState();
-                updateEnhanceButtonState();
                 console.log('返回摄像头');
             } catch (error) {
                 console.error('返回摄像头失败:', error);
@@ -4112,49 +4049,6 @@ function rotateImageFallback(img, direction) {
     return canvas.toDataURL('image/png');
 }
 
-function toggleEnhance() {
-    state.enhanceEnabled = !state.enhanceEnabled;
-    
-    if (dom.btnEnhance) {
-        dom.btnEnhance.classList.toggle('primary-btn', state.enhanceEnabled);
-    }
-    
-    console.log(`文档增强已${state.enhanceEnabled ? '开启' : '关闭'}`);
-}
-
-let lastEnhanceButtonState = null;
-
-function updateEnhanceButtonState() {
-    if (!dom.btnEnhance) return;
-    
-    const newState = state.isCameraOpen ? 'visible' : 'hidden';
-    
-    if (lastEnhanceButtonState === newState) return;
-    lastEnhanceButtonState = newState;
-    
-    const toolbarCenter = document.querySelector('.toolbar-center');
-    
-    if (state.isCameraOpen) {
-        if (toolbarCenter) {
-            toolbarCenter.classList.remove('compact');
-        }
-        
-        setTimeout(() => {
-            dom.btnEnhance.classList.remove('fade-out');
-            dom.btnEnhance.classList.add('fade-in');
-        }, 400);
-    } else {
-        dom.btnEnhance.classList.remove('fade-in');
-        dom.btnEnhance.classList.add('fade-out');
-        
-        setTimeout(() => {
-            if (toolbarCenter) {
-                toolbarCenter.classList.add('compact');
-            }
-        }, 500);
-    }
-}
-
 async function generateThumbnail(imageData, maxSize = 150, fixedRatio = true) {
     if (window.__TAURI__) {
         try {
@@ -4351,7 +4245,6 @@ async function selectImage(index) {
                 await setCameraState(true);
                 updateSidebarSelection();
                 updatePhotoButtonState();
-                updateEnhanceButtonState();
                 console.log('返回摄像头');
             } catch (error) {
                 console.error('返回摄像头失败:', error);
@@ -4396,7 +4289,6 @@ async function selectImage(index) {
         await redrawAllStrokes();
         updateSidebarSelection();
         updatePhotoButtonState();
-        updateEnhanceButtonState();
     };
     img.onerror = () => {
         console.error(`加载图片 ${index + 1} 失败`);
@@ -4770,7 +4662,6 @@ function selectFolderPage(folderIndex, pageIndex) {
                 
                 updateFolderPageSelection(folderIndex, pageIndex);
                 updatePhotoButtonState();
-                updateEnhanceButtonState();
             };
             img.src = page.full;
             
@@ -5029,7 +4920,6 @@ function importPDF() {
                         
                         drawImageToCenter(img);
                         updatePhotoButtonState();
-                        updateEnhanceButtonState();
                     };
                     img.src = firstPage.full;
                 }
@@ -5103,7 +4993,6 @@ function importPDF() {
                         
                         drawImageToCenter(img);
                         updatePhotoButtonState();
-                        updateEnhanceButtonState();
                     };
                     img.src = firstPage.full;
                 }
@@ -5313,7 +5202,6 @@ async function setCameraState(open, options = {}) {
             createCameraVideo();
             createCameraControls();
             clearSidebarSelection();
-            updateEnhanceButtonState();
             
             console.log('摄像头已打开:', videoTrack.label || '未知设备', '分辨率:', settings.width, 'x', settings.height);
         } catch (error) {
@@ -5348,7 +5236,6 @@ async function setCameraState(open, options = {}) {
         }
         
         updatePhotoButtonState();
-        updateEnhanceButtonState();
         
         // 保存摄像头数据
         saveCurrentSourceData();
@@ -5624,26 +5511,11 @@ async function captureCamera() {
             const { invoke } = window.__TAURI__.core;
             const dataUrl = await blobToDataUrl(blob);
             
-            if (state.enhanceEnabled) {
-                const result = await invoke('save_image_with_enhance', { 
-                    imageData: dataUrl,
-                    prefix: 'photo',
-                    contrast: DRAW_CONFIG.enhanceContrast,
-                    brightness: DRAW_CONFIG.enhanceBrightness,
-                    saturation: DRAW_CONFIG.enhanceSaturation,
-                    sharpen: DRAW_CONFIG.enhanceSharpen
-                });
-                console.log('图片已保存(增强):', result.path);
-                if (result.enhanced_data) {
-                    blob = await dataUrlToBlob(result.enhanced_data);
-                }
-            } else {
-                const result = await invoke('save_image', { 
-                    imageData: dataUrl,
-                    prefix: 'photo'
-                });
-                console.log('图片已保存:', result.path);
-            }
+            const result = await invoke('save_image', { 
+                imageData: dataUrl,
+                prefix: 'photo'
+            });
+            console.log('图片已保存:', result.path);
         } catch (error) {
             console.error('保存图片失败:', error);
         }
@@ -5667,11 +5539,6 @@ async function blobToDataUrl(blob) {
         reader.onerror = reject;
         reader.readAsDataURL(blob);
     });
-}
-
-async function dataUrlToBlob(dataUrl) {
-    const response = await fetch(dataUrl);
-    return response.blob();
 }
 
 function expandSidebarIfCollapsed() {
@@ -5821,7 +5688,6 @@ async function importImage() {
                 drawImageToCenter(img);
                 updateSidebarContent();
                 updatePhotoButtonState();
-                updateEnhanceButtonState();
             }
         }
         
@@ -5882,7 +5748,6 @@ async function addImageToList(img, name, isLast = true) {
         
         updateSidebarContent();
         updatePhotoButtonState();
-        updateEnhanceButtonState();
     }
 }
 

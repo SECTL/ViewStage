@@ -84,11 +84,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 item.classList.add('disabled');
             }
         });
-        
-        const imageProcessHeader = document.getElementById('imageProcessHeader');
-        if (imageProcessHeader) {
-            imageProcessHeader.closest('.setting-group')?.classList.add('disabled');
-        }
     }
     
     // ==================== 设置加载 ====================
@@ -449,40 +444,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                             option.classList.remove('selected');
                         }
                     });
-                }
-                
-                // 图像处理强度设置
-                const contrastSlider = document.getElementById('contrastSlider');
-                const contrastValue = document.getElementById('contrastValue');
-                const brightnessSlider = document.getElementById('brightnessSlider');
-                const brightnessValue = document.getElementById('brightnessValue');
-                const saturationSlider = document.getElementById('saturationSlider');
-                const saturationValue = document.getElementById('saturationValue');
-                const sharpenSlider = document.getElementById('sharpenSlider');
-                const sharpenValue = document.getElementById('sharpenValue');
-                
-                if (contrastSlider && contrastValue) {
-                    const savedContrast = settings.contrast || 1.4;
-                    contrastSlider.value = savedContrast;
-                    contrastValue.textContent = savedContrast;
-                }
-                
-                if (brightnessSlider && brightnessValue) {
-                    const savedBrightness = settings.brightness || 10;
-                    brightnessSlider.value = savedBrightness;
-                    brightnessValue.textContent = savedBrightness;
-                }
-                
-                if (saturationSlider && saturationValue) {
-                    const savedSaturation = settings.saturation || 1.2;
-                    saturationSlider.value = savedSaturation;
-                    saturationValue.textContent = savedSaturation;
-                }
-                
-                if (sharpenSlider && sharpenValue) {
-                    const savedSharpen = settings.sharpen || 0;
-                    sharpenSlider.value = savedSharpen;
-                    sharpenValue.textContent = savedSharpen;
                 }
                 
                 // 文件关联设置
@@ -910,59 +871,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!defaultRotationSelect.contains(e.target)) {
                 defaultRotationSelect.classList.remove('open');
             }
-        });
-    }
-    
-    // 图像处理折叠功能
-    const imageProcessHeader = document.getElementById('imageProcessHeader');
-    const imageProcessGroup = imageProcessHeader?.closest('.setting-group');
-    
-    if (imageProcessHeader && imageProcessGroup) {
-        imageProcessHeader.addEventListener('click', () => {
-            imageProcessGroup.classList.toggle('collapsed');
-        });
-    }
-    
-    // 图像处理强度设置
-    const contrastSlider = document.getElementById('contrastSlider');
-    const contrastValue = document.getElementById('contrastValue');
-    const brightnessSlider = document.getElementById('brightnessSlider');
-    const brightnessValue = document.getElementById('brightnessValue');
-    const saturationSlider = document.getElementById('saturationSlider');
-    const saturationValue = document.getElementById('saturationValue');
-    const sharpenSlider = document.getElementById('sharpenSlider');
-    const sharpenValue = document.getElementById('sharpenValue');
-    
-    if (contrastSlider && contrastValue) {
-        contrastSlider.addEventListener('input', () => {
-            contrastValue.textContent = contrastSlider.value;
-        });
-        
-        contrastSlider.addEventListener('change', async () => {
-            await saveSettings({ 
-                contrast: parseFloat(contrastSlider.value),
-                brightness: parseFloat(brightnessSlider.value),
-                saturation: parseFloat(saturationSlider.value),
-                sharpen: parseFloat(sharpenSlider.value)
-            });
-        });
-    }
-    
-    if (brightnessSlider && brightnessValue) {
-        brightnessSlider.addEventListener('input', () => {
-            brightnessValue.textContent = brightnessSlider.value;
-        });
-    }
-    
-    if (saturationSlider && saturationValue) {
-        saturationSlider.addEventListener('input', () => {
-            saturationValue.textContent = saturationSlider.value;
-        });
-    }
-    
-    if (sharpenSlider && sharpenValue) {
-        sharpenSlider.addEventListener('input', () => {
-            sharpenValue.textContent = sharpenSlider.value;
         });
     }
     
