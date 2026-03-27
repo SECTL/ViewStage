@@ -186,7 +186,6 @@ body {
 
 .sidebar-btn.active {
     background: rgba(255, 255, 255, 0.2);
-    border-left: 3px solid #4a9eff;
 }
 
 .btn-icon {
