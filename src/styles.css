@@ -6,6 +6,8 @@
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
 }
 
 *::-webkit-scrollbar {
@@ -27,16 +29,9 @@
     background: rgba(255, 255, 255, 0.3);
 }
 
-* {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
-}
-
 html, body {
     height: 100%;
     overflow: hidden;
-    margin: 0;
-    padding: 0;
 }
 
 body {
@@ -46,10 +41,7 @@ body {
     color: #FFFFFF;
     display: flex;
     flex-direction: column;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;/* 防止滚动条出现 */
-    touch-action: none;/* 禁用默认触摸行为 */
+    touch-action: none;
 }
 
 .container {
@@ -71,41 +63,6 @@ body {
     width: 100%;
     height: 100%;
     position: relative;
-}
-
-/* 悬浮岛模块 */
-.island-module {
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    transition: background 0.3s ease;
-    overflow: hidden;
-    margin: 0;
-}
-
-.island-module:hover {
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-    border-color: rgba(255, 255, 255, 0.15);
-}
-
-/* 模块头部 */
-.module-header {
-    background: rgba(255, 255, 255, 0.03);
-    padding: 15px 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.module-header h2 {
-    margin: 0;
-    font-size: 18px;
-    color: #3498db;
-    font-weight: 600;
-}
-
-/* 模块内容 */
-.module-content {
-    padding: 20px;
 }
 
 /* 底部工具栏 */
@@ -228,10 +185,10 @@ body {
 
 .toolbar-btn.active,
 .toolbar-btn.primary-btn {
-    background: rgba(52, 152, 219, 0.25);
-    border-color: #3498db;
-    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.4);
-    border-radius: 20px;
+    background: rgba(133, 143, 149, 0.4);
+    border-color: #ffffff;
+    box-shadow: 0 0 0 2px rgba(133, 143, 149, 0.4);
+    
 }
 
 .toolbar-btn.primary-btn:hover {
@@ -522,34 +479,6 @@ body {
     white-space: nowrap;
 }
 
-/* 侧边栏内容淡入动画 */
-.sidebar-box{
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 8px;
-    opacity: 0;
-    animation: contentFadeIn 0.3s ease forwards 0.1s;
-}
-
-@keyframes contentFadeIn {
-    0% {
-        opacity: 0;
-        transform: translate(-50%, -50%) translateY(10px);
-    }
-    100% {
-        opacity: 1;
-        transform: translate(-50%, -50%) translateY(0);
-    }
-}
-
 /* ========== 画布容器样式 ========== */
 .canvas-container {
     position: absolute;
@@ -588,10 +517,6 @@ body {
     will-change: transform;
 }
 
-.canvas-wrapper.drawing {
-    will-change: transform;
-}
-
 .canvas-wrapper.smooth-transform {
     transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
@@ -616,10 +541,6 @@ body {
     pointer-events: none;
     object-fit: contain;
     image-rendering: pixelated;
-}
-
-.canvas-wrapper.smooth-transform {
-    transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .canvas-draw.drawing {
@@ -681,69 +602,6 @@ body {
     pointer-events: auto;
 }
 
-.pen-control-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.8);
-}
-
-.pen-control-label {
-    min-width: 40px;
-    font-weight: 500;
-}
-
-.pen-slider {
-    width: 80px;
-    height: 4px;
-    accent-color: #3498db;
-    cursor: pointer;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 2px;
-}
-
-.pen-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: #3498db;
-    cursor: pointer;
-    box-shadow: 0 2px 6px rgba(52, 152, 219, 0.4);
-}
-
-.pen-value {
-    min-width: 24px;
-    text-align: center;
-    font-weight: 600;
-    color: #3498db;
-}
-
-.pen-unit {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 10px;
-}
-
-.pen-size-vertical {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-}
-
-.pen-slider-vertical {
-    width: 50px;
-    height: 3px;
-    accent-color: #3498db;
-    cursor: pointer;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 2px;
-    transform: rotate(-90deg);
-    transform-origin: center;
-    margin: 25px 0;
-}
-
 /* 三角形滑块样式 */
 .slider-wrapper {
     position: relative;
@@ -801,39 +659,10 @@ body {
     padding: 0 2px;
 }
 
-.pen-slider-vertical::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: #3498db;
-    cursor: pointer;
-    box-shadow: 0 2px 6px rgba(52, 152, 219, 0.4);
-}
-
 .pen-size-label {
     font-size: 11px;
     font-weight: 500;
     color: #3498db;
-}
-
-.pen-color-picker {
-    width: 32px;
-    height: 24px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    background-color: transparent;
-    padding: 0;
-}
-
-.pen-color-picker::-webkit-color-swatch {
-    border-radius: 4px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-}
-
-.pen-color-picker::-webkit-color-swatch-wrapper {
-    padding: 0;
 }
 
 .pen-color-buttons {
@@ -905,13 +734,6 @@ body {
     font-size: 13px;
 }
 
-.settings-divider {
-    width: 100%;
-    height: 1px;
-    background: rgba(255, 255, 255, 0.15);
-    margin: 4px 0;
-}
-
 .settings-btn {
     display: flex;
     align-items: center;
@@ -929,18 +751,6 @@ body {
 .settings-btn:hover {
     background: rgba(255, 255, 255, 0.1);
     border-color: rgba(52, 152, 219, 0.4);
-}
-
-.settings-btn.settings-toggle {
-    font-size: 13px;
-    padding: 6px 12px;
-    min-width: 40px;
-}
-
-.settings-btn.settings-toggle.active {
-    background: rgba(52, 152, 219, 0.3);
-    border-color: #3498db;
-    color: #3498db;
 }
 
 .toolbar-btn.enhance-btn {
@@ -999,102 +809,11 @@ body {
     box-shadow: none;
 }
 
-/* ========== 摄像头预览窗口 ========== */
-.camera-preview {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 200;
-    display: flex;
-    flex-direction: column;
-    background: rgba(30, 30, 30, 0.95);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    overflow: hidden;
-    min-width: 320px;
-    max-width: 80vw;
-    max-height: 80vh;
-}
-
-.camera-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    background: rgba(255, 255, 255, 0.05);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    color: #fff;
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.camera-close-btn {
-    background: transparent;
-    border: none;
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 18px;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    transition: all 0.2s ease;
-}
-
-.camera-close-btn:hover {
-    background: rgba(255, 71, 87, 0.3);
-    color: #ff4757;
-}
-
-.camera-controls {
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: rgba(255, 255, 255, 0.05);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.camera-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 16px;
-    background: rgba(52, 152, 219, 0.2);
-    border: 1px solid rgba(52, 152, 219, 0.4);
-    border-radius: 8px;
-    color: #fff;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.camera-btn:hover {
-    background: rgba(52, 152, 219, 0.4);
-    border-color: #3498db;
-    transform: translateY(-2px);
-}
-
-.camera-btn:active {
-    transform: translateY(0);
-}
-
 /* ========== 拍照按钮摄像头激活状态 ========== */
 .toolbar-btn.camera-active {
     background: rgba(76, 209, 55, 0.25) !important;
     border-color: #4cd137 !important;
     box-shadow: 0 0 0 2px rgba(76, 209, 55, 0.4), 0 0 12px rgba(76, 209, 55, 0.3) !important;
-}
-
-@keyframes cameraPulse {
-    0%, 100% { 
-        box-shadow: 0 0 0 2px rgba(76, 209, 55, 0.4), 0 0 12px rgba(76, 209, 55, 0.3);
-    }
-    50% { 
-        box-shadow: 0 0 0 3px rgba(76, 209, 55, 0.6), 0 0 20px rgba(76, 209, 55, 0.5);
-    }
 }
 
 /* ========== 加载动画 ========== */
@@ -1163,11 +882,6 @@ body {
     align-items: center;
     z-index: 10000;
     animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
 }
 
 .error-dialog {
