@@ -39,6 +39,10 @@
                 <span class="btn-icon">◉</span>
                 <span class="btn-text" data-i18n="settings.sourceAdjust">信号源调节</span>
             </button>
+            <button class="sidebar-btn" id="btnTheme">
+                <span class="btn-icon">🎨</span>
+                <span class="btn-text" data-i18n="settings.theme">主题</span>
+            </button>
             <button class="sidebar-btn" id="btnAbout">
                 <span class="btn-icon">ℹ</span>
                 <span class="btn-text" data-i18n="settings.about">关于</span>
@@ -65,13 +69,6 @@
                             <div class="select-selected" id="resolutionSelected" data-i18n="common.loading">加载中...</div>
                             <div class="select-options" id="resolutionOptions"></div>
                         </div>
-                    </div>
-                    <div class="setting-item">
-                        <span class="setting-label" data-i18n="settings.simplifiedUI">新版界面</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="simplifiedUIToggle">
-                            <span class="toggle-slider"></span>
-                        </label>
                     </div>
                     <div class="setting-item">
                         <span class="setting-label" data-i18n="settings.settingsManagement">设置管理</span>
@@ -258,6 +255,19 @@
                             <input type="checkbox" id="assocWord" data-ext="word">
                             <span class="toggle-slider"></span>
                         </label>
+                    </div>
+                </div>
+                
+                <div class="page" id="pageTheme">
+                    <h2 class="page-title" data-i18n="settings.theme">主题</h2>
+                    <div class="setting-item">
+                        <span class="setting-label" data-i18n="settings.selectTheme">选择主题</span>
+                        <div class="custom-select" id="themeSelect">
+                            <div class="select-selected" id="themeSelected">深色</div>
+                            <div class="select-options" id="themeOptions">
+                                <div class="select-option" data-value="dark" data-i18n="settings.themeDark">深色</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 

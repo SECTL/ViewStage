@@ -12,6 +12,7 @@
  */
 
 import './batch-draw.js';
+import ThemeManager from './themes/theme.js';
 
 // ==================== 全局变量 ====================
 let lastCanvasTransform = { x: null, y: null, scale: null };
@@ -347,9 +348,6 @@ let state = {
     cameraHeight: 720,             // 摄像头高度
     wasCameraOpenBeforeMinimize: false, // 最小化前摄像头是否开启
     
-    // UI状态
-    simplifiedUI: false,           // 是否启用新版界面
-    
     // 图像管理
     currentImage: null,            // 当前显示的图像 Image 对象
     imageList: [],                 // 图片列表
@@ -574,6 +572,12 @@ window.addEventListener('DOMContentLoaded', async () => {
         }
         
         console.log('画布初始化完成');
+        
+        const startupOverlay = document.getElementById('startupOverlay');
+        if (startupOverlay) {
+            startupOverlay.classList.add('hidden');
+            setTimeout(() => startupOverlay.remove(), 300);
+        }
     } catch (error) {
         console.error('初始化失败:', error);
         showErrorDialog(
@@ -644,11 +648,10 @@ async function loadCameraSetting() {
                 console.log('已加载高帧率绘制设置:', settings.highFrameRate);
             }
             
-            // 加载新版界面设置
-            if (settings.simplifiedUI !== undefined) {
-                state.simplifiedUI = settings.simplifiedUI;
-                applySimplifiedUI(settings.simplifiedUI);
-                console.log('已加载新版界面设置:', settings.simplifiedUI);
+            // 加载主题设置
+            if (settings.theme) {
+                ThemeManager.setTheme(settings.theme);
+                console.log('已加载主题设置:', settings.theme);
             }
             
             // 加载画布背景颜色设置
@@ -3888,17 +3891,6 @@ function saveMergedCanvas() {
     link.click();
     
     releaseOffscreenCanvas(offscreen);
-}
-
-function applySimplifiedUI(enabled) {
-    const toolbar = document.querySelector('.toolbar');
-    if (toolbar) {
-        if (enabled) {
-            toolbar.classList.add('new-ui');
-        } else {
-            toolbar.classList.remove('new-ui');
-        }
-    }
 }
 
 let lastPhotoButtonState = null;

@@ -430,10 +430,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                     highFrameRateToggle.checked = settings.highFrameRate || false;
                 }
                 
-                // 简化UI设置
-                const simplifiedUIToggle = document.getElementById('simplifiedUIToggle');
-                if (simplifiedUIToggle) {
-                    simplifiedUIToggle.checked = settings.simplifiedUI || false;
+                // 主题设置
+                const themeSelected = document.getElementById('themeSelected');
+                const themeOptionsContainer = document.getElementById('themeOptions');
+                if (themeSelected && themeOptionsContainer) {
+                    const savedTheme = settings.theme || 'dark';
+                    const themeOptions = themeOptionsContainer.querySelectorAll('.select-option');
+                    themeOptions.forEach(option => {
+                        if (option.dataset.value === savedTheme) {
+                            themeSelected.textContent = option.textContent;
+                            option.classList.add('selected');
+                        } else {
+                            option.classList.remove('selected');
+                        }
+                    });
                 }
                 
                 // 默认旋转角度设置
@@ -849,16 +859,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     
-    // 简化UI开关
-    const simplifiedUIToggle = document.getElementById('simplifiedUIToggle');
-    if (simplifiedUIToggle) {
-        simplifiedUIToggle.addEventListener('change', async () => {
-            const saved = await saveSettings({ simplifiedUI: simplifiedUIToggle.checked });
-            if (saved) {
-                const restartModal = document.getElementById('restartModal');
-                if (restartModal) {
-                    restartModal.classList.add('active');
-                }
+    // 主题选择
+    const themeSelect = document.getElementById('themeSelect');
+    const themeSelected = document.getElementById('themeSelected');
+    
+    if (themeSelect && themeSelected) {
+        themeSelected.addEventListener('click', () => {
+            themeSelect.classList.toggle('open');
+        });
+        
+        const themeOptions = document.querySelectorAll('#themeOptions .select-option');
+        themeOptions.forEach(option => {
+            option.addEventListener('click', async () => {
+                const value = option.dataset.value;
+                themeSelected.textContent = option.textContent;
+                
+                themeOptions.forEach(opt => opt.classList.remove('selected'));
+                option.classList.add('selected');
+                
+                themeSelect.classList.remove('open');
+                
+                await saveSettings({ theme: value });
+            });
+        });
+        
+        document.addEventListener('click', (e) => {
+            if (!themeSelect.contains(e.target)) {
+                themeSelect.classList.remove('open');
             }
         });
     }
@@ -1274,6 +1301,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 'btnStorage': 'pageStorage',
                 'btnCanvas': 'pageCanvas',
                 'btnSource': 'pageSource',
+                'btnTheme': 'pageTheme',
                 'btnAbout': 'pageAbout'
             };
             
