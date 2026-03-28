@@ -41,7 +41,7 @@ const defaultConfig = {
     defaultCamera: "",
     cameraWidth: 1280,
     cameraHeight: 720,
-    pdfScale: 1.5,
+    pdfScale: 2,
     canvasScale: 2,
     dprLimit: 2,
     highResOptimization: false,

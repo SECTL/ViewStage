@@ -1,8 +1,8 @@
 {
-  "name": "dark",
-  "displayName": "深色主题",
-  "showToolbarText": true,
-  "canvasBgColor": "#2a2a2a",
+  "name": "simplify",
+  "displayName": "简化主题",
+  "showToolbarText": false,
+  "canvasBgColor": "#ffffff",
   "icons": {
     "menu": "justify",
     "minimize": "box-arrow-in-down-left",

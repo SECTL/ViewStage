@@ -29,7 +29,7 @@
                 <span class="btn-text" data-i18n="settings.appSettings">应用设置</span>
             </button>
             <button class="sidebar-btn" id="btnStorage">
-                <span class="btn-icon"><img data-icon="folder" width="16" height="16" style="filter: invert(1);"></span>
+                <span class="btn-icon"><img data-icon="folder" width="16" height="16"></span>
                 <span class="btn-text" data-i18n="settings.storage">存储</span>
             </button>
             <button class="sidebar-btn" id="btnCanvas">
@@ -90,17 +90,6 @@
                         <div class="slider-container">
                             <input type="range" id="canvasScaleSlider" min="1" max="3" step="0.5" value="2" class="slider">
                             <span class="slider-value" id="canvasScaleValue">2x</span>
-                        </div>
-                    </div>
-                    <div class="setting-item">
-                        <span class="setting-label" data-i18n="settings.backgroundColor">画布背景颜色</span>
-                        <div class="custom-select" id="bgColorSelect">
-                            <div class="select-selected" id="bgColorSelected">深灰</div>
-                            <div class="select-options" id="bgColorOptions">
-                                <div class="select-option" data-value="#000000">黑色</div>
-                                <div class="select-option" data-value="#2a2a2a">深灰</div>
-                                <div class="select-option" data-value="#ffffff">白色</div>
-                            </div>
                         </div>
                     </div>
                     <div class="setting-item">
@@ -214,13 +203,15 @@
                     <div class="setting-item">
                         <span class="setting-label" data-i18n="settings.pdfOutputResolution">PDF 输出分辨率</span>
                         <div class="custom-select" id="pdfScaleSelect">
-                            <div class="select-selected" id="pdfScaleSelected">1.5x</div>
+                            <div class="select-selected" id="pdfScaleSelected">2x</div>
                             <div class="select-options" id="pdfScaleOptions">
-                                <div class="select-option" data-value="1">1x (<span data-i18n="settings.resolutionLow">低</span>)</div>
-                                <div class="select-option" data-value="1.5">1.5x (<span data-i18n="settings.resolutionMedium">中</span>)</div>
-                                <div class="select-option" data-value="2">2x (<span data-i18n="settings.resolutionHigh">高</span>)</div>
-                                <div class="select-option" data-value="2.5">2.5x (<span data-i18n="settings.resolutionVeryHigh">超高</span>)</div>
-                                <div class="select-option" data-value="3">3x (<span data-i18n="settings.resolutionMax">最高</span>)</div>
+                                <div class="select-option" data-value="2">2x (<span data-i18n="settings.resolutionStandard">标准</span>)</div>
+                                <div class="select-option" data-value="2.5">2.5x (<span data-i18n="settings.resolutionMedium">中</span>)</div>
+                                <div class="select-option" data-value="3">3x (<span data-i18n="settings.resolutionHigh">高</span>)</div>
+                                <div class="select-option" data-value="4">4x (<span data-i18n="settings.resolutionVeryHigh">超高</span>)</div>
+                                <div class="select-option" data-value="5">5x (<span data-i18n="settings.resolutionMax">最高</span>)</div>
+                                <div class="select-option" data-value="7">7x (<span data-i18n="settings.resolutionUltra">极致</span>)</div>
+                                <div class="select-option" data-value="8">8x (<span data-i18n="settings.resolutionExtreme">极限</span>)</div>
                             </div>
                         </div>
                     </div>
@@ -267,6 +258,7 @@
                             <div class="select-selected" id="themeSelected">深色</div>
                             <div class="select-options" id="themeOptions">
                                 <div class="select-option" data-value="dark" data-i18n="settings.themeDark">深色</div>
+                                <div class="select-option" data-value="simplify" data-i18n="settings.themeSimplify">简化</div>
                             </div>
                         </div>
                     </div>

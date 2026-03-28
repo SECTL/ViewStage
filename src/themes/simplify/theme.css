@@ -16,12 +16,12 @@
 .toolbar-right {
     display: inline-flex;
     align-items: center;
-    gap: 0;
-    padding: 6px 12px;
-    background: rgba(60, 60, 60, 0.85);
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    gap: 2px;
+    padding: 4px;
+    background: rgba(240, 240, 240, 0.95);
+    border-radius: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
     flex: none;
     transition: background 0.3s ease;
     pointer-events: auto;
@@ -55,61 +55,66 @@
 }
 
 .toolbar-separator {
-    width: 2px;
-    height: 35px;
-    background: rgba(255, 255, 255, 0.3);
-    margin: 0 0;
+    width: 1px;
+    height: 24px;
+    background: rgba(0, 0, 0, 0.15);
+    margin: 0 4px;
     border-radius: 1px;
 }
 
 .toolbar-btn {
     background: transparent;
     border: 1px solid transparent;
-    color: #FFFFFF;
-    padding: 8px 8px;
-    border-radius: 6px;
+    color: #333333;
+    padding: 8px;
+    border-radius: 4px;
     cursor: pointer;
     font-size: 10px;
-    transition: all 0.3s ease;
-    min-height: 52px;
-    min-width: 48px;
+    transition: all 0.2s ease;
+    min-height: 36px;
+    min-width: 36px;
     touch-action: manipulation;
     user-select: none;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     position: relative;
     overflow: hidden;
 }
 
 .toolbar-btn:hover {
-    background: rgba(150, 150, 150, 0.3);
-    border-color: rgba(150, 150, 150, 0.6);
+    background: rgba(0, 0, 0, 0.06);
+    border-color: rgba(0, 0, 0, 0.1);
 }
 
 .toolbar-btn:active {
-    background: rgba(255, 255, 255, 0.18);
-    transform: translateY(0);
+    background: rgba(0, 0, 0, 0.1);
+    transform: scale(0.95);
     transition: all 0.1s ease;
 }
 
 .toolbar-btn.active,
 .toolbar-btn.primary-btn {
-    background: rgba(133, 143, 149, 0.4);
-    border-color: #ffffff;
-    box-shadow: 0 0 0 2px rgba(133, 143, 149, 0.4);
+    background: rgba(52, 152, 219, 0.15);
+    border-color: rgba(52, 152, 219, 0.3);
 }
 
 .toolbar-btn svg {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     flex-shrink: 0;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
 }
 
 .toolbar-btn img {
-    filter: invert(1) !important;
+    width: 18px;
+    height: 18px;
+    filter: none !important;
+}
+
+.toolbar-btn:hover img {
+    opacity: 0.7;
 }
 
 .toolbar-btn:disabled {
@@ -125,8 +130,8 @@
 }
 
 .toolbar.hide-text .toolbar-btn {
-    min-height: 40px;
-    min-width: 40px;
+    min-height: 36px;
+    min-width: 36px;
     padding: 8px;
 }
 
@@ -141,10 +146,10 @@
     justify-content: flex-start;
     gap: 8px;
     padding: 12px;
-    background: rgba(60, 60, 60, 0.85);
+    background: rgba(245, 245, 245, 0.95);
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     flex: none;
     transition: background 0.3s ease;
     width: 180px;
@@ -201,9 +206,9 @@
 .sidebar-header {
     font-size: 14px;
     font-weight: 500;
-    color: #fff;
+    color: #333;
     padding: 8px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
     margin-bottom: 8px;
     display: flex;
     align-items: flex-start;
@@ -229,7 +234,7 @@
 }
 
 .sidebar-empty {
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(0, 0, 0, 0.4);
     font-size: 13px;
     text-align: center;
     padding: 20px 0;
@@ -303,21 +308,17 @@
     gap: 6px;
     padding: 10px;
     margin-top: 8px;
-    background: rgba(52, 152, 219, 0.2);
-    border: 1px solid rgba(52, 152, 219, 0.4);
+    background: rgba(52, 152, 219, 0.15);
+    border: 1px solid rgba(52, 152, 219, 0.3);
     border-radius: 8px;
-    color: #fff;
+    color: #333;
     font-size: 13px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
-.sidebar-import-btn img {
-    filter: invert(1) !important;
-}
-
 .sidebar-import-btn:hover {
-    background: rgba(52, 152, 219, 0.4);
+    background: rgba(52, 152, 219, 0.25);
     border-color: #3498db;
 }
 
@@ -327,18 +328,18 @@
     gap: 8px;
     width: 100%;
     padding: 12px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.03);
+    border: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 8px;
-    color: #fff;
+    color: #333;
     font-size: 13px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
 .sidebar-action-btn:hover {
-    background: rgba(52, 152, 219, 0.2);
-    border-color: rgba(52, 152, 219, 0.4);
+    background: rgba(52, 152, 219, 0.1);
+    border-color: rgba(52, 152, 219, 0.3);
 }
 
 .sidebar-folder-item {
@@ -346,7 +347,7 @@
     align-items: center;
     gap: 8px;
     padding: 12px;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.03);
     border: 1px solid transparent;
     border-radius: 8px;
     cursor: pointer;
@@ -358,17 +359,17 @@
     flex-shrink: 0;
     width: 16px;
     height: 16px;
-    filter: invert(1) !important;
+    filter: none !important;
 }
 
 .sidebar-folder-item:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(52, 152, 219, 0.4);
+    background: rgba(52, 152, 219, 0.1);
+    border-color: rgba(52, 152, 219, 0.3);
 }
 
 .folder-name {
     flex: 1;
-    color: #fff;
+    color: #333;
     font-size: 13px;
     word-wrap: break-word;
     word-break: break-all;
@@ -376,14 +377,14 @@
 }
 
 .folder-count {
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(0, 0, 0, 0.5);
     font-size: 12px;
 }
 
 .folder-back-btn {
     background: none;
     border: none;
-    color: #fff;
+    color: #333;
     font-size: 16px;
     cursor: pointer;
     padding: 0 8px 0 0;
@@ -394,7 +395,7 @@
     bottom: 4px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(60, 60, 60, 0.7);
+    background: rgba(0, 0, 0, 0.6);
     color: #fff;
     font-size: 11px;
     padding: 2px 6px;
@@ -410,12 +411,12 @@
     align-items: center;
     gap: 4px;
     padding: 10px 12px;
-    background: rgba(60, 60, 60, 0.7);
+    background: rgba(245, 245, 245, 0.95);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
     opacity: 0;
     visibility: hidden;
     transform: translateY(10px);
@@ -529,12 +530,12 @@
     flex-direction: column;
     gap: 4px;
     padding: 8px;
-    background: rgba(60, 60, 60, 0.7);
+    background: rgba(245, 245, 245, 0.95);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
     opacity: 0;
     visibility: hidden;
     transform: translateY(10px);
@@ -556,7 +557,7 @@
 }
 
 .settings-label {
-    color: rgba(255, 255, 255, 0.8);
+    color: rgba(0, 0, 0, 0.7);
     font-size: 13px;
 }
 
@@ -565,18 +566,18 @@
     align-items: center;
     justify-content: center;
     padding: 10px 14px;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.05);
     border: 1px solid transparent;
     border-radius: 8px;
-    color: #fff;
+    color: #333;
     font-size: 18px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
 .settings-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(52, 152, 219, 0.4);
+    background: rgba(0, 0, 0, 0.08);
+    border-color: rgba(52, 152, 219, 0.3);
 }
 
 .menu-popup {
@@ -588,12 +589,12 @@
     flex-direction: column;
     gap: 4px;
     padding: 8px;
-    background: rgba(30, 30, 30, 0.95);
+    background: rgba(250, 250, 250, 0.98);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
     animation: menuSlideUp 0.2s ease;
 }
 
@@ -613,10 +614,10 @@
     align-items: center;
     gap: 8px;
     padding: 10px 16px;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.03);
     border: 1px solid transparent;
     border-radius: 8px;
-    color: #fff;
+    color: #333;
     font-size: 13px;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -624,10 +625,10 @@
 }
 
 .menu-item:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(52, 152, 219, 0.4);
+    background: rgba(52, 152, 219, 0.1);
+    border-color: rgba(52, 152, 219, 0.3);
 }
 
 .menu-item img {
-    filter: invert(1) !important;
+    filter: none !important;
 }

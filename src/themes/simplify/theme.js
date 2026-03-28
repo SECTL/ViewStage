@@ -1,20 +1,20 @@
-const DarkTheme = {
-  name: 'dark',
+const SimplifyTheme = {
+  name: 'simplify',
   config: null,
   
   async load() {
-    const response = await fetch('themes/dark/theme.json');
+    const response = await fetch('themes/simplify/theme.json');
     this.config = await response.json();
     
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = 'themes/dark/theme.css';
+    link.href = 'themes/simplify/theme.css';
     document.head.appendChild(link);
   },
   
   getIconPath(iconName) {
     const actualName = this.config?.icons?.[iconName] || iconName;
-    return `themes/dark/icons/${actualName}.svg`;
+    return `themes/simplify/icons/${actualName}.svg`;
   },
   
   getShowToolbarText() {
@@ -22,8 +22,8 @@ const DarkTheme = {
   },
   
   getCanvasBgColor() {
-    return this.config?.canvasBgColor || '#2a2a2a';
+    return this.config?.canvasBgColor || '#ffffff';
   }
 };
 
-export default DarkTheme;
+export default SimplifyTheme;

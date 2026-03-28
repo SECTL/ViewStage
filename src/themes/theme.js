@@ -4,7 +4,7 @@ const ThemeManager = {
   userThemePath: null,
   loadCss: true,
 
-  async init(themeName = 'dark') {
+  async init(themeName = 'simplify') {
     this.loadCss = !window.location.pathname.includes('settings.html');
     await this.setTheme(themeName);
   },
@@ -44,6 +44,7 @@ const ThemeManager = {
       if (this.loadCss && this.currentThemeModule.load) {
         await this.currentThemeModule.load();
       }
+      this.applyToolbarTextVisibility();
       this.loadIcons();
     } catch (error) {
       console.error(`Failed to load theme: ${themeName}`, error);
@@ -51,7 +52,7 @@ const ThemeManager = {
   },
 
   isBuiltInTheme(themeName) {
-    const builtInThemes = ['dark'];
+    const builtInThemes = ['dark', 'simplify'];
     return builtInThemes.includes(themeName);
   },
 
@@ -90,12 +91,45 @@ const ThemeManager = {
       getIconPath(iconName) {
         const actualName = this.config?.icons?.[iconName] || iconName;
         return convertFileSrc(`${this.themeDir}/icons/${actualName}.svg`);
+      },
+      
+      getShowToolbarText() {
+        return this.config?.showToolbarText !== false;
+      },
+      
+      getCanvasBgColor() {
+        return this.config?.canvasBgColor || '#2a2a2a';
       }
     };
   },
 
   getTheme() {
     return this.currentTheme;
+  },
+
+  getShowToolbarText() {
+    if (this.currentThemeModule && this.currentThemeModule.getShowToolbarText) {
+      return this.currentThemeModule.getShowToolbarText();
+    }
+    return true;
+  },
+
+  getCanvasBgColor() {
+    if (this.currentThemeModule && this.currentThemeModule.getCanvasBgColor) {
+      return this.currentThemeModule.getCanvasBgColor();
+    }
+    return '#2a2a2a';
+  },
+
+  applyToolbarTextVisibility() {
+    const toolbar = document.querySelector('.toolbar');
+    if (toolbar) {
+      if (this.getShowToolbarText()) {
+        toolbar.classList.remove('hide-text');
+      } else {
+        toolbar.classList.add('hide-text');
+      }
+    }
   },
 
   getIconPath(iconName) {

@@ -113,7 +113,7 @@ const DRAW_CONFIG = {
     renderH: 1080,                 // 渲染分辨率高度
     canvasScale: 2,                // 画布相对屏幕的缩放倍数
     dpr: Math.min(window.devicePixelRatio || 1, 2),  // 设备像素比
-    pdfScale: 1.5,                 // PDF 渲染缩放比例
+    pdfScale: 2,                   // PDF 渲染缩放比例
     imageSmoothingQuality: 'high', // 图像平滑质量
     baseDpr: Math.min(window.devicePixelRatio || 1, 2), // 基础设备像素比
     canvasBgColor: '#2a2a2a',      // 画布背景颜色
@@ -649,17 +649,15 @@ async function loadCameraSetting() {
             }
             
             // 加载主题设置
-            if (settings.theme) {
-                ThemeManager.setTheme(settings.theme);
-                console.log('已加载主题设置:', settings.theme);
-            }
+            const themeName = settings.theme || 'simplify';
+            await ThemeManager.setTheme(themeName);
+            console.log('已加载主题设置:', themeName);
             
-            // 加载画布背景颜色设置
-            if (settings.canvasBgColor) {
-                DRAW_CONFIG.canvasBgColor = settings.canvasBgColor;
-                updateCanvasBgColor(settings.canvasBgColor);
-                console.log('已加载画布背景颜色:', settings.canvasBgColor);
-            }
+            // 从主题获取画布背景颜色
+            const canvasBgColor = ThemeManager.getCanvasBgColor();
+            DRAW_CONFIG.canvasBgColor = canvasBgColor;
+            updateCanvasBgColor(canvasBgColor);
+            console.log('已加载画布背景颜色:', canvasBgColor);
         } catch (error) {
             console.error('加载摄像头设置失败:', error);
         }
@@ -790,13 +788,6 @@ function listenForPdfFileOpen() {
             });
             updateColorButtons();
             console.log('画笔颜色已更改:', DRAW_CONFIG.penColors);
-        }
-        
-        // 画布背景颜色更改
-        if (settings.canvasBgColor) {
-            DRAW_CONFIG.canvasBgColor = settings.canvasBgColor;
-            updateCanvasBgColor(settings.canvasBgColor);
-            console.log('画布背景颜色已更改:', settings.canvasBgColor);
         }
         
         if (needRestartCamera && state.isCameraOpen) {
@@ -1666,11 +1657,11 @@ function showMenu() {
     menuPopup.className = 'menu-popup';
     menuPopup.innerHTML = `
         <button class="menu-item" id="menuSettings">
-            ${ThemeManager.getIcon('settings', { alt: window.i18n?.t('toolbar.settings') || '设置', style: 'filter: invert(1);' })}
+            ${ThemeManager.getIcon('settings', { alt: window.i18n?.t('toolbar.settings') || '设置' })}
             ${window.i18n?.t('toolbar.settings') || '设置'}
         </button>
         <button class="menu-item" id="menuClose">
-            ${ThemeManager.getIcon('close', { alt: window.i18n?.t('common.close') || '关闭', style: 'filter: invert(1);' })}
+            ${ThemeManager.getIcon('close', { alt: window.i18n?.t('common.close') || '关闭' })}
             ${window.i18n?.t('common.close') || '关闭'}
         </button>
     `;
@@ -3904,19 +3895,20 @@ function updatePhotoButtonState() {
     
     const photoText = window.i18n?.t('toolbar.photo') || '拍照';
     const switchToCameraText = window.i18n?.t('camera.switchToCamera') || '切换到摄像头';
+    const showText = ThemeManager.getShowToolbarText();
     
     if (state.isCameraOpen) {
         newState = 'camera';
-        html = `${ThemeManager.getIcon('camera', { alt: photoText, style: 'filter: invert(1);' })}${photoText}`;
+        html = `${ThemeManager.getIcon('camera', { alt: photoText })}${showText ? photoText : ''}`;
         title = window.i18n?.t('camera.captureFrame') || '捕获摄像头画面';
     } else if ((state.currentImageIndex >= 0 && state.imageList.length > 0) || 
                (state.currentFolderIndex >= 0 && state.currentFolderPageIndex >= 0)) {
         newState = 'switch';
-        html = `${ThemeManager.getIcon('camera-fill', { alt: switchToCameraText, style: 'filter: invert(1);' })}${switchToCameraText}`;
+        html = `${ThemeManager.getIcon('camera-fill', { alt: switchToCameraText })}${showText ? switchToCameraText : ''}`;
         title = window.i18n?.t('camera.switchToCamera') || '返回摄像头';
     } else {
         newState = 'save';
-        html = `${ThemeManager.getIcon('camera', { alt: photoText, style: 'filter: invert(1);' })}${photoText}`;
+        html = `${ThemeManager.getIcon('camera', { alt: photoText })}${showText ? photoText : ''}`;
         title = window.i18n?.t('camera.saveScreenshot') || '保存画布截图';
     }
     
@@ -4176,7 +4168,7 @@ function expandSidebar() {
             ${imageListHTML}
         </div>
         <button class="sidebar-import-btn" id="btnImportImageSidebar">
-            ${ThemeManager.getIcon('image', { alt: importImageText, style: 'filter: invert(1);' })}
+            ${ThemeManager.getIcon('image', { alt: importImageText })}
             ${importImageText}
         </button>
     `;
@@ -4195,9 +4187,10 @@ function expandSidebar() {
         item.addEventListener('click', () => selectImage(index));
     });
     
+    const showText = ThemeManager.getShowToolbarText();
     dom.btnExpand.innerHTML = `
-        ${ThemeManager.getIcon('collapse', { alt: collapseText, style: 'filter: invert(1);' })}
-        ${collapseText}
+        ${ThemeManager.getIcon('collapse', { alt: collapseText })}
+        ${showText ? collapseText : ''}
     `;
     console.log('展开侧边栏');
 }
@@ -4454,9 +4447,10 @@ function collapseSidebar() {
     }
     
     const imageText = window.i18n?.t('toolbar.image') || '图片';
+    const showText = ThemeManager.getShowToolbarText();
     dom.btnExpand.innerHTML = `
-        ${ThemeManager.getIcon('image', { alt: imageText, style: 'filter: invert(1);' })}
-        ${imageText}
+        ${ThemeManager.getIcon('image', { alt: imageText })}
+        ${showText ? imageText : ''}
     `;
     console.log('收起侧边栏');
 }
@@ -4503,7 +4497,7 @@ function expandFileSidebar() {
             const pagesText = window.i18n?.t('sidebar.pages', { n: folder.pages.length }) || `${folder.pages.length}页`;
             contentHTML += `
                 <div class="sidebar-folder-item" data-index="${index}">
-                    ${ThemeManager.getIcon(iconName, { alt: fileAlt, style: 'filter: invert(1);' })}
+                    ${ThemeManager.getIcon(iconName, { alt: fileAlt })}
                     <span class="folder-name">${folder.name}</span>
                     <span class="folder-count">${pagesText}</span>
                 </div>
@@ -4517,7 +4511,7 @@ function expandFileSidebar() {
             ${contentHTML}
         </div>
         <button class="sidebar-import-btn" id="btnAddFile">
-            ${ThemeManager.getIcon('addFile', { alt: addFileText, style: 'filter: invert(1);' })}
+            ${ThemeManager.getIcon('addFile', { alt: addFileText })}
             ${addFileText}
         </button>
     `;
@@ -4535,9 +4529,10 @@ function expandFileSidebar() {
         });
     });
     
+    const showText = ThemeManager.getShowToolbarText();
     dom.btnSave.innerHTML = `
-        ${ThemeManager.getIcon('collapse', { alt: collapseText, style: 'filter: invert(1);' })}
-        ${collapseText}
+        ${ThemeManager.getIcon('collapse', { alt: collapseText })}
+        ${showText ? collapseText : ''}
     `;
     console.log('展开文件侧边栏');
     
@@ -4761,7 +4756,7 @@ function updateFileSidebarContent() {
             const pagesText = window.i18n?.t('sidebar.pages', { n: folder.pages.length }) || `${folder.pages.length}页`;
             contentHTML += `
                 <div class="sidebar-folder-item" data-index="${index}">
-                    ${ThemeManager.getIcon(iconName, { alt: fileAlt, style: 'filter: invert(1);' })}
+                    ${ThemeManager.getIcon(iconName, { alt: fileAlt })}
                     <span class="folder-name">${folder.name}</span>
                     <span class="folder-count">${pagesText}</span>
                 </div>
@@ -5094,9 +5089,10 @@ function collapseFileSidebar() {
     }
     
     const fileText = window.i18n?.t('toolbar.file') || '文件';
+    const showText = ThemeManager.getShowToolbarText();
     dom.btnSave.innerHTML = `
-        ${ThemeManager.getIcon('file', { alt: fileText, style: 'filter: invert(1);' })}
-        ${fileText}
+        ${ThemeManager.getIcon('file', { alt: fileText })}
+        ${showText ? fileText : ''}
     `;
     console.log('收起文件侧边栏');
 }
