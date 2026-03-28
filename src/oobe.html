@@ -40,6 +40,16 @@
                     </div>
                 </div>
             </div>
+            <div class="setting-item">
+                <span class="setting-label" data-i18n="settings.theme">主题</span>
+                <div class="custom-select" id="themeSelect">
+                    <div class="select-selected" id="themeSelected">简化</div>
+                    <div class="select-options" id="themeOptions">
+                        <div class="select-option" data-value="dark" data-i18n="settings.themeDark">深色</div>
+                        <div class="select-option selected" data-value="simplify" data-i18n="settings.themeSimplify">简化</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <button class="btn-start" id="btnNext1" data-i18n="common.next">下一步</button>
@@ -83,13 +93,6 @@
                     <div class="select-options" id="resolutionOptions"></div>
                 </div>
             </div>
-            <div class="setting-item">
-                <span class="setting-label" data-i18n="settings.highResOptimization">高分辨率优化</span>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="highResOptimizationToggle">
-                    <span class="toggle-slider"></span>
-                </label>
-            </div>
         </div>
 
         <div class="page-nav">
@@ -113,13 +116,6 @@
                     <div class="select-selected" id="cameraResolutionSelected" data-i18n="common.loading">加载中...</div>
                     <div class="select-options" id="cameraResolutionOptions"></div>
                 </div>
-            </div>
-            <div class="setting-item">
-                <span class="setting-label" data-i18n="oobe.defaultOpenMethod">默认打开方式</span>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="assocPdf">
-                    <span class="toggle-slider"></span>
-                </label>
             </div>
         </div>
 

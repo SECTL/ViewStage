@@ -143,9 +143,8 @@
     "basicSettings": "基本設定",
     "setupComplete": "設定完成",
     "configSaved": "設定已儲存，點擊下方按鈕重新啟動應用",
-    "restartApp": "重新啟動應用",
-    "clickToStart": "點擊任意位置開始設定",
-    "defaultOpenMethod": "預設開啟方式"
+    "restartApp": "重啟應用",
+    "clickToStart": "點擊任意位置開始設置"
   },
   "about": {
     "description": "ViewStage 是一款用於影片演示和文件批註的應用程式。",

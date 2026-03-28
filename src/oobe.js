@@ -38,13 +38,13 @@ const defaultConfig = {
     width: 1920,
     height: 1080,
     language: "zh-CN",
+    theme: "simplify",
     defaultCamera: "",
     cameraWidth: 1280,
     cameraHeight: 720,
     pdfScale: 2,
     canvasScale: 2,
     dprLimit: 2,
-    highResOptimization: false,
     penColors: [
         {"r": 52, "g": 152, "b": 219},
         {"r": 46, "g": 204, "b": 113},
@@ -61,8 +61,7 @@ const defaultConfig = {
         {"r": 121, "g": 85, "b": 72},
         {"r": 0, "g": 0, "b": 0},
         {"r": 255, "g": 255, "b": 255}
-    ],
-    fileAssociations: false
+    ]
 };
 
 function generateRandomColor() {
@@ -337,9 +336,13 @@ function initDocumentClickHandler() {
 function setupPage1Buttons() {
     document.getElementById('btnNext1').addEventListener('click', async () => {
         const languageSelect = document.getElementById('languageSelect');
+        const themeSelect = document.getElementById('themeSelect');
+        
         const language = languageSelect.querySelector('.select-option.selected').dataset.value;
+        const theme = themeSelect.querySelector('.select-option.selected').dataset.value;
 
         cachedSettings.language = language;
+        cachedSettings.theme = theme;
         showPage2();
     });
 }
@@ -406,14 +409,12 @@ function setupPage3Buttons() {
 
     document.getElementById('btnNext3').addEventListener('click', async () => {
         const resolutionSelect = document.getElementById('resolutionSelect');
-        const highResOptimizationToggle = document.getElementById('highResOptimizationToggle');
         
         const resolution = resolutionSelect.querySelector('.select-option.selected').dataset.value;
         const [width, height] = resolution.split('x').map(Number);
         
         cachedSettings.width = width;
         cachedSettings.height = height;
-        cachedSettings.highResOptimization = highResOptimizationToggle ? highResOptimizationToggle.checked : false;
         
         showPage4();
     });
@@ -598,7 +599,6 @@ function setupPage4Buttons() {
     document.getElementById('btnNext4').addEventListener('click', async () => {
         const cameraSelect = document.getElementById('cameraSelect');
         const cameraResolutionSelect = document.getElementById('cameraResolutionSelect');
-        const assocPdf = document.getElementById('assocPdf');
         
         const cameraOption = cameraSelect.querySelector('.select-option.selected');
         if (cameraOption) {
@@ -610,8 +610,6 @@ function setupPage4Buttons() {
             cachedSettings.cameraWidth = parseInt(resolutionOption.dataset.width);
             cachedSettings.cameraHeight = parseInt(resolutionOption.dataset.height);
         }
-        
-        cachedSettings.fileAssociations = assocPdf.checked;
         
         const finalSettings = mergeSettings(cachedSettings);
         

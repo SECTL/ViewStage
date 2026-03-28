@@ -144,8 +144,7 @@
     "setupComplete": "设置完成",
     "configSaved": "配置已保存，点击下方按钮重启应用",
     "restartApp": "重启应用",
-    "clickToStart": "点击任意位置开始设置",
-    "defaultOpenMethod": "默认打开方式"
+    "clickToStart": "点击任意位置开始设置"
   },
   "about": {
     "description": "ViewStage 是一款用于视频演示和文档批注的应用程序。",
