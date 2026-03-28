@@ -1,0 +1,24 @@
+{
+  "name": "dark",
+  "displayName": "深色主题",
+  "icons": {
+    "menu": "justify",
+    "minimize": "box-arrow-in-down-left",
+    "move": "move",
+    "pen": "pen",
+    "eraser": "eraser",
+    "undo": "reply",
+    "clear": "file-earmark-break",
+    "camera": "camera",
+    "camera-fill": "camera-fill",
+    "settings": "gear",
+    "image": "file-earmark-medical",
+    "file": "File",
+    "folder": "folder",
+    "close": "arrow-bar-left",
+    "collapse": "caret-down-fill",
+    "addFile": "file-earmark",
+    "word": "file-earmark-word-fill",
+    "pdf": "pdf"
+  }
+}

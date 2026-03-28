@@ -1666,11 +1666,11 @@ function showMenu() {
     menuPopup.className = 'menu-popup';
     menuPopup.innerHTML = `
         <button class="menu-item" id="menuSettings">
-            <img src="assets/icon/gear.svg" width="16" height="16" alt="${window.i18n?.t('toolbar.settings') || '设置'}" style="filter: invert(1);">
+            ${ThemeManager.getIcon('settings', { alt: window.i18n?.t('toolbar.settings') || '设置', style: 'filter: invert(1);' })}
             ${window.i18n?.t('toolbar.settings') || '设置'}
         </button>
-        <button class="menu-item menu-item-danger" id="menuClose">
-            <img src="assets/icon/arrow-bar-left.svg" width="16" height="16" alt="${window.i18n?.t('common.close') || '关闭'}" style="filter: invert(1);">
+        <button class="menu-item" id="menuClose">
+            ${ThemeManager.getIcon('close', { alt: window.i18n?.t('common.close') || '关闭', style: 'filter: invert(1);' })}
             ${window.i18n?.t('common.close') || '关闭'}
         </button>
     `;
@@ -3907,16 +3907,16 @@ function updatePhotoButtonState() {
     
     if (state.isCameraOpen) {
         newState = 'camera';
-        html = `<img src="assets/icon/camera.svg" width="16" height="16" alt="${photoText}" style="filter: invert(1);">${photoText}`;
+        html = `${ThemeManager.getIcon('camera', { alt: photoText, style: 'filter: invert(1);' })}${photoText}`;
         title = window.i18n?.t('camera.captureFrame') || '捕获摄像头画面';
     } else if ((state.currentImageIndex >= 0 && state.imageList.length > 0) || 
                (state.currentFolderIndex >= 0 && state.currentFolderPageIndex >= 0)) {
         newState = 'switch';
-        html = `<img src="assets/icon/camera-fill.svg" width="16" height="16" alt="${switchToCameraText}" style="filter: invert(1);">${switchToCameraText}`;
+        html = `${ThemeManager.getIcon('camera-fill', { alt: switchToCameraText, style: 'filter: invert(1);' })}${switchToCameraText}`;
         title = window.i18n?.t('camera.switchToCamera') || '返回摄像头';
     } else {
         newState = 'save';
-        html = `<img src="assets/icon/camera.svg" width="16" height="16" alt="${photoText}" style="filter: invert(1);">${photoText}`;
+        html = `${ThemeManager.getIcon('camera', { alt: photoText, style: 'filter: invert(1);' })}${photoText}`;
         title = window.i18n?.t('camera.saveScreenshot') || '保存画布截图';
     }
     
@@ -4176,7 +4176,7 @@ function expandSidebar() {
             ${imageListHTML}
         </div>
         <button class="sidebar-import-btn" id="btnImportImageSidebar">
-            <img src="assets/icon/file-earmark-medical.svg" width="16" height="16" alt="${importImageText}" style="filter: invert(1);">
+            ${ThemeManager.getIcon('image', { alt: importImageText, style: 'filter: invert(1);' })}
             ${importImageText}
         </button>
     `;
@@ -4196,7 +4196,7 @@ function expandSidebar() {
     });
     
     dom.btnExpand.innerHTML = `
-        <img src="assets/icon/caret-down-fill.svg" width="16" height="16" alt="${collapseText}" style="filter: invert(1);">
+        ${ThemeManager.getIcon('collapse', { alt: collapseText, style: 'filter: invert(1);' })}
         ${collapseText}
     `;
     console.log('展开侧边栏');
@@ -4455,7 +4455,7 @@ function collapseSidebar() {
     
     const imageText = window.i18n?.t('toolbar.image') || '图片';
     dom.btnExpand.innerHTML = `
-        <img src="assets/icon/file-earmark-medical.svg" width="16" height="16" alt="${imageText}" style="filter: invert(1);">
+        ${ThemeManager.getIcon('image', { alt: imageText, style: 'filter: invert(1);' })}
         ${imageText}
     `;
     console.log('收起侧边栏');
@@ -4498,14 +4498,12 @@ function expandFileSidebar() {
     } else {
         state.fileList.forEach((folder, index) => {
             const isWord = folder.isWord === true;
-            const iconSrc = isWord 
-                ? 'assets/icon/file-earmark-word-fill.svg' 
-                : 'assets/icon/pdf.svg';
+            const iconName = isWord ? 'word' : 'pdf';
             const fileAlt = window.i18n?.t('toolbar.file') || '文件';
             const pagesText = window.i18n?.t('sidebar.pages', { n: folder.pages.length }) || `${folder.pages.length}页`;
             contentHTML += `
                 <div class="sidebar-folder-item" data-index="${index}">
-                    <img src="${iconSrc}" width="16" height="16" alt="${fileAlt}" style="filter: invert(1);">
+                    ${ThemeManager.getIcon(iconName, { alt: fileAlt, style: 'filter: invert(1);' })}
                     <span class="folder-name">${folder.name}</span>
                     <span class="folder-count">${pagesText}</span>
                 </div>
@@ -4519,7 +4517,7 @@ function expandFileSidebar() {
             ${contentHTML}
         </div>
         <button class="sidebar-import-btn" id="btnAddFile">
-            <img src="assets/icon/file-earmark.svg" width="16" height="16" alt="${addFileText}" style="filter: invert(1);">
+            ${ThemeManager.getIcon('addFile', { alt: addFileText, style: 'filter: invert(1);' })}
             ${addFileText}
         </button>
     `;
@@ -4538,7 +4536,7 @@ function expandFileSidebar() {
     });
     
     dom.btnSave.innerHTML = `
-        <img src="assets/icon/caret-down-fill.svg" width="16" height="16" alt="${collapseText}" style="filter: invert(1);">
+        ${ThemeManager.getIcon('collapse', { alt: collapseText, style: 'filter: invert(1);' })}
         ${collapseText}
     `;
     console.log('展开文件侧边栏');
@@ -4757,15 +4755,13 @@ function updateFileSidebarContent() {
     } else {
         state.fileList.forEach((folder, index) => {
             const isWord = folder.isWord === true;
-            const iconSrc = isWord 
-                ? 'assets/icon/file-earmark-word-fill.svg' 
-                : 'assets/icon/pdf.svg';
-            console.log(`文件夹 ${folder.name}: isWord=${isWord}, iconSrc=${iconSrc}`);
+            const iconName = isWord ? 'word' : 'pdf';
+            console.log(`文件夹 ${folder.name}: isWord=${isWord}, iconName=${iconName}`);
             const fileAlt = window.i18n?.t('toolbar.file') || '文件';
             const pagesText = window.i18n?.t('sidebar.pages', { n: folder.pages.length }) || `${folder.pages.length}页`;
             contentHTML += `
                 <div class="sidebar-folder-item" data-index="${index}">
-                    <img src="${iconSrc}" width="16" height="16" alt="${fileAlt}" style="filter: invert(1);" onerror="this.style.display='none'">
+                    ${ThemeManager.getIcon(iconName, { alt: fileAlt, style: 'filter: invert(1);' })}
                     <span class="folder-name">${folder.name}</span>
                     <span class="folder-count">${pagesText}</span>
                 </div>
@@ -5099,7 +5095,7 @@ function collapseFileSidebar() {
     
     const fileText = window.i18n?.t('toolbar.file') || '文件';
     dom.btnSave.innerHTML = `
-        <img src="assets/icon/File.svg" width="16" height="16" alt="${fileText}" style="filter: invert(1);">
+        ${ThemeManager.getIcon('file', { alt: fileText, style: 'filter: invert(1);' })}
         ${fileText}
     `;
     console.log('收起文件侧边栏');

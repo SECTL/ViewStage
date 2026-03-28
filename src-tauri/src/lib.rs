@@ -566,6 +566,22 @@ fn get_cds_dir() -> Result<String, String> {
     Ok(cds_dir.to_string_lossy().to_string())
 }
 
+/// 获取用户主题目录 (%APPDATA%/com.viewstage.app/themes)
+#[tauri::command]
+fn get_theme_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let config_dir = app.path().app_config_dir()
+        .map_err(|e| format!("Failed to get config dir: {}", e))?;
+    
+    let theme_dir = config_dir.join("themes");
+    
+    if !theme_dir.exists() {
+        std::fs::create_dir_all(&theme_dir)
+            .map_err(|e| format!("Failed to create theme dir: {}", e))?;
+    }
+    
+    Ok(theme_dir.to_string_lossy().to_string())
+}
+
 // ==================== 图片保存 ====================
 // 保存图片到本地文件系统，支持批量保存和增强保存
 
@@ -1982,7 +1998,8 @@ pub fn run() {
             clear_cache,
             check_auto_clear_cache,
             get_config_dir, 
-            get_cds_dir, 
+            get_cds_dir,
+            get_theme_dir,
             enhance_image, 
             generate_thumbnail, 
             rotate_image,

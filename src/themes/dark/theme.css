@@ -608,12 +608,3 @@
     background: rgba(255, 255, 255, 0.1);
     border-color: rgba(52, 152, 219, 0.4);
 }
-
-.menu-item-danger {
-    color: #ff6b6b;
-}
-
-.menu-item-danger:hover {
-    background: rgba(255, 71, 87, 0.15);
-    border-color: rgba(255, 71, 87, 0.4);
-}

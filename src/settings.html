@@ -10,6 +10,7 @@
     <title data-i18n="settings.title">设置 - ViewStage</title>
     <link rel="stylesheet" href="settings.css">
     <script src="i18n.js"></script>
+    <script type="module" src="themes/theme.js"></script>
     <script>document.addEventListener('contextmenu', e => e.preventDefault());</script>
 </head>
 <body>
@@ -28,7 +29,7 @@
                 <span class="btn-text" data-i18n="settings.appSettings">应用设置</span>
             </button>
             <button class="sidebar-btn" id="btnStorage">
-                <span class="btn-icon"><img src="assets/icon/folder.svg" width="16" height="16" style="filter: invert(1);"></span>
+                <span class="btn-icon"><img data-icon="folder" width="16" height="16" style="filter: invert(1);"></span>
                 <span class="btn-text" data-i18n="settings.storage">存储</span>
             </button>
             <button class="sidebar-btn" id="btnCanvas">
