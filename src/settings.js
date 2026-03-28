@@ -853,7 +853,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const simplifiedUIToggle = document.getElementById('simplifiedUIToggle');
     if (simplifiedUIToggle) {
         simplifiedUIToggle.addEventListener('change', async () => {
-            await saveSettings({ simplifiedUI: simplifiedUIToggle.checked });
+            const saved = await saveSettings({ simplifiedUI: simplifiedUIToggle.checked });
+            if (saved) {
+                const restartModal = document.getElementById('restartModal');
+                if (restartModal) {
+                    restartModal.classList.add('active');
+                }
+            }
         });
     }
     

@@ -347,6 +347,9 @@ let state = {
     cameraHeight: 720,             // 摄像头高度
     wasCameraOpenBeforeMinimize: false, // 最小化前摄像头是否开启
     
+    // UI状态
+    simplifiedUI: false,           // 是否启用新版界面
+    
     // 图像管理
     currentImage: null,            // 当前显示的图像 Image 对象
     imageList: [],                 // 图片列表
@@ -639,6 +642,13 @@ async function loadCameraSetting() {
                     window.batchDrawManager.setFrameRate(settings.highFrameRate);
                 }
                 console.log('已加载高帧率绘制设置:', settings.highFrameRate);
+            }
+            
+            // 加载新版界面设置
+            if (settings.simplifiedUI !== undefined) {
+                state.simplifiedUI = settings.simplifiedUI;
+                applySimplifiedUI(settings.simplifiedUI);
+                console.log('已加载新版界面设置:', settings.simplifiedUI);
             }
             
             // 加载画布背景颜色设置
@@ -3878,6 +3888,17 @@ function saveMergedCanvas() {
     link.click();
     
     releaseOffscreenCanvas(offscreen);
+}
+
+function applySimplifiedUI(enabled) {
+    const toolbar = document.querySelector('.toolbar');
+    if (toolbar) {
+        if (enabled) {
+            toolbar.classList.add('new-ui');
+        } else {
+            toolbar.classList.remove('new-ui');
+        }
+    }
 }
 
 let lastPhotoButtonState = null;

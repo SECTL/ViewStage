@@ -59,7 +59,7 @@
     "about": "About",
     "language": "Language",
     "resolution": "Resolution",
-    "simplifiedUI": "Simplified UI",
+    "simplifiedUI": "New UI",
     "dynamicResolution": "Dynamic Resolution",
     "dynamicResolutionHint": "Automatically increase canvas resolution when zooming for clearer display",
     "settingsManagement": "Settings Management",
