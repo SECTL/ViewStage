@@ -169,7 +169,7 @@ function cloneStrokes(strokes) {
         lineWidth: stroke.lineWidth,
         eraserSize: stroke.eraserSize,
         bounds: stroke.bounds ? { ...stroke.bounds } : undefined,
-        savedStrokeHistory: stroke.savedStrokeHistory,
+        savedStrokeHistory: stroke.savedStrokeHistory ? cloneStrokes(stroke.savedStrokeHistory) : undefined,
         savedBaseImageURL: stroke.savedBaseImageURL
     }));
 }
@@ -419,7 +419,7 @@ function loadSourceData(sourceId) {
         state.scale = data.scale;
         state.canvasX = data.canvasX;
         state.canvasY = data.canvasY;
-        state.strokeHistory = data.strokeHistory || [];
+        state.strokeHistory = cloneStrokes(data.strokeHistory || []);
         state.baseImageURL = data.baseImageURL;
         state.baseImageObj = null;
         
@@ -845,8 +845,13 @@ async function processPdfPagesParallel(pdf, totalPages, batchSize = 4, docNumber
             fullBlob: fullBlob,
             thumbnail: thumbnail,
             pageNum: pageNum,
-            strokeHistory: null,
+            strokeHistory: [],
             baseImageURL: null,
+            viewState: {
+                scale: 1,
+                canvasX: -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2,
+                canvasY: -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2
+            },
             sourceId: sourceId
         };
     }
@@ -3602,6 +3607,13 @@ function scheduleCompact() {
     if (state.strokeHistory.length <= state.MAX_UNDO_STEPS) return;
     if (compactIdleId !== null) return;
     
+    // 检查是否有 'clear' 类型的笔画，如果有则不压缩
+    const hasClearStroke = state.strokeHistory.some(stroke => stroke.type === 'clear');
+    if (hasClearStroke) {
+        console.log('检测到清空操作，跳过压缩以保留撤销能力');
+        return;
+    }
+    
     const strokesToCompact = state.strokeHistory.slice(0, state.strokeHistory.length - state.MAX_UNDO_STEPS);
     state.strokeHistory = state.strokeHistory.slice(state.strokeHistory.length - state.MAX_UNDO_STEPS);
     
@@ -3754,7 +3766,7 @@ function clearAllDrawings() {
     updateUndoBtnStatus();
     
     if (state.currentImageIndex >= 0 && state.currentImageIndex < state.imageList.length) {
-        state.imageList[state.currentImageIndex].strokeHistory = cloneStrokes(state.strokeHistory);
+        state.imageList[state.currentImageIndex].strokeHistory = [];
         state.imageList[state.currentImageIndex].baseImageURL = null;
     }
     
@@ -3762,7 +3774,7 @@ function clearAllDrawings() {
         if (state.currentFolderIndex < state.fileList.length) {
             const folder = state.fileList[state.currentFolderIndex];
             if (state.currentFolderPageIndex < folder.pages.length) {
-                folder.pages[state.currentFolderPageIndex].strokeHistory = cloneStrokes(state.strokeHistory);
+                folder.pages[state.currentFolderPageIndex].strokeHistory = [];
                 folder.pages[state.currentFolderPageIndex].baseImageURL = null;
             }
         }
@@ -3789,24 +3801,6 @@ function takePhoto() {
                 clearImageLayer();
                 clearDrawCanvas();
                 
-                // 恢复摄像头视图状态和批注
-                state.scale = state.cameraViewState.scale;
-                state.canvasX = state.cameraViewState.canvasX;
-                state.canvasY = state.cameraViewState.canvasY;
-                state.strokeHistory = cloneStrokes(state.cameraViewState.strokeHistory);
-                state.baseImageURL = state.cameraViewState.baseImageURL;
-                state.baseImageObj = null;
-                updateMoveBound();
-                updateCanvasTransform();
-                
-                // 恢复批注
-                if (state.strokeHistory.length > 0) {
-                    await redrawAllStrokes();
-                } else {
-                    clearDrawCanvas();
-                }
-                updateUndoBtnStatus();
-                
                 await openCamera();
                 updateSidebarSelection();
                 updatePhotoButtonState();
@@ -3832,24 +3826,6 @@ function takePhoto() {
                 state.currentImage = null;
                 clearImageLayer();
                 clearDrawCanvas();
-                
-                // 恢复摄像头视图状态和批注
-                state.scale = state.cameraViewState.scale;
-                state.canvasX = state.cameraViewState.canvasX;
-                state.canvasY = state.cameraViewState.canvasY;
-                state.strokeHistory = cloneStrokes(state.cameraViewState.strokeHistory);
-                state.baseImageURL = state.cameraViewState.baseImageURL;
-                state.baseImageObj = null;
-                updateMoveBound();
-                updateCanvasTransform();
-                
-                // 恢复批注
-                if (state.strokeHistory.length > 0) {
-                    await redrawAllStrokes();
-                } else {
-                    clearDrawCanvas();
-                }
-                updateUndoBtnStatus();
                 
                 await openCamera();
                 updateFolderPageSelection(-1, -1);
@@ -4201,44 +4177,16 @@ async function selectImage(index) {
     if (index === state.currentImageIndex && state.currentImage) {
         (async () => {
             try {
-                // 保存摄像头视图状态和批注
-                if (state.isCameraOpen) {
-                    state.cameraViewState = {
-                        scale: state.scale,
-                        canvasX: state.canvasX,
-                        canvasY: state.canvasY,
-                        strokeHistory: cloneStrokes(state.strokeHistory),
-                        baseImageURL: state.baseImageURL
-                    };
-                }
-                
                 saveCurrentDrawData();
                 saveCurrentFolderPageDrawData();
                 state.currentImageIndex = -1;
                 state.currentImage = null;
                 clearImageLayer();
                 clearDrawCanvas();
+                
                 if (state.isCameraOpen) {
                     await setCameraState(false);
                 }
-                
-                // 恢复摄像头视图状态和批注
-                state.scale = state.cameraViewState.scale;
-                state.canvasX = state.cameraViewState.canvasX;
-                state.canvasY = state.cameraViewState.canvasY;
-                state.strokeHistory = cloneStrokes(state.cameraViewState.strokeHistory);
-                state.baseImageURL = state.cameraViewState.baseImageURL;
-                state.baseImageObj = null;
-                updateMoveBound();
-                updateCanvasTransform();
-                
-                // 恢复批注
-                if (state.strokeHistory.length > 0) {
-                    await redrawAllStrokes();
-                } else {
-                    clearDrawCanvas();
-                }
-                updateUndoBtnStatus();
                 
                 await setCameraState(true);
                 updateSidebarSelection();
@@ -4251,29 +4199,65 @@ async function selectImage(index) {
         return;
     }
     
-    // 保存摄像头视图状态和批注
-    if (state.isCameraOpen) {
-        state.cameraViewState = {
-            scale: state.scale,
-            canvasX: state.canvasX,
-            canvasY: state.canvasY,
-            strokeHistory: cloneStrokes(state.strokeHistory),
-            baseImageURL: state.baseImageURL
-        };
-    }
+    // 先保存当前数据（使用旧索引）
+    saveCurrentDrawData();
+    saveCurrentFolderPageDrawData();
+    
+    // 更新索引
+    state.currentImageIndex = index;
+    state.currentFolderIndex = -1;
+    state.currentFolderPageIndex = -1;
     
     // 使用源ID管理系统切换
     const imgData = state.imageList[index];
     if (imgData.sourceId) {
         await switchToSource(imgData.sourceId);
+    } else {
+        // 兼容旧数据：为没有 sourceId 的图片分配新ID
+        imgData.sourceId = generateSourceId('pic');
+        
+        // 初始化数据（如果不存在）
+        if (!imgData.strokeHistory) {
+            imgData.strokeHistory = [];
+        }
+        if (!imgData.viewState) {
+            imgData.viewState = {
+                scale: 1,
+                canvasX: -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2,
+                canvasY: -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2
+            };
+        }
+        
+        // 保存当前摄像头数据
+        saveCurrentSourceData();
+        
+        // 切换到新源
+        currentSourceId = imgData.sourceId;
+        sourceDataStore[imgData.sourceId] = {
+            scale: imgData.viewState.scale,
+            canvasX: imgData.viewState.canvasX,
+            canvasY: imgData.viewState.canvasY,
+            strokeHistory: cloneStrokes(imgData.strokeHistory),
+            baseImageURL: imgData.baseImageURL
+        };
+        
+        // 加载数据
+        state.scale = imgData.viewState.scale;
+        state.canvasX = imgData.viewState.canvasX;
+        state.canvasY = imgData.viewState.canvasY;
+        state.strokeHistory = cloneStrokes(imgData.strokeHistory);
+        state.baseImageURL = imgData.baseImageURL;
+        state.baseImageObj = null;
+        
+        updateMoveBound();
+        updateCanvasTransform();
+        clearDrawCanvas();
+        
+        if (state.strokeHistory.length > 0) {
+            await redrawAllStrokes();
+        }
+        updateUndoBtnStatus();
     }
-    
-    saveCurrentDrawData();
-    saveCurrentFolderPageDrawData();
-    
-    state.currentImageIndex = index;
-    state.currentFolderIndex = -1;
-    state.currentFolderPageIndex = -1;
     
     const img = new Image();
     img.onload = async () => {
@@ -4321,13 +4305,20 @@ async function restoreDrawData(index) {
         state.baseImageObj = null;
         
         if (state.baseImageURL) {
-            const img = new Image();
-            img.onload = async () => {
-                state.baseImageObj = img;
-                await redrawAllStrokes();
-                updateUndoBtnStatus();
-            };
-            img.src = state.baseImageURL;
+            await new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = async () => {
+                    state.baseImageObj = img;
+                    await redrawAllStrokes();
+                    updateUndoBtnStatus();
+                    resolve();
+                };
+                img.onerror = () => {
+                    console.error('加载基础图片失败');
+                    reject(new Error('Failed to load base image'));
+                };
+                img.src = state.baseImageURL;
+            });
         } else {
             if (state.strokeHistory.length > 0) {
                 await redrawAllStrokes();
@@ -4606,15 +4597,7 @@ function selectFolderPage(folderIndex, pageIndex) {
     
     (async () => {
         try {
-            // 保存摄像头视图状态和批注
             if (state.isCameraOpen) {
-                state.cameraViewState = {
-                    scale: state.scale,
-                    canvasX: state.canvasX,
-                    canvasY: state.canvasY,
-                    strokeHistory: cloneStrokes(state.strokeHistory),
-                    baseImageURL: state.baseImageURL
-                };
                 await setCameraState(false);
             }
             
@@ -4719,13 +4702,20 @@ async function restoreFolderPageDrawData(folderIndex, pageIndex) {
             state.baseImageObj = null;
             
             if (state.baseImageURL) {
-                const img = new Image();
-                img.onload = async () => {
-                    state.baseImageObj = img;
-                    await redrawAllStrokes();
-                    updateUndoBtnStatus();
-                };
-                img.src = state.baseImageURL;
+                await new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.onload = async () => {
+                        state.baseImageObj = img;
+                        await redrawAllStrokes();
+                        updateUndoBtnStatus();
+                        resolve();
+                    };
+                    img.onerror = () => {
+                        console.error('加载基础图片失败');
+                        reject(new Error('Failed to load base image'));
+                    };
+                    img.src = state.baseImageURL;
+                });
             } else {
                 if (state.strokeHistory.length > 0) {
                     await redrawAllStrokes();
@@ -5477,8 +5467,8 @@ async function captureCamera() {
     
     console.log('捕获摄像头画面:', videoW, 'x', videoH);
     
-    saveCurrentDrawData();
-    saveCurrentFolderPageDrawData();
+    // 保存摄像头批注数据
+    saveCurrentSourceData();
     
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = videoW;
@@ -5525,7 +5515,12 @@ async function captureCamera() {
         const photoName = window.i18n?.t('camera.photoName', { n: state.imageList.length + 1 }) || `拍摄${state.imageList.length + 1}`;
         addImageToListNoHighlight(img, photoName);
         expandSidebarIfCollapsed();
+        URL.revokeObjectURL(blobUrl);
         console.log('已捕获摄像头画面并保存到图片列表');
+    };
+    img.onerror = () => {
+        URL.revokeObjectURL(blobUrl);
+        console.error('加载拍摄的图片失败');
     };
 }
 
@@ -5659,9 +5654,14 @@ async function importImage() {
                 name: imgData.name,
                 width: img.width,
                 height: img.height,
-                strokeHistory: null,
+                strokeHistory: [],
                 baseImageURL: null,
-                viewState: null
+                viewState: {
+                    scale: 1,
+                    canvasX: -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2,
+                    canvasY: -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2
+                },
+                sourceId: generateSourceId('pic')
             };
             
             state.imageList.push(newImgData);
@@ -5710,10 +5710,14 @@ async function addImageToList(img, name, isLast = true) {
         name: name,
         width: img.width,
         height: img.height,
-        strokeHistory: null,
+        strokeHistory: [],
         baseImageURL: null,
-        viewState: null,
-        sourceId: generateSourceId('pic')  // 分配源ID
+        viewState: {
+            scale: 1,
+            canvasX: -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2,
+            canvasY: -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2
+        },
+        sourceId: generateSourceId('pic')
     };
     
     state.imageList.push(imgData);
@@ -5759,9 +5763,14 @@ async function addImageToListNoHighlight(img, name) {
         name: name,
         width: img.width,
         height: img.height,
-        strokeHistory: null,
+        strokeHistory: [],
         baseImageURL: null,
-        viewState: null
+        viewState: {
+            scale: 1,
+            canvasX: -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2,
+            canvasY: -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2
+        },
+        sourceId: generateSourceId('pic')
     };
     
     state.imageList.push(imgData);
