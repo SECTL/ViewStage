@@ -36,10 +36,6 @@ url = "2"
 futures = "0.3"
 log = "0.4"
 simplelog = "0.12"
-wgpu = "0.19"
-pollster = "0.3"
-bytemuck = { version = "1.14", features = ["derive"] }
-tract-onnx = "0.21"
 ort = { version = "2.0.0-rc.10", features = ["ndarray"] }
 
 [target.'cfg(windows)'.dependencies]
