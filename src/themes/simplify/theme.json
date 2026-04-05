@@ -21,6 +21,7 @@
     "collapse": "caret-down-fill",
     "addFile": "file-earmark",
     "word": "file-earmark-word-fill",
-    "pdf": "pdf"
+    "pdf": "pdf",
+    "scan": "scan"
   }
 }

@@ -223,6 +223,29 @@
                         </label>
                     </div>
                     <div class="setting-item">
+                        <span class="setting-label" data-i18n="settings.denoiseFrameCount">降噪帧数</span>
+                        <div class="custom-select" id="denoiseFrameSelect">
+                            <div class="select-selected" id="denoiseFrameSelected">3帧</div>
+                            <div class="select-options" id="denoiseFrameOptions">
+                                <div class="select-option" data-value="1">1帧 (<span data-i18n="settings.denoiseOff">关闭</span>)</div>
+                                <div class="select-option" data-value="3">3帧</div>
+                                <div class="select-option" data-value="5">5帧</div>
+                                <div class="select-option" data-value="7">7帧</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label" data-i18n="settings.denoiseStrength">降噪强度</span>
+                        <div class="custom-select" id="denoiseStrengthSelect">
+                            <div class="select-selected" id="denoiseStrengthSelected">中</div>
+                            <div class="select-options" id="denoiseStrengthOptions">
+                                <div class="select-option" data-value="low" data-i18n="settings.denoiseLow">低</div>
+                                <div class="select-option" data-value="medium" data-i18n="settings.denoiseMedium">中</div>
+                                <div class="select-option" data-value="high" data-i18n="settings.denoiseHigh">高</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
                         <span class="setting-label" data-i18n="settings.defaultRotation">默认旋转角度</span>
                         <div class="custom-select" id="defaultRotationSelect">
                             <div class="select-selected" id="defaultRotationSelected">0°</div>
@@ -247,6 +270,10 @@
                             <input type="checkbox" id="assocWord" data-ext="word">
                             <span class="toggle-slider"></span>
                         </label>
+                    </div>
+                    <div class="setting-item" id="requestCameraPermissionItem" style="display: none;">
+                        <span class="setting-label" data-i18n="settings.cameraPermission">摄像头权限</span>
+                        <button class="btn-action" id="btnRequestCameraPermission" data-i18n="settings.requestCameraPermission">获取摄像头权限</button>
                     </div>
                 </div>
                 

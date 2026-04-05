@@ -464,6 +464,7 @@ let dom = {};  // DOM 元素引用缓存
 
 // 将 dom 暴露到全局，供 batch-draw.js 使用
 window.dom = dom;
+window.state = state;
 
 let cachedCanvasRect = null;  // 缓存的画布边界矩形
 
@@ -800,6 +801,21 @@ function listenForPdfFileOpen() {
         }
     }).catch(err => {
         console.error('settings-changed 事件监听失败:', err);
+    });
+    
+    listen('doc-scan-save-image', async (event) => {
+        console.log('收到文档扫描保存图片事件');
+        const { imageData, name } = event.payload;
+        
+        if (imageData) {
+            const img = new Image();
+            img.onload = async () => {
+                await addImageToListNoHighlight(img, name);
+            };
+            img.src = imageData;
+        }
+    }).catch(err => {
+        console.error('doc-scan-save-image 事件监听失败:', err);
     });
 }
 
@@ -1379,6 +1395,15 @@ function initDOM() {
     dom.btnMinimize = document.getElementById('btnMinimize');
     dom.btnMenu = document.getElementById('btnMenu');
     
+    dom.btnDocScan = document.getElementById('btnDocScan');
+    dom.docScanPanel = document.getElementById('docScanPanel');
+    dom.scanAutoDetect = document.getElementById('scanAutoDetect');
+    dom.scanEnhance = document.getElementById('scanEnhance');
+    dom.scanDenoise = document.getElementById('scanDenoise');
+    dom.scanBinarize = document.getElementById('scanBinarize');
+    dom.btnApplyScan = document.getElementById('btnApplyScan');
+    dom.btnCancelScan = document.getElementById('btnCancelScan');
+    
     if (!dom.imageCanvas || !dom.drawCanvas || !dom.canvasContainer) {
         console.error('必需的 Canvas 元素未找到');
         return false;
@@ -1644,6 +1669,23 @@ function bindToolEvents() {
     dom.btnSave.addEventListener('click', toggleFileSidebar);
     dom.btnMinimize.addEventListener('click', minimizeWindow);
     dom.btnMenu.addEventListener('click', toggleMenu);
+    dom.btnDocScan.addEventListener('click', openDocScanWindow);
+}
+
+// 打开文档扫描窗口
+async function openDocScanWindow() {
+    try {
+        if (!window.__TAURI__) {
+            alert('文档扫描功能需要Tauri环境');
+            return;
+        }
+        
+        const { invoke } = window.__TAURI__.core;
+        await invoke('open_doc_scan_window');
+    } catch (error) {
+        console.error('打开文档扫描窗口失败:', error);
+        alert('打开文档扫描窗口失败: ' + error.message);
+    }
 }
 
 // 菜单弹出
@@ -5777,6 +5819,12 @@ async function addImageToListNoHighlight(img, name) {
     
     updateSidebarContent();
 }
+
+// 暴露必要的函数到 window 对象，供 doc-scan.js 使用
+window.addImageToListNoHighlight = addImageToListNoHighlight;
+window.generateThumbnail = generateThumbnail;
+window.updateSidebarContent = updateSidebarContent;
+window.clearAllDrawings = clearAllDrawings;
 
 function drawImageToCenter(img) {
     clearImageLayer();
