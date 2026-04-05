@@ -1,0 +1,2 @@
+src-tauri/weights/frozen_east_text_detection.pb filter=lfs diff=lfs merge=lfs -text
+、 filter=lfs diff=lfs merge=lfs -text
