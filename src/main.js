@@ -5656,7 +5656,7 @@ async function importImage() {
                 
                 thumbnails = await invoke('generate_thumbnails_batch', {
                     images: base64Images.map((data, i) => ({
-                        data: data,
+                        image_data: data,
                         name: imageDataList[i].name
                     })),
                     maxSize: 150,
