@@ -78,7 +78,7 @@
 - ✅多语言
 - ❎支持手机作为信号源
 - ❎支持手机上传图片及文件
-- ❎OCR文档增强（预计4月中旬完成）
+- ❎OCR文档增强（特别感谢[https://github.com/liuzhuang1024/scan\_docments/）](https://github.com/liuzhuang1024/scan_docments/)
 - ❓更多功能(欢迎到issues提交(*^\_^*))
 
 ## 许可证

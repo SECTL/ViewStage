@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文档扫描</title>
+    <link rel="stylesheet" href="doc-scan.css">
+    <script src="../JS/pdf.min.js"></script>
+    <script src="../i18n.js"></script>
+    <script type="module" src="../themes/theme.js"></script>
+</head>
+<body>
+    <div class="doc-scan-container">
+        <div class="doc-scan-main">
+            <div class="preview-section">
+                <div class="preview-container">
+                    <video id="previewVideo" autoplay playsinline></video>
+                    <canvas id="previewCanvas" style="display: none;"></canvas>
+                    <div class="processing-overlay" id="processingOverlay" style="display: none;">
+                        <div class="processing-spinner"></div>
+                        <span class="processing-text">正在处理...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <button class="action-btn primary" id="btnCapture" data-i18n="docScan.capture">拍摄</button>
+                <button class="action-btn" id="btnBack" data-i18n="docScan.back">返回</button>
+            </div>
+        </div>
+
+        <div class="scan-sidebar" id="scanSidebar">
+            <div class="sidebar-header">
+                <span data-i18n="docScan.scannedImages">已扫描</span>
+                <span class="image-count" id="imageCount">0</span>
+            </div>
+            <div class="sidebar-content" id="sidebarContent">
+                <div class="sidebar-empty" data-i18n="docScan.noImages">暂无图片</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="doc-scan-page.js"></script>
+</body>
+</html>

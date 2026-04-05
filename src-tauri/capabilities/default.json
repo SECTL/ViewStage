@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "settings", "oobe"],
+  "windows": ["main", "settings", "oobe", "doc-scan"],
   "permissions": [
     "core:default",
     "opener:default",
@@ -19,6 +19,9 @@
     },
     "core:window:allow-minimize",
     "core:window:allow-close",
+    "core:window:allow-create",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-clear-all-browsing-data",
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",

@@ -15,15 +15,31 @@
 //! - 使用 image 库进行图像处理
 
 use tauri::{Manager, Emitter};
-use image::{DynamicImage, ImageBuffer, Rgba, GenericImageView, RgbaImage};
+use image::{DynamicImage, ImageBuffer, Rgba, GenericImageView, RgbaImage, GrayImage, Luma};
+use imageproc::filter::gaussian_blur_f32;
 use base64::{Engine as _, engine::general_purpose};
 use rayon::prelude::*;
+
+mod gpu;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[cfg(target_os = "windows")]
+use opencv::{
+    core::{Mat, Vector, Size, Scalar, CV_32F, CV_8UC3, Point, BORDER_CONSTANT},
+    dnn::{read_net_from_tensorflow, Net, blob_from_image},
+    imgproc::{
+        resize, cvt_color, COLOR_BGR2GRAY,
+        adaptive_threshold, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY,
+        get_structuring_element, morphology_ex, MORPH_RECT, MORPH_CLOSE,
+    },
+    photo::fast_nl_means_denoising,
+    prelude::*,
+};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -192,42 +208,46 @@ fn apply_enhance_filter(img: &DynamicImage, contrast: f32, brightness: f32, satu
                     let b = original_raw[idx + 2] as f32;
                     let a = original_raw[idx + 3];
                     
-                    let prev_row = ((y - 1) * width) as usize;
-                    let curr_row = (y * width) as usize;
-                    let next_row = ((y + 1) * width) as usize;
-                    let x_offset = (x * 4) as usize;
+                    // 正确计算字节偏移
+                    let prev_row_start = ((y - 1) * width * 4) as usize;
+                    let curr_row_start = (y * width * 4) as usize;
+                    let next_row_start = ((y + 1) * width * 4) as usize;
+                    let x_bytes = (x * 4) as usize;
                     
+                    // R 通道邻居 (偏移 0)
                     let neighbors_r: f32 = [
-                        original_raw[prev_row + x_offset - 4],
-                        original_raw[prev_row + x_offset],
-                        original_raw[prev_row + x_offset + 4],
-                        original_raw[curr_row + x_offset - 4],
-                        original_raw[curr_row + x_offset + 4],
-                        original_raw[next_row + x_offset - 4],
-                        original_raw[next_row + x_offset],
-                        original_raw[next_row + x_offset + 4],
+                        original_raw[prev_row_start + x_bytes - 4],
+                        original_raw[prev_row_start + x_bytes],
+                        original_raw[prev_row_start + x_bytes + 4],
+                        original_raw[curr_row_start + x_bytes - 4],
+                        original_raw[curr_row_start + x_bytes + 4],
+                        original_raw[next_row_start + x_bytes - 4],
+                        original_raw[next_row_start + x_bytes],
+                        original_raw[next_row_start + x_bytes + 4],
                     ].iter().map(|&v| v as f32).sum();
                     
+                    // G 通道邻居 (偏移 1)
                     let neighbors_g: f32 = [
-                        original_raw[prev_row + x_offset - 3],
-                        original_raw[prev_row + x_offset + 1],
-                        original_raw[prev_row + x_offset + 5],
-                        original_raw[curr_row + x_offset - 3],
-                        original_raw[curr_row + x_offset + 5],
-                        original_raw[next_row + x_offset - 3],
-                        original_raw[next_row + x_offset + 1],
-                        original_raw[next_row + x_offset + 5],
+                        original_raw[prev_row_start + x_bytes - 3],
+                        original_raw[prev_row_start + x_bytes + 1],
+                        original_raw[prev_row_start + x_bytes + 5],
+                        original_raw[curr_row_start + x_bytes - 3],
+                        original_raw[curr_row_start + x_bytes + 5],
+                        original_raw[next_row_start + x_bytes - 3],
+                        original_raw[next_row_start + x_bytes + 1],
+                        original_raw[next_row_start + x_bytes + 5],
                     ].iter().map(|&v| v as f32).sum();
                     
+                    // B 通道邻居 (偏移 2)
                     let neighbors_b: f32 = [
-                        original_raw[prev_row + x_offset - 2],
-                        original_raw[prev_row + x_offset + 2],
-                        original_raw[prev_row + x_offset + 6],
-                        original_raw[curr_row + x_offset - 2],
-                        original_raw[curr_row + x_offset + 6],
-                        original_raw[next_row + x_offset - 2],
-                        original_raw[next_row + x_offset + 2],
-                        original_raw[next_row + x_offset + 6],
+                        original_raw[prev_row_start + x_bytes - 2],
+                        original_raw[prev_row_start + x_bytes + 2],
+                        original_raw[prev_row_start + x_bytes + 6],
+                        original_raw[curr_row_start + x_bytes - 2],
+                        original_raw[curr_row_start + x_bytes + 6],
+                        original_raw[next_row_start + x_bytes - 2],
+                        original_raw[next_row_start + x_bytes + 2],
+                        original_raw[next_row_start + x_bytes + 6],
                     ].iter().map(|&v| v as f32).sum();
                     
                     let laplacian_r = r * 9.0 - neighbors_r;
@@ -1271,6 +1291,32 @@ async fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) -> Re
     Ok(())
 }
 
+#[tauri::command]
+async fn open_doc_scan_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::WebviewWindowBuilder;
+    
+    if let Some(window) = app.get_webview_window("doc-scan") {
+        window.set_focus().map_err(|e| format!("Failed to focus doc-scan window: {}", e))?;
+        return Ok(());
+    }
+    
+    let window = WebviewWindowBuilder::new(
+        &app,
+        "doc-scan",
+        tauri::WebviewUrl::App("doc-scan/index.html".into())
+    )
+    .title("文档扫描增强")
+    .fullscreen(true)
+    .resizable(true)
+    .decorations(false)
+    .build()
+    .map_err(|e| format!("Failed to create doc-scan window: {}", e))?;
+    
+    window.set_focus().map_err(|e| format!("Failed to focus new doc-scan window: {}", e))?;
+    
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 #[tauri::command]
 async fn check_pdf_default_app() -> Result<bool, String> {
@@ -1869,6 +1915,669 @@ async fn set_file_type_icons() -> Result<(), String> {
     Err("此功能仅支持 Windows 系统".to_string())
 }
 
+// ==================== 文档扫描增强 ====================
+// 边缘检测、透视变换、文档增强
+
+/// 文档扫描请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentScanRequest {
+    pub image_data: String,
+    pub east_model_path: Option<String>,
+}
+
+/// 文档扫描结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentScanResult {
+    pub enhanced_image: String,
+    pub confidence: f32,
+    pub text_bbox: Option<(i32, i32, i32, i32)>,
+}
+
+/// EAST 文本检测请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EastDetectionRequest {
+    pub image_data: String,
+    pub model_path: Option<String>,
+    pub min_confidence: f32,
+}
+
+/// EAST 文本检测结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EastDetectionResult {
+    pub bbox: Option<(i32, i32, i32, i32)>,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+/// 获取 EAST 模型默认路径
+#[tauri::command]
+fn get_east_model_path(app: tauri::AppHandle) -> Result<String, String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let model_path = resource_dir.join("weights").join("frozen_east_text_detection.pb");
+    Ok(model_path.to_string_lossy().to_string())
+}
+
+/// EAST 文本检测命令
+#[tauri::command]
+fn detect_text_east(app: tauri::AppHandle, request: EastDetectionRequest) -> Result<EastDetectionResult, String> {
+    let img = decode_base64_image(&request.image_data)?;
+    
+    let model_path = match request.model_path {
+        Some(path) => path,
+        None => {
+            let resource_dir = app.path().resource_dir()
+                .map_err(|e| format!("获取资源目录失败: {}", e))?;
+            resource_dir.join("weights").join("frozen_east_text_detection.pb")
+                .to_string_lossy().to_string()
+        }
+    };
+    
+    match detect_text_regions_east(&img, &model_path, request.min_confidence) {
+        Ok(bbox) => Ok(EastDetectionResult {
+            bbox,
+            success: true,
+            error: None,
+        }),
+        Err(e) => Ok(EastDetectionResult {
+            bbox: None,
+            success: false,
+            error: Some(e),
+        }),
+    }
+}
+
+/// 文档扫描 - EAST 文本检测
+#[tauri::command]
+fn scan_document(app: tauri::AppHandle, request: DocumentScanRequest) -> Result<DocumentScanResult, String> {
+    let mut img = decode_base64_image(&request.image_data)?;
+    
+    log::info!("开始文档扫描，图像尺寸: {}x{}", img.width(), img.height());
+    
+    let model_path = match request.east_model_path {
+        Some(ref path) => path.clone(),
+        None => {
+            let resource_dir = app.path().resource_dir()
+                .map_err(|e| format!("获取资源目录失败: {}", e))?;
+            log::info!("资源目录: {:?}", resource_dir);
+            resource_dir.join("weights").join("frozen_east_text_detection.pb")
+                .to_string_lossy().to_string()
+        }
+    };
+    
+    log::info!("模型路径: {}", model_path);
+    
+    let text_bbox = match detect_text_regions_east(&img, &model_path, 0.5) {
+        Ok(bbox) => {
+            log::info!("检测结果: {:?}", bbox);
+            bbox
+        }
+        Err(e) => {
+            log::error!("EAST 检测失败: {}", e);
+            None
+        }
+    };
+    
+    let result_img = if let Some((x1, y1, x2, y2)) = text_bbox {
+        log::info!("裁剪区域: ({}, {}) - ({}, {})", x1, y1, x2, y2);
+        let (width, height) = (img.width() as i32, img.height() as i32);
+        let x1 = x1.max(0).min(width - 1) as u32;
+        let y1 = y1.max(0).min(height - 1) as u32;
+        let x2 = x2.max(0).min(width) as u32;
+        let y2 = y2.max(0).min(height) as u32;
+        
+        if x2 > x1 && y2 > y1 {
+            log::info!("执行裁剪: ({}, {}) - ({}, {})", x1, y1, x2, y2);
+            img.crop(x1, y1, x2 - x1, y2 - y1)
+        } else {
+            log::warn!("裁剪区域无效，返回原图");
+            img
+        }
+    } else {
+        log::warn!("未检测到文本区域，返回原图");
+        img
+    };
+
+    let enhanced_img = enhance_document_opencv(&result_img)?;
+    
+    let mut buffer = Vec::new();
+    enhanced_img
+        .write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
+        .map_err(|e| format!("Failed to encode image: {}", e))?;
+    
+    let result_image = format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(&buffer));
+    
+    Ok(DocumentScanResult {
+        enhanced_image: result_image,
+        confidence: if text_bbox.is_some() { 0.9 } else { 0.0 },
+        text_bbox,
+    })
+}
+
+// ==================== OpenCV 文档增强 ====================
+
+#[cfg(target_os = "windows")]
+fn enhance_document_opencv(img: &DynamicImage) -> Result<DynamicImage, String> {
+    let rgba = img.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    
+    let mut bgr_mat = unsafe { Mat::new_rows_cols(height as i32, width as i32, CV_8UC3) }
+        .map_err(|e| format!("创建 Mat 失败: {}", e))?;
+    {
+        let data = bgr_mat.data_bytes_mut()
+            .map_err(|e| format!("获取 Mat 数据失败: {}", e))?;
+        for y in 0..height {
+            for x in 0..width {
+                let pixel = rgba.get_pixel(x, y);
+                let idx = (y * width as u32 + x) as usize * 3;
+                data[idx] = pixel[2];
+                data[idx + 1] = pixel[1];
+                data[idx + 2] = pixel[0];
+            }
+        }
+    }
+    
+    let mut gray = Mat::default();
+    cvt_color(&bgr_mat, &mut gray, COLOR_BGR2GRAY, 0)
+        .map_err(|e| format!("灰度转换失败: {}", e))?;
+    
+    let mut denoised = Mat::default();
+    fast_nl_means_denoising(&gray, &mut denoised, 1.0, 7, 21)
+        .map_err(|e| format!("降噪失败: {}", e))?;
+    
+    let result_data = denoised.data_bytes()
+        .map_err(|e| format!("获取结果数据失败: {}", e))?;
+    
+    let mut result_img = ImageBuffer::new(width, height);
+    for y in 0..height {
+        for x in 0..width {
+            let idx = (y * width as u32 + x) as usize;
+            let val = result_data[idx];
+            result_img.put_pixel(x, y, Luma([val]));
+        }
+    }
+    
+    Ok(DynamicImage::ImageLuma8(result_img))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn enhance_document_opencv(img: &DynamicImage) -> Result<DynamicImage, String> {
+    Ok(img.clone())
+}
+
+// ==================== EAST 文本检测 ====================
+// 使用 OpenCV DNN 模块实现 EAST 文本检测
+
+#[cfg(target_os = "windows")]
+static EAST_NET: std::sync::OnceLock<std::sync::Mutex<Option<Net>>> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "windows")]
+fn get_east_net(model_path: &str) -> Result<std::sync::MutexGuard<'static, Option<Net>>, String> {
+    let net_guard = EAST_NET.get_or_init(|| {
+        match read_net_from_tensorflow(model_path, "") {
+            Ok(net) => {
+                log::info!("EAST 模型加载成功: {}", model_path);
+                std::sync::Mutex::new(Some(net))
+            }
+            Err(e) => {
+                log::error!("EAST 模型加载失败: {}", e);
+                std::sync::Mutex::new(None)
+            }
+        }
+    });
+    
+    net_guard.lock().map_err(|e| format!("获取模型锁失败: {}", e))
+}
+
+#[cfg(target_os = "windows")]
+fn detect_text_regions_east(img: &DynamicImage, model_path: &str, min_confidence: f32) -> Result<Option<(i32, i32, i32, i32)>, String> {
+    let mut net_guard = get_east_net(model_path)?;
+    let net = match net_guard.as_mut() {
+        Some(n) => n,
+        None => return Err("EAST 模型未加载".to_string()),
+    };
+    
+    let (orig_width, orig_height) = (img.width() as i32, img.height() as i32);
+    
+    let new_width = 320i32;
+    let new_height = 320i32;
+    let rw = orig_width as f32 / new_width as f32;
+    let rh = orig_height as f32 / new_height as f32;
+    
+    let rgba = img.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    
+    let mut bgr_mat = unsafe { Mat::new_rows_cols(height as i32, width as i32, opencv::core::CV_8UC3) }
+        .map_err(|e| format!("创建 Mat 失败: {}", e))?;
+    {
+        let data = bgr_mat.data_bytes_mut()
+            .map_err(|e| format!("获取 Mat 数据失败: {}", e))?;
+        for y in 0..height {
+            for x in 0..width {
+                let pixel = rgba.get_pixel(x, y);
+                let idx = (y * width as u32 + x) as usize * 3;
+                data[idx] = pixel[2];
+                data[idx + 1] = pixel[1];
+                data[idx + 2] = pixel[0];
+            }
+        }
+    }
+    
+    let mut resized = Mat::default();
+    resize(&bgr_mat, &mut resized, Size::new(new_width, new_height), 0.0, 0.0, opencv::imgproc::INTER_LINEAR)
+        .map_err(|e| format!("调整大小失败: {}", e))?;
+    
+    let blob = blob_from_image(
+        &resized,
+        1.0,
+        Size::new(new_width, new_height),
+        Scalar::new(103.94, 116.78, 123.68, 0.0),
+        true,
+        false,
+        CV_32F,
+    ).map_err(|e| format!("创建 blob 失败: {}", e))?;
+    
+    net.set_input(&blob, "", 1.0, Scalar::default())
+        .map_err(|e| format!("设置输入失败: {}", e))?;
+    
+    let mut output_names = Vector::<String>::new();
+    output_names.push("feature_fusion/Conv_7/Sigmoid");
+    output_names.push("feature_fusion/concat_3");
+    
+    let mut outputs = Vector::<Mat>::new();
+    net.forward(&mut outputs, &output_names)
+        .map_err(|e| format!("前向传播失败: {}", e))?;
+    
+    let scores_raw = outputs.get(0).map_err(|e| format!("获取 scores 失败: {}", e))?;
+    let geometry_raw = outputs.get(1).map_err(|e| format!("获取 geometry 失败: {}", e))?;
+    
+    let scores_dims = scores_raw.mat_size();
+    let geometry_dims = geometry_raw.mat_size();
+    log::info!("scores dims: {:?}", scores_dims);
+    log::info!("geometry dims: {:?}", geometry_dims);
+    
+    let num_rows = if scores_dims.len() >= 4 {
+        scores_dims[2] as i32
+    } else {
+        scores_raw.rows()
+    };
+    let num_cols = if scores_dims.len() >= 4 {
+        scores_dims[3] as i32
+    } else {
+        scores_raw.cols()
+    };
+    
+    log::info!("numRows: {}, numCols: {}", num_rows, num_cols);
+    
+    let mut scores = Mat::default();
+    scores_raw.reshape(1, num_rows * num_cols)
+        .map_err(|e| format!("reshape scores 失败: {}", e))?
+        .copy_to(&mut scores)
+        .map_err(|e| format!("copy scores 失败: {}", e))?;
+    
+    let mut geometry = Mat::default();
+    geometry_raw.reshape(1, num_rows * num_cols)
+        .map_err(|e| format!("reshape geometry 失败: {}", e))?
+        .copy_to(&mut geometry)
+        .map_err(|e| format!("copy geometry 失败: {}", e))?;
+    
+    let mut rects: Vec<(f32, f32, f32, f32)> = Vec::new();
+    let mut confidences: Vec<f32> = Vec::new();
+    
+    let scores_data = scores.data_bytes().map_err(|e| format!("获取 scores 数据失败: {}", e))?;
+    let geometry_data = geometry.data_bytes().map_err(|e| format!("获取 geometry 数据失败: {}", e))?;
+    
+    for y in 0..num_rows {
+        for x in 0..num_cols {
+            let idx = (y * num_cols + x) as usize;
+            let score = f32::from_le_bytes([
+                scores_data[idx * 4],
+                scores_data[idx * 4 + 1],
+                scores_data[idx * 4 + 2],
+                scores_data[idx * 4 + 3],
+            ]);
+            
+            if score < min_confidence {
+                continue;
+            }
+            
+            let offset_x = x as f32 * 4.0;
+            let offset_y = y as f32 * 4.0;
+            
+            let geo_base = idx * 20;
+            let x0 = f32::from_le_bytes([
+                geometry_data[geo_base],
+                geometry_data[geo_base + 1],
+                geometry_data[geo_base + 2],
+                geometry_data[geo_base + 3],
+            ]);
+            let x1 = f32::from_le_bytes([
+                geometry_data[geo_base + 4],
+                geometry_data[geo_base + 5],
+                geometry_data[geo_base + 6],
+                geometry_data[geo_base + 7],
+            ]);
+            let x2 = f32::from_le_bytes([
+                geometry_data[geo_base + 8],
+                geometry_data[geo_base + 9],
+                geometry_data[geo_base + 10],
+                geometry_data[geo_base + 11],
+            ]);
+            let x3 = f32::from_le_bytes([
+                geometry_data[geo_base + 12],
+                geometry_data[geo_base + 13],
+                geometry_data[geo_base + 14],
+                geometry_data[geo_base + 15],
+            ]);
+            let angle = f32::from_le_bytes([
+                geometry_data[geo_base + 16],
+                geometry_data[geo_base + 17],
+                geometry_data[geo_base + 18],
+                geometry_data[geo_base + 19],
+            ]);
+            
+            let cos = angle.cos();
+            let sin = angle.sin();
+            
+            let h = x0 + x2;
+            let w = x1 + x3;
+            
+            let end_x = offset_x + cos * x1 + sin * x2;
+            let end_y = offset_y - sin * x1 + cos * x2;
+            let start_x = end_x - w;
+            let start_y = end_y - h;
+            
+            rects.push((start_x, start_y, end_x, end_y));
+            confidences.push(score);
+        }
+    }
+    
+    log::info!("检测到 {} 个文本区域", rects.len());
+    
+    if rects.is_empty() {
+        return Ok(None);
+    }
+    
+    let boxes_indices = non_max_suppression(&rects, &confidences, 0.3);
+    
+    let mut points: Vec<(i32, i32, i32, i32)> = Vec::new();
+    for idx in boxes_indices {
+        let (sx, sy, ex, ey) = rects[idx];
+        let start_x = (sx * rw) as i32;
+        let start_y = (sy * rh) as i32;
+        let end_x = (ex * rw) as i32;
+        let end_y = (ey * rh) as i32;
+        points.push((start_x, start_y, end_x, end_y));
+    }
+    
+    if points.is_empty() {
+        return Ok(None);
+    }
+    
+    let min_x = points.iter().map(|p| p.0).min().unwrap_or(0);
+    let min_y = points.iter().map(|p| p.1).min().unwrap_or(0);
+    let max_x = points.iter().map(|p| p.2).max().unwrap_or(orig_width);
+    let max_y = points.iter().map(|p| p.3).max().unwrap_or(orig_height);
+    
+    let margin = 20;
+    let x1 = (min_x - margin).max(0);
+    let y1 = (min_y - margin).max(0);
+    let x2 = (max_x + margin).min(orig_width);
+    let y2 = (max_y + margin).min(orig_height);
+    
+    let bbox = (x1, y1, x2, y2);
+    
+    log::info!("最终边界框: {:?}", bbox);
+    
+    Ok(Some(bbox))
+}
+
+#[cfg(target_os = "windows")]
+fn non_max_suppression(rects: &[(f32, f32, f32, f32)], confidences: &[f32], overlap_threshold: f32) -> Vec<usize> {
+    let n = rects.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    
+    let mut indices: Vec<usize> = (0..n).collect();
+    indices.sort_by(|&a, &b| confidences[b].partial_cmp(&confidences[a]).unwrap());
+    
+    let mut result = Vec::new();
+    let mut suppressed = vec![false; n];
+    
+    for i in 0..n {
+        if suppressed[indices[i]] {
+            continue;
+        }
+        
+        result.push(indices[i]);
+        
+        for j in (i + 1)..n {
+            if suppressed[indices[j]] {
+                continue;
+            }
+            
+            let idx_i = indices[i];
+            let idx_j = indices[j];
+            
+            let iou = compute_iou(&rects[idx_i], &rects[idx_j]);
+            if iou > overlap_threshold {
+                suppressed[indices[j]] = true;
+            }
+        }
+    }
+    
+    result
+}
+
+#[cfg(target_os = "windows")]
+fn compute_iou(a: &(f32, f32, f32, f32), b: &(f32, f32, f32, f32)) -> f32 {
+    let x1 = a.0.max(b.0);
+    let y1 = a.1.max(b.1);
+    let x2 = a.2.min(b.2);
+    let y2 = a.3.min(b.3);
+    
+    let intersection = (x2 - x1).max(0.0) * (y2 - y1).max(0.0);
+    
+    let area_a = (a.2 - a.0) * (a.3 - a.1);
+    let area_b = (b.2 - b.0) * (b.3 - b.1);
+    
+    let union = area_a + area_b - intersection;
+    
+    if union > 0.0 { intersection / union } else { 0.0 }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn detect_text_regions_east(_img: &DynamicImage, _model_path: &str, _min_confidence: f32) -> Result<Option<(i32, i32, i32, i32)>, String> {
+    Err("EAST 文本检测仅支持 Windows 系统".to_string())
+}
+
+// ==================== 高级文档增强算法 ====================
+// 使用 imageproc 库实现
+
+/// 光照归一化 - 去除不均匀光照和阴影（保留彩色）
+/// 使用 imageproc 的 gaussian_blur_f32
+fn normalize_illumination(img: &DynamicImage, sigma: f32) -> DynamicImage {
+    let rgba = img.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    
+    let r_channel: GrayImage = ImageBuffer::from_fn(width, height, |x, y| {
+        Luma([rgba.get_pixel(x, y)[0]])
+    });
+    let g_channel: GrayImage = ImageBuffer::from_fn(width, height, |x, y| {
+        Luma([rgba.get_pixel(x, y)[1]])
+    });
+    let b_channel: GrayImage = ImageBuffer::from_fn(width, height, |x, y| {
+        Luma([rgba.get_pixel(x, y)[2]])
+    });
+    
+    let r_blurred = gaussian_blur_f32(&r_channel, sigma);
+    let g_blurred = gaussian_blur_f32(&g_channel, sigma);
+    let b_blurred = gaussian_blur_f32(&b_channel, sigma);
+    
+    let mut result = ImageBuffer::new(width, height);
+    
+    let mean_bg = 128.0f32;
+    
+    for y in 0..height {
+        for x in 0..width {
+            let r_orig = rgba.get_pixel(x, y)[0] as f32;
+            let g_orig = rgba.get_pixel(x, y)[1] as f32;
+            let b_orig = rgba.get_pixel(x, y)[2] as f32;
+            let a = rgba.get_pixel(x, y)[3];
+            
+            let r_bg = r_blurred.get_pixel(x, y)[0] as f32;
+            let g_bg = g_blurred.get_pixel(x, y)[0] as f32;
+            let b_bg = b_blurred.get_pixel(x, y)[0] as f32;
+            
+            let r_bg = r_bg.max(16.0);
+            let g_bg = g_bg.max(16.0);
+            let b_bg = b_bg.max(16.0);
+            
+            let r = (r_orig * mean_bg / r_bg).clamp(0.0, 255.0) as u8;
+            let g = (g_orig * mean_bg / g_bg).clamp(0.0, 255.0) as u8;
+            let b = (b_orig * mean_bg / b_bg).clamp(0.0, 255.0) as u8;
+            
+            result.put_pixel(x, y, Rgba([r, g, b, a]));
+        }
+    }
+    
+    DynamicImage::ImageRgba8(result)
+}
+
+/// 自适应二值化 - 自己实现，支持偏移参数
+/// 类似 OpenCV 的 ADAPTIVE_THRESH_MEAN_C
+/// block_size: 块大小（必须是奇数）
+/// c: 从局部均值中减去的偏移值
+fn adaptive_binarize_custom(img: &DynamicImage, block_size: u32, c: i32) -> DynamicImage {
+    let gray = img.to_luma8();
+    let (width, height) = gray.dimensions();
+    
+    let block_size = block_size.max(3).min(99) | 1;
+    let half = block_size / 2;
+    
+    let integral_width = width as usize + 1;
+    let integral_height = height as usize + 1;
+    let mut integral = vec![0u64; integral_width * integral_height];
+    
+    for y in 0..height {
+        let mut row_sum = 0u64;
+        for x in 0..width {
+            row_sum += gray.get_pixel(x, y)[0] as u64;
+            let idx = ((y + 1) as usize) * integral_width + ((x + 1) as usize);
+            integral[idx] = integral[idx - integral_width] + row_sum;
+        }
+    }
+    
+    let mut result = ImageBuffer::new(width, height);
+    
+    for y in 0..height {
+        for x in 0..width {
+            let x1 = (x as i32 - half as i32).max(0) as u32;
+            let y1 = (y as i32 - half as i32).max(0) as u32;
+            let x2 = (x + half).min(width - 1);
+            let y2 = (y + half).min(height - 1);
+            
+            let count = ((x2 - x1 + 1) * (y2 - y1 + 1)) as u64;
+            
+            let idx1 = (y1 as usize) * integral_width + (x1 as usize);
+            let idx2 = (y1 as usize) * integral_width + ((x2 + 1) as usize);
+            let idx3 = ((y2 + 1) as usize) * integral_width + (x1 as usize);
+            let idx4 = ((y2 + 1) as usize) * integral_width + ((x2 + 1) as usize);
+            
+            let sum = integral[idx4] - integral[idx2] - integral[idx3] + integral[idx1];
+            let mean = sum as f64 / count as f64;
+            
+            let pixel_val = gray.get_pixel(x, y)[0] as f64;
+            let threshold = mean - c as f64;
+            
+            let value = if pixel_val > threshold { 255 } else { 0 };
+            result.put_pixel(x, y, Luma([value]));
+        }
+    }
+    
+    DynamicImage::ImageLuma8(result)
+}
+
+/// 形态学闭运算 - 填补断裂
+fn morphological_close(img: &GrayImage, kernel_size: u32) -> GrayImage {
+    let dilated = dilate_gray(img, kernel_size);
+    erode_gray(&dilated, kernel_size)
+}
+
+fn dilate_gray(img: &GrayImage, kernel_size: u32) -> GrayImage {
+    let (width, height) = img.dimensions();
+    let half = (kernel_size / 2) as i32;
+    
+    ImageBuffer::from_fn(width, height, |x, y| {
+        let mut max_val = 0u8;
+        for dy in -half..=half {
+            for dx in -half..=half {
+                let px = (x as i32 + dx).max(0).min(width as i32 - 1) as u32;
+                let py = (y as i32 + dy).max(0).min(height as i32 - 1) as u32;
+                let val = img.get_pixel(px, py)[0];
+                if val > max_val { max_val = val; }
+            }
+        }
+        Luma([max_val])
+    })
+}
+
+fn erode_gray(img: &GrayImage, kernel_size: u32) -> GrayImage {
+    let (width, height) = img.dimensions();
+    let half = (kernel_size / 2) as i32;
+    
+    ImageBuffer::from_fn(width, height, |x, y| {
+        let mut min_val = 255u8;
+        for dy in -half..=half {
+            for dx in -half..=half {
+                let px = (x as i32 + dx).max(0).min(width as i32 - 1) as u32;
+                let py = (y as i32 + dy).max(0).min(height as i32 - 1) as u32;
+                let val = img.get_pixel(px, py)[0];
+                if val < min_val { min_val = val; }
+            }
+        }
+        Luma([min_val])
+    })
+}
+
+/// 文档增强主函数
+fn enhance_document_advanced_internal(img: &DynamicImage, binarize: bool) -> DynamicImage {
+    let normalized = normalize_illumination(img, 25.0);
+    
+    if binarize {
+        let binary = adaptive_binarize_custom(&normalized, 51, 15);
+        let gray = binary.to_luma8();
+        let refined = morphological_close(&gray, 3);
+        DynamicImage::ImageLuma8(refined)
+    } else {
+        normalized
+    }
+}
+
+/// 文档增强选项
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentEnhanceOptions {
+    pub binarize: bool,
+}
+
+/// 高级文档增强命令
+#[tauri::command]
+fn enhance_document_advanced(image_data: String, options: DocumentEnhanceOptions) -> Result<String, String> {
+    let img = decode_base64_image(&image_data)?;
+    
+    let enhanced = enhance_document_advanced_internal(&img, options.binarize);
+    
+    let mut buffer = Vec::new();
+    enhanced
+        .write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
+        .map_err(|e| format!("Failed to encode image: {}", e))?;
+    
+    let result = format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(&buffer));
+    
+    Ok(result)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use simplelog::*;
@@ -1886,7 +2595,10 @@ pub fn run() {
     let log_file = log_dir.join(format!("viewstage_{}.log", chrono::Local::now().format("%Y%m%d")));
     
     if let Ok(file) = File::create(&log_file) {
-        let _ = WriteLogger::init(LevelFilter::Info, Config::default(), file);
+        let _ = CombinedLogger::init(vec![
+            WriteLogger::new(LevelFilter::Info, Config::default(), file),
+            TermLogger::new(LevelFilter::Info, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
+        ]);
         log::info!("日志系统初始化成功");
     }
     
@@ -1908,6 +2620,14 @@ pub fn run() {
         }))
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
+            
+            // 初始化 GPU 上下文
+            std::thread::spawn(|| {
+                match pollster::block_on(gpu::GpuContext::init()) {
+                    Ok(_) => log::info!("GPU 上下文初始化成功"),
+                    Err(e) => log::warn!("GPU 上下文初始化失败: {}", e),
+                }
+            });
             
             let _ = window.set_decorations(false);
             
@@ -2008,6 +2728,7 @@ pub fn run() {
             compact_strokes,
             generate_thumbnails_batch,
             open_settings_window,
+            open_doc_scan_window,
             rotate_main_image,
             set_mirror_state,
             get_mirror_state,
@@ -2029,7 +2750,11 @@ pub fn run() {
             detect_office,
             convert_docx_to_pdf,
             convert_docx_to_pdf_from_bytes,
-            set_file_type_icons
+            set_file_type_icons,
+            scan_document,
+            enhance_document_advanced,
+            detect_text_east,
+            get_east_model_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

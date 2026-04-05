@@ -160,6 +160,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     hasCameraPermission = false;
                 }
                 
+                const requestCameraPermissionItem = document.getElementById('requestCameraPermissionItem');
+                const btnRequestCameraPermission = document.getElementById('btnRequestCameraPermission');
+                
                 if (cameraSelected && cameraOptionsContainer) {
                     try {
                         const devices = await navigator.mediaDevices.enumerateDevices();
@@ -172,10 +175,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                             cameraSelected.textContent = window.i18n?.t('settings.noCameraPermission') || '无摄像头权限';
                             cameraResolutionSelected.textContent = '-';
                             disableCameraSettings();
+                            if (requestCameraPermissionItem && btnRequestCameraPermission) {
+                                requestCameraPermissionItem.style.display = 'flex';
+                                btnRequestCameraPermission.textContent = window.i18n?.t('settings.requestCameraPermission') || '获取摄像头权限';
+                                btnRequestCameraPermission.dataset.mode = 'request';
+                            }
                         } else if (videoDevices.length === 0) {
                             cameraSelected.textContent = window.i18n?.t('settings.noCameraDetected') || '未检测到摄像头';
                             cameraResolutionSelected.textContent = '-';
                             disableCameraSettings();
+                            if (requestCameraPermissionItem && btnRequestCameraPermission) {
+                                requestCameraPermissionItem.style.display = 'none';
+                            }
                         } else {
                             videoDevices.forEach((device, index) => {
                                 const option = document.createElement('div');
@@ -217,6 +228,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     cameraSelected.textContent = cameraOptions[0].textContent;
                                     cameraOptions[0].classList.add('selected');
                                 }
+                            }
+                            
+                            if (requestCameraPermissionItem && btnRequestCameraPermission) {
+                                requestCameraPermissionItem.style.display = 'flex';
+                                btnRequestCameraPermission.textContent = window.i18n?.t('settings.revokeCameraPermission') || '撤销授权';
+                                btnRequestCameraPermission.dataset.mode = 'revoke';
                             }
                         }
                     } catch (error) {
@@ -406,6 +423,36 @@ document.addEventListener('DOMContentLoaded', async () => {
                         console.error('获取镜像状态失败:', error);
                         mirrorToggle.checked = false;
                     }
+                }
+                
+                // 降噪帧数设置
+                const denoiseFrameCount = settings.denoiseFrameCount || 3;
+                const denoiseFrameSelected = document.getElementById('denoiseFrameSelected');
+                const denoiseFrameOptions = document.querySelectorAll('#denoiseFrameOptions .select-option');
+                if (denoiseFrameSelected && denoiseFrameOptions.length > 0) {
+                    denoiseFrameOptions.forEach(option => {
+                        if (parseInt(option.dataset.value) === denoiseFrameCount) {
+                            denoiseFrameSelected.textContent = option.textContent;
+                            option.classList.add('selected');
+                        } else {
+                            option.classList.remove('selected');
+                        }
+                    });
+                }
+                
+                // 降噪强度设置
+                const denoiseStrength = settings.denoiseStrength || 'medium';
+                const denoiseStrengthSelected = document.getElementById('denoiseStrengthSelected');
+                const denoiseStrengthOptions = document.querySelectorAll('#denoiseStrengthOptions .select-option');
+                if (denoiseStrengthSelected && denoiseStrengthOptions.length > 0) {
+                    denoiseStrengthOptions.forEach(option => {
+                        if (option.dataset.value === denoiseStrength) {
+                            denoiseStrengthSelected.textContent = option.textContent;
+                            option.classList.add('selected');
+                        } else {
+                            option.classList.remove('selected');
+                        }
+                    });
                 }
                 
                 // 高帧率绘制设置
@@ -797,6 +844,56 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     
+    // 降噪帧数选择
+    const denoiseFrameSelect = document.getElementById('denoiseFrameSelect');
+    const denoiseFrameSelected = document.getElementById('denoiseFrameSelected');
+    
+    if (denoiseFrameSelect && denoiseFrameSelected) {
+        denoiseFrameSelected.addEventListener('click', () => {
+            denoiseFrameSelect.classList.toggle('open');
+        });
+        
+        const denoiseFrameOptions = document.querySelectorAll('#denoiseFrameOptions .select-option');
+        denoiseFrameOptions.forEach(option => {
+            option.addEventListener('click', async () => {
+                const value = option.dataset.value;
+                denoiseFrameSelected.textContent = option.textContent;
+                
+                denoiseFrameOptions.forEach(opt => opt.classList.remove('selected'));
+                option.classList.add('selected');
+                
+                denoiseFrameSelect.classList.remove('open');
+                
+                await saveSettings({ denoiseFrameCount: parseInt(value) });
+            });
+        });
+    }
+    
+    // 降噪强度选择
+    const denoiseStrengthSelect = document.getElementById('denoiseStrengthSelect');
+    const denoiseStrengthSelected = document.getElementById('denoiseStrengthSelected');
+    
+    if (denoiseStrengthSelect && denoiseStrengthSelected) {
+        denoiseStrengthSelected.addEventListener('click', () => {
+            denoiseStrengthSelect.classList.toggle('open');
+        });
+        
+        const denoiseStrengthOptions = document.querySelectorAll('#denoiseStrengthOptions .select-option');
+        denoiseStrengthOptions.forEach(option => {
+            option.addEventListener('click', async () => {
+                const value = option.dataset.value;
+                denoiseStrengthSelected.textContent = option.textContent;
+                
+                denoiseStrengthOptions.forEach(opt => opt.classList.remove('selected'));
+                option.classList.add('selected');
+                
+                denoiseStrengthSelect.classList.remove('open');
+                
+                await saveSettings({ denoiseStrength: value });
+            });
+        });
+    }
+    
     // 高帧率绘制开关
     const highFrameRateToggle = document.getElementById('highFrameRateToggle');
     if (highFrameRateToggle) {
@@ -975,22 +1072,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     if (btnReset && modalOverlay && window.__TAURI__) {
         btnReset.addEventListener('click', () => {
+            const modalTitle = modalOverlay.querySelector('.modal-title');
+            const modalMessage = modalOverlay.querySelector('.modal-message');
+            if (modalTitle && modalMessage) {
+                modalTitle.textContent = window.i18n?.t('settings.confirmReset') || '确认重置';
+                modalMessage.textContent = window.i18n?.t('settings.resetWarning') || '确定要重置应用吗？这将删除所有设置并重启应用。';
+            }
+            modalConfirm.dataset.action = 'reset';
             modalOverlay.classList.add('active');
         });
         
         modalCancel.addEventListener('click', () => {
             modalOverlay.classList.remove('active');
+            delete modalConfirm.dataset.action;
         });
         
         modalOverlay.addEventListener('click', (e) => {
             if (e.target === modalOverlay) {
                 modalOverlay.classList.remove('active');
+                delete modalConfirm.dataset.action;
             }
         });
         
         modalConfirm.addEventListener('click', async () => {
             try {
                 const { invoke } = window.__TAURI__.core;
+                const { getCurrentWebview } = window.__TAURI__.webview;
+                const webview = getCurrentWebview();
+                await webview.clearAllBrowsingData();
                 await invoke('reset_settings');
             } catch (error) {
                 console.error('重置失败:', error);
@@ -1378,6 +1487,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         linkLicense.addEventListener('click', (e) => {
             e.preventDefault();
             window.__TAURI__.opener.openUrl('https://github.com/ospneam/ViewStage?tab=Apache-2.0-1-ov-file');
+        });
+    }
+
+    const btnRequestCameraPermission = document.getElementById('btnRequestCameraPermission');
+    if (btnRequestCameraPermission) {
+        btnRequestCameraPermission.addEventListener('click', async () => {
+            const mode = btnRequestCameraPermission.dataset.mode;
+            
+            if (mode === 'revoke') {
+                const modalOverlay = document.getElementById('modalOverlay');
+                const modalTitle = modalOverlay?.querySelector('.modal-title');
+                const modalMessage = modalOverlay?.querySelector('.modal-message');
+                const modalConfirm = document.getElementById('modalConfirm');
+                
+                if (modalOverlay && modalTitle && modalMessage) {
+                    modalTitle.textContent = window.i18n?.t('settings.revokePermission') || '撤销授权';
+                    modalMessage.textContent = window.i18n?.t('settings.revokePermissionHint') || '撤销摄像头权限需要重置应用，这将删除所有设置并重启应用。确定要继续吗？';
+                    modalOverlay.classList.add('active');
+                    
+                    modalConfirm.dataset.action = 'revoke-permission';
+                }
+            } else {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    stream.getTracks().forEach(t => t.stop());
+                    
+                    location.reload();
+                } catch (error) {
+                    console.error('获取摄像头权限失败:', error);
+                    showSettingsDialog(
+                        window.i18n?.t('common.error') || '错误',
+                        window.i18n?.t('settings.cameraPermissionDenied') || '无法获取摄像头权限，请在系统设置中手动授权',
+                        'error'
+                    );
+                }
+            }
         });
     }
 
