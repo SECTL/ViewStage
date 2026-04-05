@@ -18,9 +18,7 @@ use tauri::{Manager, Emitter};
 use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage, GrayImage, Luma};
 use imageproc::filter::gaussian_blur_f32;
 use base64::{Engine as _, engine::general_purpose};
-use tract_onnx::prelude::*;
 
-mod gpu;
 mod image_processing;
 
 use image_processing::{
@@ -2259,111 +2257,6 @@ fn detect_text_regions_dbnet(_img: &DynamicImage, _model_path: &str, _binary_thr
     Err("DBNet 文本检测仅支持 Windows 系统".to_string())
 }
 
-// ==================== Tract ONNX DBNet 文本检测 ====================
-// 使用 tract-onnx 实现 DBNet 文本检测（纯Rust，无外部依赖）
-
-#[allow(dead_code)]
-fn detect_text_regions_dbnet_tract(
-    img: &DynamicImage,
-    model_path: &str,
-    binary_threshold: f32
-) -> Result<Option<(i32, i32, i32, i32)>, String> {
-    log::info!("加载 Tract ONNX DBNet 模型: {}", model_path);
-    
-    let model = tract_onnx::onnx()
-        .model_for_path(model_path)
-        .map_err(|e| format!("加载ONNX模型失败: {}", e))?
-        .into_optimized()
-        .map_err(|e| format!("优化模型失败: {}", e))?
-        .into_runnable()
-        .map_err(|e| format!("创建可运行模型失败: {}", e))?;
-    
-    log::info!("Tract ONNX DBNet 模型加载成功");
-    
-    let (orig_width, orig_height) = (img.width() as i32, img.height() as i32);
-    
-    let target_size = 640i32;
-    let scale = target_size as f32 / orig_width.max(orig_height) as f32;
-    let new_width = (orig_width as f32 * scale) as i32;
-    let new_height = (orig_height as f32 * scale) as i32;
-    
-    let rw = orig_width as f32 / new_width as f32;
-    let rh = orig_height as f32 / new_height as f32;
-    
-    let resized = img.resize_exact(new_width as u32, new_height as u32, image::imageops::FilterType::Triangle);
-    
-    let rgba = resized.to_rgba8();
-    let mut input_data = Vec::with_capacity((new_width * new_height * 3) as usize);
-    for pixel in rgba.pixels() {
-        let r = pixel[0] as f32 / 255.0;
-        let g = pixel[1] as f32 / 255.0;
-        let b = pixel[2] as f32 / 255.0;
-        
-        input_data.push((r - 0.485) / 0.229);
-        input_data.push((g - 0.456) / 0.224);
-        input_data.push((b - 0.406) / 0.225);
-    }
-    
-    let input_tensor: Tensor = tract_ndarray::Array4::from_shape_vec(
-        (1, 3, new_height as usize, new_width as usize),
-        input_data
-    ).map_err(|e| format!("创建输入tensor失败: {}", e))?.into();
-    
-    log::info!("Tract ONNX 开始推理");
-    
-    let result = model.run(tvec!(input_tensor.into()))
-        .map_err(|e| format!("Tract ONNX 推理失败: {}", e))?;
-    
-    let output = result[0].to_array_view::<f32>()
-        .map_err(|e| format!("获取输出失败: {}", e))?;
-    
-    let output_dims = output.shape();
-    log::info!("Tract ONNX 输出维度: {:?}", output_dims);
-    
-    let height = output_dims[2];
-    let width = output_dims[3];
-    
-    let mut text_regions: Vec<(i32, i32, i32, i32)> = Vec::new();
-    let threshold = binary_threshold;
-    
-    for y in 0..height {
-        for x in 0..width {
-            let prob = output[[0, 0, y, x]];
-            if prob > threshold {
-                let x1 = (x as f32 * rw) as i32;
-                let y1 = (y as f32 * rh) as i32;
-                let x2 = ((x + 1) as f32 * rw) as i32;
-                let y2 = ((y + 1) as f32 * rh) as i32;
-                
-                text_regions.push((x1, y1, x2, y2));
-            }
-        }
-    }
-    
-    log::info!("Tract ONNX 检测到 {} 个文本区域", text_regions.len());
-    
-    if text_regions.is_empty() {
-        return Ok(None);
-    }
-    
-    let min_x = text_regions.iter().map(|p| p.0).min().unwrap_or(0);
-    let min_y = text_regions.iter().map(|p| p.1).min().unwrap_or(0);
-    let max_x = text_regions.iter().map(|p| p.2).max().unwrap_or(orig_width);
-    let max_y = text_regions.iter().map(|p| p.3).max().unwrap_or(orig_height);
-    
-    let margin = 20;
-    let x1 = (min_x - margin).max(0);
-    let y1 = (min_y - margin).max(0);
-    let x2 = (max_x + margin).min(orig_width);
-    let y2 = (max_y + margin).min(orig_height);
-    
-    let bbox = (x1, y1, x2, y2);
-    
-    log::info!("Tract ONNX 最终边界框: {:?}", bbox);
-    
-    Ok(Some(bbox))
-}
-
 // ==================== ONNX Runtime DBNet 文本检测 ====================
 // 使用 ort (ONNX Runtime) 实现 DBNet 文本检测
 
@@ -3442,13 +3335,6 @@ pub fn run() {
         .setup(|app| {
             let window = app.get_webview_window("main")
                 .expect("Failed to get main window");
-            
-            std::thread::spawn(|| {
-                match pollster::block_on(gpu::GpuContext::init()) {
-                    Ok(_) => log::info!("GPU 上下文初始化成功"),
-                    Err(e) => log::warn!("GPU 上下文初始化失败: {}", e),
-                }
-            });
             
             let _ = window.set_decorations(false);
             
