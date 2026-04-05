@@ -32,6 +32,10 @@
                 <span class="btn-icon"><img data-icon="folder" width="16" height="16"></span>
                 <span class="btn-text" data-i18n="settings.storage">存储</span>
             </button>
+            <button class="sidebar-btn" id="btnResources">
+                <span class="btn-icon">📦</span>
+                <span class="btn-text">资源下载</span>
+            </button>
             <button class="sidebar-btn" id="btnCanvas">
                 <span class="btn-icon">◐</span>
                 <span class="btn-text" data-i18n="settings.canvasAdjust">Canvas调节</span>
@@ -313,6 +317,48 @@
                     <div class="setting-item">
                         <span class="setting-label" data-i18n="settings.log">日志</span>
                         <button class="btn-clear-cache" id="btnOpenLogDir" data-i18n="settings.openLogDir">打开日志目录</button>
+                    </div>
+                </div>
+                
+                <div class="page" id="pageResources">
+                    <h2 class="page-title">资源下载</h2>
+                    <div class="setting-item">
+                        <span class="setting-label">DBNet 文本检测模型</span>
+                        <div style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span id="dbnetModelStatus" style="color: #888; font-size: 12px;">检查中...</span>
+                                <button class="btn-action" id="btnDownloadDbnetModel" style="display: none;">下载</button>
+                                <button class="btn-action" id="btnDeleteDbnetModel" style="display: none; background: #e74c3c;">删除</button>
+                            </div>
+                            <div id="downloadProgress" style="display: none; width: 100%;">
+                                <div style="background: #ecf0f1; border-radius: 4px; height: 20px; overflow: hidden;">
+                                    <div id="downloadProgressBar" style="background: #3498db; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                                </div>
+                                <div id="downloadProgressText" style="color: #888; font-size: 12px; margin-top: 5px;">0%</div>
+                            </div>
+                            <div style="color: #888; font-size: 12px; margin-top: 5px;">
+                                DBNet 文本检测模型（约54MB），用于文档扫描功能。相比EAST模型，体积更小、速度更快、精度更高。支持中英文文本检测。
+                            </div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">UVDoc 文档矫正模型</span>
+                        <div style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span id="uvdocModelStatus" style="color: #888; font-size: 12px;">检查中...</span>
+                                <button class="btn-action" id="btnDownloadUvdocModel" style="display: none;">下载</button>
+                                <button class="btn-action" id="btnDeleteUvdocModel" style="display: none; background: #e74c3c;">删除</button>
+                            </div>
+                            <div id="uvdocDownloadProgress" style="display: none; width: 100%;">
+                                <div style="background: #ecf0f1; border-radius: 4px; height: 20px; overflow: hidden;">
+                                    <div id="uvdocDownloadProgressBar" style="background: #3498db; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                                </div>
+                                <div id="uvdocDownloadProgressText" style="color: #888; font-size: 12px; margin-top: 5px;">0%</div>
+                            </div>
+                            <div style="color: #888; font-size: 12px; margin-top: 5px;">
+                                UVDoc 文档扭曲矫正模型（约30MB），用于矫正弯曲、折叠的文档图像。
+                            </div>
+                        </div>
                     </div>
                 </div>
                 

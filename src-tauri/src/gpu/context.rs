@@ -16,8 +16,8 @@ impl GpuContext {
     }
     
     pub async fn init() -> Result<&'static GpuContext, String> {
-        if GPU_CONTEXT.get().is_some() {
-            return Ok(GPU_CONTEXT.get().unwrap());
+        if let Some(ctx) = GPU_CONTEXT.get() {
+            return Ok(ctx);
         }
         
         let instance = Instance::new(InstanceDescriptor {
@@ -48,6 +48,6 @@ impl GpuContext {
         GPU_CONTEXT.set(context)
             .map_err(|_| "Failed to set GPU context".to_string())?;
         
-        Ok(GPU_CONTEXT.get().unwrap())
+        Ok(GPU_CONTEXT.get().expect("GPU context was just set"))
     }
 }

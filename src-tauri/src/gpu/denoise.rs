@@ -131,8 +131,8 @@ pub fn gpu_multi_frame_denoise(frames: &[DynamicImage]) -> Result<DynamicImage, 
     });
     
     // 计算工作组大小
-    let workgroup_size_x = (width + 15) / 16;
-    let workgroup_size_y = (height + 15) / 16;
+    let workgroup_size_x = width.div_ceil(16);
+    let workgroup_size_y = height.div_ceil(16);
     
     // 执行计算
     {

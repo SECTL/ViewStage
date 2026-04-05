@@ -1201,6 +1201,194 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     
+    // ==================== 模型资源管理 ====================
+    const dbnetModelStatus = document.getElementById('dbnetModelStatus');
+    const btnDownloadDbnetModel = document.getElementById('btnDownloadDbnetModel');
+    const btnDeleteDbnetModel = document.getElementById('btnDeleteDbnetModel');
+    const downloadProgress = document.getElementById('downloadProgress');
+    const downloadProgressBar = document.getElementById('downloadProgressBar');
+    const downloadProgressText = document.getElementById('downloadProgressText');
+    
+    async function checkDbnetModel() {
+        if (!window.__TAURI__) return;
+        
+        try {
+            const { invoke } = window.__TAURI__.core;
+            const modelInfo = await invoke('get_dbnet_model_info');
+            
+            if (modelInfo.exists) {
+                dbnetModelStatus.textContent = `已安装 (${modelInfo.size_mb.toFixed(2)} MB)`;
+                dbnetModelStatus.style.color = '#27ae60';
+                btnDownloadDbnetModel.style.display = 'none';
+                btnDeleteDbnetModel.style.display = 'inline-block';
+            } else {
+                dbnetModelStatus.textContent = '未安装';
+                dbnetModelStatus.style.color = '#e74c3c';
+                btnDownloadDbnetModel.style.display = 'inline-block';
+                btnDeleteDbnetModel.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('检查模型状态失败:', error);
+            dbnetModelStatus.textContent = '检查失败';
+            dbnetModelStatus.style.color = '#e74c3c';
+        }
+    }
+    
+    if (btnDownloadDbnetModel && window.__TAURI__) {
+        btnDownloadDbnetModel.addEventListener('click', async () => {
+            try {
+                const { invoke } = window.__TAURI__.core;
+                const { getCurrentWindow } = window.__TAURI__.window;
+                
+                btnDownloadDbnetModel.disabled = true;
+                btnDownloadDbnetModel.textContent = '下载中...';
+                downloadProgress.style.display = 'block';
+                
+                const currentWindow = getCurrentWindow();
+                
+                const unlisten = await currentWindow.listen('download-progress', (event) => {
+                    const progress = event.payload;
+                    downloadProgressBar.style.width = progress + '%';
+                    downloadProgressText.textContent = progress + '%';
+                });
+                
+                await invoke('download_dbnet_model');
+                
+                unlisten();
+                
+                downloadProgress.style.display = 'none';
+                btnDownloadDbnetModel.disabled = false;
+                btnDownloadDbnetModel.textContent = '下载';
+                
+                showSettingsDialog('成功', 'DBNet 模型下载成功！', 'success');
+                
+                await checkDbnetModel();
+            } catch (error) {
+                console.error('下载模型失败:', error);
+                downloadProgress.style.display = 'none';
+                btnDownloadDbnetModel.disabled = false;
+                btnDownloadDbnetModel.textContent = '下载';
+                showSettingsDialog('错误', `下载失败: ${error}`, 'error');
+            }
+        });
+    }
+    
+    if (btnDeleteDbnetModel && window.__TAURI__) {
+        btnDeleteDbnetModel.addEventListener('click', async () => {
+            try {
+                const { invoke } = window.__TAURI__.core;
+                
+                const confirmed = confirm('确定要删除 DBNet 模型吗？删除后需要重新下载。');
+                if (!confirmed) return;
+                
+                await invoke('delete_dbnet_model');
+                
+                showSettingsDialog('成功', 'DBNet 模型已删除！', 'success');
+                
+                await checkDbnetModel();
+            } catch (error) {
+                console.error('删除模型失败:', error);
+                showSettingsDialog('错误', `删除失败: ${error}`, 'error');
+            }
+        });
+    }
+    
+    // ==================== UVDoc 模型管理 ====================
+    const uvdocModelStatus = document.getElementById('uvdocModelStatus');
+    const btnDownloadUvdocModel = document.getElementById('btnDownloadUvdocModel');
+    const btnDeleteUvdocModel = document.getElementById('btnDeleteUvdocModel');
+    const uvdocDownloadProgress = document.getElementById('uvdocDownloadProgress');
+    const uvdocDownloadProgressBar = document.getElementById('uvdocDownloadProgressBar');
+    const uvdocDownloadProgressText = document.getElementById('uvdocDownloadProgressText');
+    
+    async function checkUvdocModel() {
+        if (!window.__TAURI__) return;
+        
+        try {
+            const { invoke } = window.__TAURI__.core;
+            const info = await invoke('get_uvdoc_model_info');
+            
+            if (info.exists) {
+                uvdocModelStatus.textContent = `已安装 (${info.size_mb.toFixed(1)} MB)`;
+                uvdocModelStatus.style.color = '#27ae60';
+                btnDownloadUvdocModel.style.display = 'none';
+                btnDeleteUvdocModel.style.display = 'inline-block';
+            } else {
+                uvdocModelStatus.textContent = '未安装';
+                uvdocModelStatus.style.color = '#e74c3c';
+                btnDownloadUvdocModel.style.display = 'inline-block';
+                btnDeleteUvdocModel.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('检查UVDoc模型状态失败:', error);
+            uvdocModelStatus.textContent = '检查失败';
+            uvdocModelStatus.style.color = '#e74c3c';
+        }
+    }
+    
+    if (btnDownloadUvdocModel && window.__TAURI__) {
+        btnDownloadUvdocModel.addEventListener('click', async () => {
+            try {
+                const { invoke } = window.__TAURI__.core;
+                const { getCurrentWindow } = window.__TAURI__.window;
+                
+                btnDownloadUvdocModel.disabled = true;
+                btnDownloadUvdocModel.textContent = '下载中...';
+                uvdocDownloadProgress.style.display = 'block';
+                
+                const currentWindow = getCurrentWindow();
+                
+                const unlisten = await currentWindow.listen('uvdoc-download-progress', (event) => {
+                    const progress = event.payload;
+                    uvdocDownloadProgressBar.style.width = progress + '%';
+                    uvdocDownloadProgressText.textContent = progress + '%';
+                });
+                
+                await invoke('download_uvdoc_model');
+                
+                unlisten();
+                
+                uvdocDownloadProgress.style.display = 'none';
+                btnDownloadUvdocModel.disabled = false;
+                btnDownloadUvdocModel.textContent = '下载';
+                
+                showSettingsDialog('成功', 'UVDoc 模型下载成功！', 'success');
+                
+                await checkUvdocModel();
+            } catch (error) {
+                console.error('下载UVDoc模型失败:', error);
+                uvdocDownloadProgress.style.display = 'none';
+                btnDownloadUvdocModel.disabled = false;
+                btnDownloadUvdocModel.textContent = '下载';
+                showSettingsDialog('错误', `下载失败: ${error}`, 'error');
+            }
+        });
+    }
+    
+    if (btnDeleteUvdocModel && window.__TAURI__) {
+        btnDeleteUvdocModel.addEventListener('click', async () => {
+            try {
+                const { invoke } = window.__TAURI__.core;
+                
+                const confirmed = confirm('确定要删除 UVDoc 模型吗？删除后需要重新下载。');
+                if (!confirmed) return;
+                
+                await invoke('delete_uvdoc_model');
+                
+                showSettingsDialog('成功', 'UVDoc 模型已删除！', 'success');
+                
+                await checkUvdocModel();
+            } catch (error) {
+                console.error('删除UVDoc模型失败:', error);
+                showSettingsDialog('错误', `删除失败: ${error}`, 'error');
+            }
+        });
+    }
+    
+    checkUvdocModel();
+    
+    checkDbnetModel();
+    
     const restartModal = document.getElementById('restartModal');
     const restartLater = document.getElementById('restartLater');
     const restartNow = document.getElementById('restartNow');
@@ -1366,6 +1554,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const pageMap = {
                 'btnApp': 'pageApp',
                 'btnStorage': 'pageStorage',
+                'btnResources': 'pageResources',
                 'btnCanvas': 'pageCanvas',
                 'btnSource': 'pageSource',
                 'btnTheme': 'pageTheme',

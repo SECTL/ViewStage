@@ -15,12 +15,19 @@
 //! - 使用 image 库进行图像处理
 
 use tauri::{Manager, Emitter};
-use image::{DynamicImage, ImageBuffer, Rgba, GenericImageView, RgbaImage, GrayImage, Luma};
+use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage, GrayImage, Luma};
 use imageproc::filter::gaussian_blur_f32;
 use base64::{Engine as _, engine::general_purpose};
-use rayon::prelude::*;
+use tract_onnx::prelude::*;
 
 mod gpu;
+mod image_processing;
+
+use image_processing::{
+    decode_base64_image, extract_base64,
+    enhance_image, generate_thumbnail, generate_thumbnails_batch, rotate_image,
+    apply_enhance_filter,
+};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -30,12 +37,11 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[cfg(target_os = "windows")]
 use opencv::{
-    core::{Mat, Vector, Size, Scalar, CV_32F, CV_8UC3, Point, BORDER_CONSTANT},
-    dnn::{read_net_from_tensorflow, Net, blob_from_image},
+    core::{Mat, Vector, Size, Scalar, CV_32F, CV_8UC3, Point},
+    dnn::{read_net_from_tensorflow, read_net_from_onnx, Net, blob_from_image},
     imgproc::{
         resize, cvt_color, COLOR_BGR2GRAY,
-        adaptive_threshold, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY,
-        get_structuring_element, morphology_ex, MORPH_RECT, MORPH_CLOSE,
+        threshold, find_contours, contour_area,
     },
     photo::fast_nl_means_denoising,
     prelude::*,
@@ -83,293 +89,6 @@ pub struct CompactStrokesRequest {
     pub strokes: Vec<Stroke>,           // 待压缩笔画
     pub canvas_width: u32,              // 画布宽度
     pub canvas_height: u32,             // 画布高度
-}
-
-/// 缩略图请求
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThumbnailRequest {
-    pub image_data: String,     // 原图数据
-    pub name: Option<String>,   // 文件名
-}
-
-/// 缩略图生成结果
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThumbnailResult {
-    pub thumbnail: Option<String>,  // 缩略图数据 (base64)，失败时为 None
-    pub error: Option<String>,      // 错误信息
-}
-
-// ==================== 工具函数 ====================
-// base64 解码、图像格式转换等辅助函数
-
-const MAX_IMAGE_SIZE: usize = 50 * 1024 * 1024;
-
-/// 解码 base64 图片
-fn decode_base64_image(image_data: &str) -> Result<DynamicImage, String> {
-    let base64_data = if image_data.starts_with("data:image") {
-        image_data.split(',')
-            .nth(1)
-            .ok_or("Invalid base64 image data")?
-            .to_string()
-    } else {
-        image_data.to_string()
-    };
-    
-    if base64_data.len() > MAX_IMAGE_SIZE * 4 / 3 {
-        return Err("Image data too large (max 50MB)".to_string());
-    }
-    
-    let decoded = general_purpose::STANDARD
-        .decode(&base64_data)
-        .map_err(|e| format!("Failed to decode base64: {}", e))?;
-    
-    let img = image::load_from_memory(&decoded)
-        .map_err(|e| format!("Failed to load image: {}", e))?;
-    
-    if img.width() == 0 || img.height() == 0 {
-        return Err("Invalid image dimensions: width or height is zero".to_string());
-    }
-    
-    Ok(img)
-}
-
-// ==================== 图像增强 ====================
-// 对比度、亮度、饱和度调整，使用 rayon 并行处理
-
-/// 图像增强命令 (对比度、亮度、饱和度、锐化调整)
-#[tauri::command]
-fn enhance_image(image_data: String, contrast: f32, brightness: f32, saturation: f32, sharpen: f32) -> Result<String, String> {
-    let img = decode_base64_image(&image_data)?;
-    
-    let enhanced = apply_enhance_filter(&img, contrast, brightness, saturation, sharpen);
-    
-    let mut buffer = Vec::new();
-    enhanced
-        .write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
-        .map_err(|e| format!("Failed to encode image: {}", e))?;
-    
-    let result = format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(&buffer));
-    
-    Ok(result)
-}
-
-/// 应用图像增强滤镜 (并行处理)
-fn apply_enhance_filter(img: &DynamicImage, contrast: f32, brightness: f32, saturation: f32, sharpen: f32) -> DynamicImage {
-    let (width, height) = (img.width(), img.height());
-    
-    let rgba_img = img.to_rgba8();
-    
-    // 第一步：对比度、亮度、饱和度调整
-    let pixels: Vec<(u32, u32, Rgba<u8>)> = rgba_img
-        .enumerate_pixels()
-        .par_bridge()
-        .map(|(x, y, pixel)| {
-            let r = pixel[0] as f32;
-            let g = pixel[1] as f32;
-            let b = pixel[2] as f32;
-            let a = pixel[3];
-            
-            let mut new_r = ((r - 128.0) * contrast) + 128.0 + brightness;
-            let mut new_g = ((g - 128.0) * contrast) + 128.0 + brightness;
-            let mut new_b = ((b - 128.0) * contrast) + 128.0 + brightness;
-            
-            let gray = 0.299 * new_r + 0.587 * new_g + 0.114 * new_b;
-            new_r = gray + (new_r - gray) * saturation;
-            new_g = gray + (new_g - gray) * saturation;
-            new_b = gray + (new_b - gray) * saturation;
-            
-            new_r = new_r.clamp(0.0, 255.0);
-            new_g = new_g.clamp(0.0, 255.0);
-            new_b = new_b.clamp(0.0, 255.0);
-            
-            (x, y, Rgba([new_r as u8, new_g as u8, new_b as u8, a]))
-        })
-        .collect();
-    
-    let mut enhanced_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
-    for (x, y, pixel) in pixels {
-        enhanced_img.put_pixel(x, y, pixel);
-    }
-    
-    // 第二步：锐化处理 (USM 锐化) - 并行优化
-    if sharpen > 0.0 && width > 2 && height > 2 {
-        let original = enhanced_img.clone();
-        let original_raw = original.as_raw();
-        let sharpen_amount = sharpen / 100.0;
-        
-        let sharpened_pixels: Vec<(u32, u32, Rgba<u8>)> = (1..height - 1)
-            .into_par_iter()
-            .flat_map(|y| {
-                (1..width - 1).into_par_iter().map(move |x| {
-                    let idx = ((y * width + x) * 4) as usize;
-                    
-                    let r = original_raw[idx] as f32;
-                    let g = original_raw[idx + 1] as f32;
-                    let b = original_raw[idx + 2] as f32;
-                    let a = original_raw[idx + 3];
-                    
-                    // 正确计算字节偏移
-                    let prev_row_start = ((y - 1) * width * 4) as usize;
-                    let curr_row_start = (y * width * 4) as usize;
-                    let next_row_start = ((y + 1) * width * 4) as usize;
-                    let x_bytes = (x * 4) as usize;
-                    
-                    // R 通道邻居 (偏移 0)
-                    let neighbors_r: f32 = [
-                        original_raw[prev_row_start + x_bytes - 4],
-                        original_raw[prev_row_start + x_bytes],
-                        original_raw[prev_row_start + x_bytes + 4],
-                        original_raw[curr_row_start + x_bytes - 4],
-                        original_raw[curr_row_start + x_bytes + 4],
-                        original_raw[next_row_start + x_bytes - 4],
-                        original_raw[next_row_start + x_bytes],
-                        original_raw[next_row_start + x_bytes + 4],
-                    ].iter().map(|&v| v as f32).sum();
-                    
-                    // G 通道邻居 (偏移 1)
-                    let neighbors_g: f32 = [
-                        original_raw[prev_row_start + x_bytes - 3],
-                        original_raw[prev_row_start + x_bytes + 1],
-                        original_raw[prev_row_start + x_bytes + 5],
-                        original_raw[curr_row_start + x_bytes - 3],
-                        original_raw[curr_row_start + x_bytes + 5],
-                        original_raw[next_row_start + x_bytes - 3],
-                        original_raw[next_row_start + x_bytes + 1],
-                        original_raw[next_row_start + x_bytes + 5],
-                    ].iter().map(|&v| v as f32).sum();
-                    
-                    // B 通道邻居 (偏移 2)
-                    let neighbors_b: f32 = [
-                        original_raw[prev_row_start + x_bytes - 2],
-                        original_raw[prev_row_start + x_bytes + 2],
-                        original_raw[prev_row_start + x_bytes + 6],
-                        original_raw[curr_row_start + x_bytes - 2],
-                        original_raw[curr_row_start + x_bytes + 6],
-                        original_raw[next_row_start + x_bytes - 2],
-                        original_raw[next_row_start + x_bytes + 2],
-                        original_raw[next_row_start + x_bytes + 6],
-                    ].iter().map(|&v| v as f32).sum();
-                    
-                    let laplacian_r = r * 9.0 - neighbors_r;
-                    let laplacian_g = g * 9.0 - neighbors_g;
-                    let laplacian_b = b * 9.0 - neighbors_b;
-                    
-                    let new_r = r + laplacian_r * sharpen_amount;
-                    let new_g = g + laplacian_g * sharpen_amount;
-                    let new_b = b + laplacian_b * sharpen_amount;
-                    
-                    (x, y, Rgba([
-                        new_r.clamp(0.0, 255.0) as u8,
-                        new_g.clamp(0.0, 255.0) as u8,
-                        new_b.clamp(0.0, 255.0) as u8,
-                        a
-                    ]))
-                })
-            })
-            .collect();
-        
-        for (x, y, pixel) in sharpened_pixels {
-            enhanced_img.put_pixel(x, y, pixel);
-        }
-    }
-    
-    DynamicImage::ImageRgba8(enhanced_img)
-}
-
-// ==================== 缩略图生成 ====================
-// 单张/批量生成缩略图，支持固定比例裁剪
-
-/// 生成单张缩略图
-/// @param image_data: 原图 base64
-/// @param max_size: 最大边长
-/// @param fixed_ratio: 是否固定 16:9 比例
-#[tauri::command]
-fn generate_thumbnail(image_data: String, max_size: u32, fixed_ratio: bool) -> Result<String, String> {
-    let img = decode_base64_image(&image_data)?;
-    
-    if max_size == 0 {
-        return Err("max_size must be greater than 0".to_string());
-    }
-    
-    let (width, height) = (img.width(), img.height());
-    
-    let (thumb_w, thumb_h, scaled_w, scaled_h, offset_x, offset_y) = if fixed_ratio {
-        let tw = max_size;
-        let th = ((max_size as f32 * 9.0 / 16.0).max(1.0)) as u32;
-        
-        let img_ratio = width as f32 / height as f32;
-        let canvas_ratio = 16.0 / 9.0;
-        
-        let (sw, sh) = if img_ratio > canvas_ratio {
-            (tw, ((tw as f32 / img_ratio).max(1.0)) as u32)
-        } else {
-            (((th as f32 * img_ratio).max(1.0)) as u32, th)
-        };
-        
-        let ox = (tw - sw) / 2;
-        let oy = (th - sh) / 2;
-        
-        (tw, th, sw, sh, ox, oy)
-    } else {
-        let (tw, th) = if width > height {
-            (max_size, ((height as f32 * max_size as f32 / width as f32).max(1.0)) as u32)
-        } else {
-            (((width as f32 * max_size as f32 / height as f32).max(1.0)) as u32, max_size)
-        };
-        
-        (tw, th, tw, th, 0, 0)
-    };
-    
-    let scaled_img = img.thumbnail(scaled_w, scaled_h);
-    
-    let mut canvas: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(thumb_w, thumb_h);
-    
-    for pixel in canvas.pixels_mut() {
-        *pixel = Rgba([0, 0, 0, 255]);
-    }
-    
-    for (x, y, pixel) in scaled_img.pixels() {
-        let canvas_x = x + offset_x;
-        let canvas_y = y + offset_y;
-        if canvas_x < thumb_w && canvas_y < thumb_h {
-            canvas.put_pixel(canvas_x, canvas_y, pixel);
-        }
-    }
-    
-    let mut buffer = Vec::new();
-    DynamicImage::ImageRgba8(canvas)
-        .write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Jpeg)
-        .map_err(|e| format!("Failed to encode thumbnail: {}", e))?;
-    
-    let result = format!("data:image/jpeg;base64,{}", general_purpose::STANDARD.encode(&buffer));
-    
-    Ok(result)
-}
-
-// ==================== 图像旋转 ====================
-// 90/180/270度旋转，用于摄像头和图片旋转
-
-/// 旋转图像 (90度/270度)
-/// @param image_data: 原图 base64
-/// @param direction: "left" (270度) 或 "right" (90度)
-#[tauri::command]
-fn rotate_image(image_data: String, direction: String) -> Result<String, String> {
-    let img = decode_base64_image(&image_data)?;
-    
-    let rotated = if direction == "left" {
-        img.rotate270()
-    } else {
-        img.rotate90()
-    };
-    
-    let mut buffer = Vec::new();
-    rotated
-        .write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
-        .map_err(|e| format!("Failed to encode rotated image: {}", e))?;
-    
-    let result = format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(&buffer));
-    
-    Ok(result)
 }
 
 // ==================== 系统目录 ====================
@@ -603,22 +322,6 @@ fn get_theme_dir(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 // ==================== 图片保存 ====================
-// 保存图片到本地文件系统，支持批量保存和增强保存
-
-/// 提取 base64 数据
-fn extract_base64(image_data: &str) -> Result<Vec<u8>, String> {
-    let base64_data = if image_data.starts_with("data:image") {
-        image_data.split(',')
-            .nth(1)
-            .ok_or("Invalid base64 image data")?
-    } else {
-        image_data
-    };
-    
-    general_purpose::STANDARD
-        .decode(base64_data)
-        .map_err(|e| format!("Failed to decode base64: {}", e))
-}
 
 /// 生成保存路径
 /// - 按日期创建子目录: YYYY-MM-DD
@@ -905,90 +608,6 @@ fn compact_strokes(request: CompactStrokesRequest) -> Result<String, String> {
         .map_err(|e| format!("Failed to encode compacted image: {}", e))?;
     
     Ok(format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(&buffer)))
-}
-
-// ==================== 批量缩略图 ====================
-// 并行生成多张缩略图，使用 rayon 加速
-
-#[tauri::command]
-fn generate_thumbnails_batch(images: Vec<ThumbnailRequest>, max_size: u32, fixed_ratio: bool) -> Result<Vec<ThumbnailResult>, String> {
-    if max_size == 0 {
-        return Err("max_size must be greater than 0".to_string());
-    }
-    
-    let results: Vec<ThumbnailResult> = images
-        .par_iter()
-        .map(|req| {
-            match generate_thumbnail_internal(&req.image_data, max_size, fixed_ratio) {
-                Ok(thumbnail) => ThumbnailResult {
-                    thumbnail: Some(thumbnail),
-                    error: None,
-                },
-                Err(e) => ThumbnailResult {
-                    thumbnail: None,
-                    error: Some(e),
-                },
-            }
-        })
-        .collect();
-    
-    Ok(results)
-}
-
-fn generate_thumbnail_internal(image_data: &str, max_size: u32, fixed_ratio: bool) -> Result<String, String> {
-    let img = decode_base64_image(image_data)?;
-    
-    let (width, height) = (img.width(), img.height());
-    
-    let (thumb_w, thumb_h, scaled_w, scaled_h, offset_x, offset_y) = if fixed_ratio {
-        let tw = max_size;
-        let th = ((max_size as f32 * 9.0 / 16.0).max(1.0)) as u32;
-        
-        let img_ratio = width as f32 / height as f32;
-        let canvas_ratio = 16.0 / 9.0;
-        
-        let (sw, sh) = if img_ratio > canvas_ratio {
-            (tw, ((tw as f32 / img_ratio).max(1.0)) as u32)
-        } else {
-            (((th as f32 * img_ratio).max(1.0)) as u32, th)
-        };
-        
-        let ox = (tw - sw) / 2;
-        let oy = (th - sh) / 2;
-        
-        (tw, th, sw, sh, ox, oy)
-    } else {
-        let (tw, th) = if width > height {
-            (max_size, ((height as f32 * max_size as f32 / width as f32).max(1.0)) as u32)
-        } else {
-            (((width as f32 * max_size as f32 / height as f32).max(1.0)) as u32, max_size)
-        };
-        
-        (tw, th, tw, th, 0, 0)
-    };
-    
-    let scaled_img = img.thumbnail(scaled_w, scaled_h);
-    
-    let mut canvas: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(thumb_w, thumb_h);
-    
-    for pixel in canvas.pixels_mut() {
-        *pixel = Rgba([0, 0, 0, 255]);
-    }
-    
-    for (x, y, pixel) in scaled_img.pixels() {
-        let canvas_x = x + offset_x;
-        let canvas_y = y + offset_y;
-        if canvas_x < thumb_w && canvas_y < thumb_h {
-            canvas.put_pixel(canvas_x, canvas_y, pixel);
-        }
-    }
-    
-    let mut buffer = Vec::new();
-    DynamicImage::ImageRgba8(canvas)
-        .write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Jpeg)
-        .map_err(|e| format!("Failed to encode thumbnail: {}", e))?;
-    
-    Ok(format!("data:image/jpeg;base64,{}", general_purpose::STANDARD.encode(&buffer)))
 }
 
 // ==================== 全局状态 ====================
@@ -1666,9 +1285,11 @@ async fn convert_docx_to_pdf_from_bytes(file_data: Vec<u8>, file_name: String, a
 }
 
 #[cfg(target_os = "windows")]
-fn convert_with_libreoffice(docx_path: &str, _pdf_path: &str, cache_dir: &std::path::PathBuf) -> Result<(), String> {
+fn convert_with_libreoffice(docx_path: &str, _pdf_path: &str, cache_dir: &std::path::Path) -> Result<(), String> {
     use std::process::Command;
-    let output_dir = cache_dir.to_str().unwrap().to_string();
+    let output_dir = cache_dir.to_str()
+        .ok_or("Invalid cache directory path")?
+        .to_string();
     Command::new("soffice")
         .args(["--headless", "--convert-to", "pdf", "--outdir", &output_dir, docx_path])
         .output()
@@ -1719,7 +1340,9 @@ async fn convert_docx_to_pdf(docx_path: String, app: tauri::AppHandle) -> Result
             convert_with_wps_com(&docx_path_str, &pdf_path_str)?;
         }
         OfficeSoftware::LibreOffice => {
-            let output_dir = cache_dir.to_str().unwrap().to_string();
+            let output_dir = cache_dir.to_str()
+                .ok_or("Invalid cache directory path")?
+                .to_string();
             Command::new("soffice")
                 .args(["--headless", "--convert-to", "pdf", "--outdir", &output_dir, &docx_path_str])
                 .output()
@@ -1949,6 +1572,22 @@ pub struct EastDetectionResult {
     pub error: Option<String>,
 }
 
+/// DBNet 文本检测请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DBNetDetectionRequest {
+    pub image_data: String,
+    pub model_path: Option<String>,
+    pub binary_threshold: f32,
+}
+
+/// DBNet 文本检测结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DBNetDetectionResult {
+    pub bbox: Option<(i32, i32, i32, i32)>,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
 /// 获取 EAST 模型默认路径
 #[tauri::command]
 fn get_east_model_path(app: tauri::AppHandle) -> Result<String, String> {
@@ -1987,35 +1626,99 @@ fn detect_text_east(app: tauri::AppHandle, request: EastDetectionRequest) -> Res
     }
 }
 
-/// 文档扫描 - EAST 文本检测
+/// 获取 DBNet 模型默认路径
+#[tauri::command]
+fn get_dbnet_model_path(app: tauri::AppHandle) -> Result<String, String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let model_path = resource_dir.join("weights").join("text_detection_db_TD500_resnet18.onnx");
+    Ok(model_path.to_string_lossy().to_string())
+}
+
+/// DBNet 文本检测命令
+#[tauri::command]
+fn detect_text_dbnet(app: tauri::AppHandle, request: DBNetDetectionRequest) -> Result<DBNetDetectionResult, String> {
+    let img = decode_base64_image(&request.image_data)?;
+    
+    let model_path = match request.model_path {
+        Some(path) => path,
+        None => {
+            let resource_dir = app.path().resource_dir()
+                .map_err(|e| format!("获取资源目录失败: {}", e))?;
+            resource_dir.join("weights").join("text_detection_db_TD500_resnet18.onnx")
+                .to_string_lossy().to_string()
+        }
+    };
+    
+    match detect_text_regions_dbnet(&img, &model_path, request.binary_threshold) {
+        Ok(bbox) => Ok(DBNetDetectionResult {
+            bbox,
+            success: true,
+            error: None,
+        }),
+        Err(e) => Ok(DBNetDetectionResult {
+            bbox: None,
+            success: false,
+            error: Some(e),
+        }),
+    }
+}
+
+/// 文档扫描 - 自动选择最佳模型（优先Tract ONNX DBNet，失败则回退到EAST）
 #[tauri::command]
 fn scan_document(app: tauri::AppHandle, request: DocumentScanRequest) -> Result<DocumentScanResult, String> {
     let mut img = decode_base64_image(&request.image_data)?;
     
     log::info!("开始文档扫描，图像尺寸: {}x{}", img.width(), img.height());
     
-    let model_path = match request.east_model_path {
-        Some(ref path) => path.clone(),
-        None => {
-            let resource_dir = app.path().resource_dir()
-                .map_err(|e| format!("获取资源目录失败: {}", e))?;
-            log::info!("资源目录: {:?}", resource_dir);
-            resource_dir.join("weights").join("frozen_east_text_detection.pb")
-                .to_string_lossy().to_string()
-        }
-    };
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    log::info!("资源目录: {:?}", resource_dir);
     
-    log::info!("模型路径: {}", model_path);
+    let dbnet_model_path = resource_dir.join("weights").join("text_detection_db_TD500_resnet18.onnx");
+    let east_model_path = resource_dir.join("weights").join("frozen_east_text_detection.pb");
     
-    let text_bbox = match detect_text_regions_east(&img, &model_path, 0.5) {
-        Ok(bbox) => {
-            log::info!("检测结果: {:?}", bbox);
-            bbox
+    let text_bbox = if dbnet_model_path.exists() {
+        log::info!("尝试使用 ONNX Runtime DBNet 模型: {:?}", dbnet_model_path);
+        match detect_text_regions_dbnet_ort(&img, dbnet_model_path.to_string_lossy().to_string().as_str(), 0.1) {
+            Ok(bbox) => {
+                log::info!("ONNX Runtime DBNet 检测成功: {:?}", bbox);
+                bbox
+            }
+            Err(e) => {
+                log::warn!("ONNX Runtime DBNet 检测失败: {}, 回退到 EAST 模型", e);
+                if east_model_path.exists() {
+                    match detect_text_regions_east(&img, east_model_path.to_string_lossy().to_string().as_str(), 0.5) {
+                        Ok(bbox) => {
+                            log::info!("EAST 检测成功: {:?}", bbox);
+                            bbox
+                        }
+                        Err(e) => {
+                            log::error!("EAST 检测也失败: {}", e);
+                            None
+                        }
+                    }
+                } else {
+                    log::error!("EAST 模型不存在");
+                    None
+                }
+            }
         }
-        Err(e) => {
-            log::error!("EAST 检测失败: {}", e);
-            None
+    } else if east_model_path.exists() {
+        log::info!("使用 EAST 模型: {:?}", east_model_path);
+        match detect_text_regions_east(&img, east_model_path.to_string_lossy().to_string().as_str(), 0.5) {
+            Ok(bbox) => {
+                log::info!("EAST 检测成功: {:?}", bbox);
+                bbox
+            }
+            Err(e) => {
+                log::error!("EAST 检测失败: {}", e);
+                None
+            }
         }
+    } else {
+        log::error!("没有可用的文本检测模型");
+        None
     };
     
     let result_img = if let Some((x1, y1, x2, y2)) = text_bbox {
@@ -2069,7 +1772,7 @@ fn enhance_document_opencv(img: &DynamicImage) -> Result<DynamicImage, String> {
         for y in 0..height {
             for x in 0..width {
                 let pixel = rgba.get_pixel(x, y);
-                let idx = (y * width as u32 + x) as usize * 3;
+                let idx = (y * width + x) as usize * 3;
                 data[idx] = pixel[2];
                 data[idx + 1] = pixel[1];
                 data[idx + 2] = pixel[0];
@@ -2091,7 +1794,7 @@ fn enhance_document_opencv(img: &DynamicImage) -> Result<DynamicImage, String> {
     let mut result_img = ImageBuffer::new(width, height);
     for y in 0..height {
         for x in 0..width {
-            let idx = (y * width as u32 + x) as usize;
+            let idx = (y * width + x) as usize;
             let val = result_data[idx];
             result_img.put_pixel(x, y, Luma([val]));
         }
@@ -2155,7 +1858,7 @@ fn detect_text_regions_east(img: &DynamicImage, model_path: &str, min_confidence
         for y in 0..height {
             for x in 0..width {
                 let pixel = rgba.get_pixel(x, y);
-                let idx = (y * width as u32 + x) as usize * 3;
+                let idx = (y * width + x) as usize * 3;
                 data[idx] = pixel[2];
                 data[idx + 1] = pixel[1];
                 data[idx + 2] = pixel[0];
@@ -2197,12 +1900,12 @@ fn detect_text_regions_east(img: &DynamicImage, model_path: &str, min_confidence
     log::info!("geometry dims: {:?}", geometry_dims);
     
     let num_rows = if scores_dims.len() >= 4 {
-        scores_dims[2] as i32
+        scores_dims[2]
     } else {
         scores_raw.rows()
     };
     let num_cols = if scores_dims.len() >= 4 {
-        scores_dims[3] as i32
+        scores_dims[3]
     } else {
         scores_raw.cols()
     };
@@ -2340,7 +2043,9 @@ fn non_max_suppression(rects: &[(f32, f32, f32, f32)], confidences: &[f32], over
     }
     
     let mut indices: Vec<usize> = (0..n).collect();
-    indices.sort_by(|&a, &b| confidences[b].partial_cmp(&confidences[a]).unwrap());
+    indices.sort_by(|&a, &b| {
+        confidences[b].partial_cmp(&confidences[a]).unwrap_or(std::cmp::Ordering::Less)
+    });
     
     let mut result = Vec::new();
     let mut suppressed = vec![false; n];
@@ -2390,6 +2095,1122 @@ fn compute_iou(a: &(f32, f32, f32, f32), b: &(f32, f32, f32, f32)) -> f32 {
 #[cfg(not(target_os = "windows"))]
 fn detect_text_regions_east(_img: &DynamicImage, _model_path: &str, _min_confidence: f32) -> Result<Option<(i32, i32, i32, i32)>, String> {
     Err("EAST 文本检测仅支持 Windows 系统".to_string())
+}
+
+// ==================== DBNet 文本检测 ====================
+// 使用 OpenCV DNN 模块实现 DBNet 文本检测（ONNX格式）
+
+#[cfg(target_os = "windows")]
+static DBNET_NET: std::sync::OnceLock<std::sync::Mutex<Option<Net>>> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "windows")]
+fn get_dbnet_net(model_path: &str) -> Result<std::sync::MutexGuard<'static, Option<Net>>, String> {
+    let net_guard = DBNET_NET.get_or_init(|| {
+        match read_net_from_onnx(model_path) {
+            Ok(net) => {
+                log::info!("DBNet ONNX 模型加载成功: {}", model_path);
+                std::sync::Mutex::new(Some(net))
+            }
+            Err(e) => {
+                log::error!("DBNet ONNX 模型加载失败: {}", e);
+                std::sync::Mutex::new(None)
+            }
+        }
+    });
+    
+    net_guard.lock().map_err(|e| format!("获取模型锁失败: {}", e))
+}
+
+#[cfg(target_os = "windows")]
+fn detect_text_regions_dbnet(
+    img: &DynamicImage, 
+    model_path: &str, 
+    binary_threshold: f32
+) -> Result<Option<(i32, i32, i32, i32)>, String> {
+    let mut net_guard = get_dbnet_net(model_path)?;
+    let net = match net_guard.as_mut() {
+        Some(n) => n,
+        None => return Err("DBNet 模型未加载".to_string()),
+    };
+    
+    let (orig_width, orig_height) = (img.width() as i32, img.height() as i32);
+    
+    let target_size = 640i32;
+    let scale = target_size as f32 / orig_width.max(orig_height) as f32;
+    let new_width = (orig_width as f32 * scale) as i32;
+    let new_height = (orig_height as f32 * scale) as i32;
+    
+    let rw = orig_width as f32 / new_width as f32;
+    let rh = orig_height as f32 / new_height as f32;
+    
+    let rgba = img.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    
+    let mut bgr_mat = unsafe { Mat::new_rows_cols(height as i32, width as i32, opencv::core::CV_8UC3) }
+        .map_err(|e| format!("创建 Mat 失败: {}", e))?;
+    {
+        let data = bgr_mat.data_bytes_mut()
+            .map_err(|e| format!("获取 Mat 数据失败: {}", e))?;
+        for y in 0..height {
+            for x in 0..width {
+                let pixel = rgba.get_pixel(x, y);
+                let idx = (y * width + x) as usize * 3;
+                data[idx] = pixel[2];
+                data[idx + 1] = pixel[1];
+                data[idx + 2] = pixel[0];
+            }
+        }
+    }
+    
+    let mut resized = Mat::default();
+    resize(&bgr_mat, &mut resized, Size::new(new_width, new_height), 0.0, 0.0, opencv::imgproc::INTER_LINEAR)
+        .map_err(|e| format!("调整大小失败: {}", e))?;
+    
+    let blob = blob_from_image(
+        &resized,
+        1.0,
+        Size::new(new_width, new_height),
+        Scalar::new(123.675, 116.28, 103.53, 0.0),
+        true,
+        false,
+        CV_32F,
+    ).map_err(|e| format!("创建 blob 失败: {}", e))?;
+    
+    log::info!("DBNet blob 尺寸: {}x{}", new_width, new_height);
+    
+    net.set_input(&blob, "", 1.0, Scalar::default())
+        .map_err(|e| format!("设置输入失败: {}", e))?;
+    
+    let mut outputs = Vector::<Mat>::new();
+    net.forward(&mut outputs, &Vector::<String>::new())
+        .map_err(|e| format!("前向传播失败: {}", e))?;
+    
+    log::info!("DBNet 输出数量: {}", outputs.len());
+    
+    if outputs.is_empty() {
+        return Err("DBNet 没有输出".to_string());
+    }
+    
+    let probability_map = outputs.get(0).map_err(|e| format!("获取概率图失败: {}", e))?;
+    
+    let dims = probability_map.dims();
+    log::info!("DBNet 输出维度: {:?}", dims);
+    
+    let mut binary_map = Mat::default();
+    threshold(&probability_map, &mut binary_map, binary_threshold as f64, 255.0, opencv::imgproc::THRESH_BINARY)
+        .map_err(|e| format!("二值化失败: {}", e))?;
+    
+    let mut contours = Vector::<Mat>::new();
+    find_contours(
+        &binary_map,
+        &mut contours,
+        opencv::imgproc::RETR_LIST,
+        opencv::imgproc::CHAIN_APPROX_SIMPLE,
+        Point::new(0, 0)
+    ).map_err(|e| format!("轮廓检测失败: {}", e))?;
+    
+    let mut text_regions: Vec<(i32, i32, i32, i32)> = Vec::new();
+    
+    for i in 0..contours.len() {
+        let contour = contours.get(i).map_err(|e| format!("获取轮廓失败: {}", e))?;
+        let area = contour_area(&contour, false).map_err(|e| format!("计算面积失败: {}", e))?;
+        
+        if area < 100.0 {
+            continue;
+        }
+        
+        let bounding_rect = opencv::imgproc::bounding_rect(&contour)
+            .map_err(|e| format!("计算边界矩形失败: {}", e))?;
+        
+        let x1 = (bounding_rect.x as f32 * rw) as i32;
+        let y1 = (bounding_rect.y as f32 * rh) as i32;
+        let x2 = ((bounding_rect.x + bounding_rect.width) as f32 * rw) as i32;
+        let y2 = ((bounding_rect.y + bounding_rect.height) as f32 * rh) as i32;
+        
+        text_regions.push((x1, y1, x2, y2));
+    }
+    
+    log::info!("DBNet 检测到 {} 个文本区域", text_regions.len());
+    
+    if text_regions.is_empty() {
+        return Ok(None);
+    }
+    
+    let min_x = text_regions.iter().map(|p| p.0).min().unwrap_or(0);
+    let min_y = text_regions.iter().map(|p| p.1).min().unwrap_or(0);
+    let max_x = text_regions.iter().map(|p| p.2).max().unwrap_or(orig_width);
+    let max_y = text_regions.iter().map(|p| p.3).max().unwrap_or(orig_height);
+    
+    let margin = 20;
+    let x1 = (min_x - margin).max(0);
+    let y1 = (min_y - margin).max(0);
+    let x2 = (max_x + margin).min(orig_width);
+    let y2 = (max_y + margin).min(orig_height);
+    
+    let bbox = (x1, y1, x2, y2);
+    
+    log::info!("DBNet 最终边界框: {:?}", bbox);
+    
+    Ok(Some(bbox))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn detect_text_regions_dbnet(_img: &DynamicImage, _model_path: &str, _binary_threshold: f32) -> Result<Option<(i32, i32, i32, i32)>, String> {
+    Err("DBNet 文本检测仅支持 Windows 系统".to_string())
+}
+
+// ==================== Tract ONNX DBNet 文本检测 ====================
+// 使用 tract-onnx 实现 DBNet 文本检测（纯Rust，无外部依赖）
+
+#[allow(dead_code)]
+fn detect_text_regions_dbnet_tract(
+    img: &DynamicImage,
+    model_path: &str,
+    binary_threshold: f32
+) -> Result<Option<(i32, i32, i32, i32)>, String> {
+    log::info!("加载 Tract ONNX DBNet 模型: {}", model_path);
+    
+    let model = tract_onnx::onnx()
+        .model_for_path(model_path)
+        .map_err(|e| format!("加载ONNX模型失败: {}", e))?
+        .into_optimized()
+        .map_err(|e| format!("优化模型失败: {}", e))?
+        .into_runnable()
+        .map_err(|e| format!("创建可运行模型失败: {}", e))?;
+    
+    log::info!("Tract ONNX DBNet 模型加载成功");
+    
+    let (orig_width, orig_height) = (img.width() as i32, img.height() as i32);
+    
+    let target_size = 640i32;
+    let scale = target_size as f32 / orig_width.max(orig_height) as f32;
+    let new_width = (orig_width as f32 * scale) as i32;
+    let new_height = (orig_height as f32 * scale) as i32;
+    
+    let rw = orig_width as f32 / new_width as f32;
+    let rh = orig_height as f32 / new_height as f32;
+    
+    let resized = img.resize_exact(new_width as u32, new_height as u32, image::imageops::FilterType::Triangle);
+    
+    let rgba = resized.to_rgba8();
+    let mut input_data = Vec::with_capacity((new_width * new_height * 3) as usize);
+    for pixel in rgba.pixels() {
+        let r = pixel[0] as f32 / 255.0;
+        let g = pixel[1] as f32 / 255.0;
+        let b = pixel[2] as f32 / 255.0;
+        
+        input_data.push((r - 0.485) / 0.229);
+        input_data.push((g - 0.456) / 0.224);
+        input_data.push((b - 0.406) / 0.225);
+    }
+    
+    let input_tensor: Tensor = tract_ndarray::Array4::from_shape_vec(
+        (1, 3, new_height as usize, new_width as usize),
+        input_data
+    ).map_err(|e| format!("创建输入tensor失败: {}", e))?.into();
+    
+    log::info!("Tract ONNX 开始推理");
+    
+    let result = model.run(tvec!(input_tensor.into()))
+        .map_err(|e| format!("Tract ONNX 推理失败: {}", e))?;
+    
+    let output = result[0].to_array_view::<f32>()
+        .map_err(|e| format!("获取输出失败: {}", e))?;
+    
+    let output_dims = output.shape();
+    log::info!("Tract ONNX 输出维度: {:?}", output_dims);
+    
+    let height = output_dims[2];
+    let width = output_dims[3];
+    
+    let mut text_regions: Vec<(i32, i32, i32, i32)> = Vec::new();
+    let threshold = binary_threshold;
+    
+    for y in 0..height {
+        for x in 0..width {
+            let prob = output[[0, 0, y, x]];
+            if prob > threshold {
+                let x1 = (x as f32 * rw) as i32;
+                let y1 = (y as f32 * rh) as i32;
+                let x2 = ((x + 1) as f32 * rw) as i32;
+                let y2 = ((y + 1) as f32 * rh) as i32;
+                
+                text_regions.push((x1, y1, x2, y2));
+            }
+        }
+    }
+    
+    log::info!("Tract ONNX 检测到 {} 个文本区域", text_regions.len());
+    
+    if text_regions.is_empty() {
+        return Ok(None);
+    }
+    
+    let min_x = text_regions.iter().map(|p| p.0).min().unwrap_or(0);
+    let min_y = text_regions.iter().map(|p| p.1).min().unwrap_or(0);
+    let max_x = text_regions.iter().map(|p| p.2).max().unwrap_or(orig_width);
+    let max_y = text_regions.iter().map(|p| p.3).max().unwrap_or(orig_height);
+    
+    let margin = 20;
+    let x1 = (min_x - margin).max(0);
+    let y1 = (min_y - margin).max(0);
+    let x2 = (max_x + margin).min(orig_width);
+    let y2 = (max_y + margin).min(orig_height);
+    
+    let bbox = (x1, y1, x2, y2);
+    
+    log::info!("Tract ONNX 最终边界框: {:?}", bbox);
+    
+    Ok(Some(bbox))
+}
+
+// ==================== ONNX Runtime DBNet 文本检测 ====================
+// 使用 ort (ONNX Runtime) 实现 DBNet 文本检测
+
+fn detect_text_regions_dbnet_ort(
+    img: &DynamicImage,
+    model_path: &str,
+    binary_threshold: f32
+) -> Result<Option<(i32, i32, i32, i32)>, String> {
+    use ort::session::Session;
+    use ort::value::Tensor;
+    
+    log::info!("加载 ONNX Runtime DBNet 模型: {}", model_path);
+    
+    let mut session = Session::builder()
+        .map_err(|e| format!("创建 Session builder 失败: {}", e))?
+        .commit_from_file(model_path)
+        .map_err(|e| format!("加载ONNX模型失败: {}", e))?;
+    
+    log::info!("ONNX Runtime DBNet 模型加载成功，输入: {:?}, 输出: {:?}", 
+        session.inputs().iter().map(|i| i.name()).collect::<Vec<_>>(),
+        session.outputs().iter().map(|o| o.name()).collect::<Vec<_>>());
+    
+    let (orig_width, orig_height) = (img.width() as i32, img.height() as i32);
+    
+    let target_size = 800i32;
+    let scale = target_size as f32 / orig_width.max(orig_height) as f32;
+    let new_width = (orig_width as f32 * scale) as i32;
+    let new_height = (orig_height as f32 * scale) as i32;
+    
+    let rw = orig_width as f32 / new_width as f32;
+    let rh = orig_height as f32 / new_height as f32;
+    
+    let resized = img.resize_exact(new_width as u32, new_height as u32, image::imageops::FilterType::Triangle);
+    
+    let mut input_data = vec![0.0f32; (target_size * target_size * 3) as usize];
+    
+    let rgba = resized.to_rgba8();
+    for (y, row) in rgba.rows().enumerate() {
+        for (x, pixel) in row.enumerate() {
+            let r = pixel[0] as f32 / 255.0;
+            let g = pixel[1] as f32 / 255.0;
+            let b = pixel[2] as f32 / 255.0;
+            
+            let base_idx = (y * target_size as usize + x) * 3;
+            input_data[base_idx] = (r - 0.485) / 0.229;
+            input_data[base_idx + 1] = (g - 0.456) / 0.224;
+            input_data[base_idx + 2] = (b - 0.406) / 0.225;
+        }
+    }
+    
+    let input_shape = [1usize, 3usize, target_size as usize, target_size as usize];
+    let input_tensor = Tensor::from_array((input_shape, input_data.into_boxed_slice()))
+        .map_err(|e| format!("创建输入tensor失败: {}", e))?;
+    
+    log::info!("ONNX Runtime 开始推理");
+    
+    let outputs = session.run(ort::inputs![input_tensor])
+        .map_err(|e| format!("ONNX Runtime 推理失败: {}", e))?;
+    
+    let (output_shape, output_data) = outputs[0].try_extract_tensor::<f32>()
+        .map_err(|e| format!("获取输出失败: {}", e))?;
+    
+    let output_dims: Vec<usize> = output_shape.iter().map(|d| *d as usize).collect();
+    log::info!("ONNX Runtime 输出维度: {:?}", output_dims);
+    
+    let out_height = output_dims[2];
+    let out_width = output_dims[3];
+    
+    let mut min_val = f32::MAX;
+    let mut max_val = f32::MIN;
+    let mut sum_val = 0.0f32;
+    let total_pixels = out_height * out_width;
+    
+    for &v in output_data.iter().take(total_pixels) {
+        if v < min_val { min_val = v; }
+        if v > max_val { max_val = v; }
+        sum_val += v;
+    }
+    log::info!("ONNX Runtime 输出值范围: min={}, max={}, avg={}", min_val, max_val, sum_val / total_pixels as f32);
+    
+    let scale_to_output = out_height as f32 / target_size as f32;
+    let valid_width = (new_width as f32 * scale_to_output) as usize;
+    let valid_height = (new_height as f32 * scale_to_output) as usize;
+    
+    let mut text_regions: Vec<(i32, i32, i32, i32)> = Vec::new();
+    let threshold = binary_threshold;
+    
+    log::info!("使用阈值: {}, 有效区域: {}x{}", threshold, valid_width, valid_height);
+    
+    for y in 0..valid_height {
+        for x in 0..valid_width {
+            let idx = y * out_width + x;
+            let prob = output_data[idx];
+            if prob > threshold {
+                let x1 = (x as f32 / scale_to_output * rw) as i32;
+                let y1 = (y as f32 / scale_to_output * rh) as i32;
+                let x2 = ((x + 1) as f32 / scale_to_output * rw) as i32;
+                let y2 = ((y + 1) as f32 / scale_to_output * rh) as i32;
+                
+                text_regions.push((x1, y1, x2, y2));
+            }
+        }
+    }
+    
+    log::info!("ONNX Runtime 检测到 {} 个文本区域", text_regions.len());
+    
+    if text_regions.is_empty() {
+        return Ok(None);
+    }
+    
+    let min_x = text_regions.iter().map(|p| p.0).min().unwrap_or(0);
+    let min_y = text_regions.iter().map(|p| p.1).min().unwrap_or(0);
+    let max_x = text_regions.iter().map(|p| p.2).max().unwrap_or(orig_width);
+    let max_y = text_regions.iter().map(|p| p.3).max().unwrap_or(orig_height);
+    
+    let margin = 20;
+    let x1 = (min_x - margin).max(0);
+    let y1 = (min_y - margin).max(0);
+    let x2 = (max_x + margin).min(orig_width);
+    let y2 = (max_y + margin).min(orig_height);
+    
+    let bbox = (x1, y1, x2, y2);
+    
+    log::info!("ONNX Runtime 最终边界框: {:?}", bbox);
+    
+    Ok(Some(bbox))
+}
+
+// ==================== 模型资源管理 ====================
+// 模型下载和管理功能
+
+/// 模型信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    pub name: String,
+    pub size_mb: f64,
+    pub description: String,
+    pub download_url: String,
+    pub exists: bool,
+}
+
+/// 检查 DBNet 模型是否存在
+#[tauri::command]
+fn check_dbnet_model_exists(app: tauri::AppHandle) -> Result<bool, String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let model_path = resource_dir.join("weights").join("text_detection_db_TD500_resnet18.onnx");
+    Ok(model_path.exists())
+}
+
+/// 获取 DBNet 模型信息
+#[tauri::command]
+fn get_dbnet_model_info(app: tauri::AppHandle) -> Result<ModelInfo, String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let model_path = resource_dir.join("weights").join("text_detection_db_TD500_resnet18.onnx");
+    
+    let exists = model_path.exists();
+    let size_mb = if exists {
+        let metadata = std::fs::metadata(&model_path)
+            .map_err(|e| format!("获取模型文件信息失败: {}", e))?;
+        metadata.len() as f64 / 1024.0 / 1024.0
+    } else {
+        50.0
+    };
+    
+    Ok(ModelInfo {
+        name: "DBNet ResNet-18".to_string(),
+        size_mb,
+        description: "文本检测模型，用于文档扫描功能。相比EAST模型，体积更小（54MB vs 92MB），速度更快，精度更高。支持中英文文本检测。".to_string(),
+        download_url: "https://modelscope.cn/models/iic/cv_resnet18_ocr-detection-db-line-level_damo/resolve/master/db_resnet18_public_line_640x640.onnx".to_string(),
+        exists,
+    })
+}
+
+/// 下载 DBNet 模型（带进度）
+#[tauri::command]
+async fn download_dbnet_model(app: tauri::AppHandle, window: tauri::Window) -> Result<(), String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let weights_dir = resource_dir.join("weights");
+    let model_path = weights_dir.join("text_detection_db_TD500_resnet18.onnx");
+    
+    if model_path.exists() {
+        return Err("模型文件已存在".to_string());
+    }
+    
+    std::fs::create_dir_all(&weights_dir)
+        .map_err(|e| format!("创建weights目录失败: {}", e))?;
+    
+    let url = "https://modelscope.cn/models/iic/cv_resnet18_ocr-detection-db-line-level_damo/resolve/master/db_resnet18_public_line_640x640.onnx";
+    
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
+    
+    let response = client
+        .get(url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .send()
+        .await
+        .map_err(|e| format!("下载请求失败: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("下载失败，HTTP状态码: {}", response.status()));
+    }
+    
+    let total_size = response.content_length().unwrap_or(0);
+    
+    if total_size == 0 {
+        return Err("无法获取文件大小，可能链接无效".to_string());
+    }
+    
+    let mut downloaded = 0u64;
+    let mut stream = response.bytes_stream();
+    use futures::StreamExt;
+    
+    let mut file = std::fs::File::create(&model_path)
+        .map_err(|e| format!("创建文件失败: {}", e))?;
+    
+    use std::io::Write;
+    
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("读取数据失败: {}", e))?;
+        file.write_all(&chunk).map_err(|e| format!("写入文件失败: {}", e))?;
+        
+        downloaded += chunk.len() as u64;
+        
+        if total_size > 0 {
+            let progress = (downloaded as f64 / total_size as f64 * 100.0) as u32;
+            let _ = window.emit("download-progress", progress);
+        }
+    }
+    
+    let _ = window.emit("download-complete", ());
+    
+    Ok(())
+}
+
+/// 删除 DBNet 模型
+#[tauri::command]
+fn delete_dbnet_model(app: tauri::AppHandle) -> Result<(), String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let model_path = resource_dir.join("weights").join("text_detection_db_TD500_resnet18.onnx");
+    
+    if model_path.exists() {
+        std::fs::remove_file(&model_path)
+            .map_err(|e| format!("删除模型文件失败: {}", e))?;
+    }
+    
+    Ok(())
+}
+
+// ==================== UVDoc 文档矫正模型管理 ====================
+
+/// 检查 UVDoc 模型是否存在
+#[tauri::command]
+fn check_uvdoc_model_exists(app: tauri::AppHandle) -> Result<bool, String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let model_path = resource_dir.join("weights").join("uvdoc.onnx");
+    Ok(model_path.exists())
+}
+
+/// 获取 UVDoc 模型信息
+#[tauri::command]
+fn get_uvdoc_model_info(app: tauri::AppHandle) -> Result<ModelInfo, String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let model_path = resource_dir.join("weights").join("uvdoc.onnx");
+    
+    let exists = model_path.exists();
+    let size_mb = if exists {
+        let metadata = std::fs::metadata(&model_path)
+            .map_err(|e| format!("获取模型文件信息失败: {}", e))?;
+        metadata.len() as f64 / 1024.0 / 1024.0
+    } else {
+        30.0
+    };
+    
+    Ok(ModelInfo {
+        name: "UVDoc".to_string(),
+        size_mb,
+        description: "文档扭曲矫正模型，用于矫正弯曲、折叠的文档图像。".to_string(),
+        download_url: "https://modelscope.cn/models/PaddlePaddle/UVDoc/resolve/master/inference.pdiparams".to_string(),
+        exists,
+    })
+}
+
+/// 下载 UVDoc 模型（带进度）
+#[tauri::command]
+async fn download_uvdoc_model(app: tauri::AppHandle, window: tauri::Window) -> Result<(), String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let weights_dir = resource_dir.join("weights");
+    let model_path = weights_dir.join("uvdoc.onnx");
+    
+    if model_path.exists() {
+        return Err("模型文件已存在".to_string());
+    }
+    
+    std::fs::create_dir_all(&weights_dir)
+        .map_err(|e| format!("创建weights目录失败: {}", e))?;
+    
+    let url = "https://modelscope.cn/models/PaddlePaddle/UVDoc/resolve/master/inference.pdiparams";
+    
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
+    
+    let response = client
+        .get(url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .send()
+        .await
+        .map_err(|e| format!("下载请求失败: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("下载失败，HTTP状态码: {}", response.status()));
+    }
+    
+    let total_size = response.content_length().unwrap_or(0);
+    
+    if total_size == 0 {
+        return Err("无法获取文件大小，可能链接无效".to_string());
+    }
+    
+    let mut downloaded = 0u64;
+    let mut stream = response.bytes_stream();
+    use futures::StreamExt;
+    
+    let mut file = std::fs::File::create(&model_path)
+        .map_err(|e| format!("创建文件失败: {}", e))?;
+    
+    use std::io::Write;
+    
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("读取数据失败: {}", e))?;
+        file.write_all(&chunk).map_err(|e| format!("写入文件失败: {}", e))?;
+        
+        downloaded += chunk.len() as u64;
+        
+        if total_size > 0 {
+            let progress = (downloaded as f64 / total_size as f64 * 100.0) as u32;
+            let _ = window.emit("uvdoc-download-progress", progress);
+        }
+    }
+    
+    let _ = window.emit("uvdoc-download-complete", ());
+    
+    Ok(())
+}
+
+/// 删除 UVDoc 模型
+#[tauri::command]
+fn delete_uvdoc_model(app: tauri::AppHandle) -> Result<(), String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let model_path = resource_dir.join("weights").join("uvdoc.onnx");
+    
+    if model_path.exists() {
+        std::fs::remove_file(&model_path)
+            .map_err(|e| format!("删除模型文件失败: {}", e))?;
+    }
+    
+    Ok(())
+}
+
+// ==================== 文档增强模型管理 ====================
+
+/// 检查文档增强模型是否存在
+#[tauri::command]
+fn check_enhance_model_exists(app: tauri::AppHandle) -> Result<bool, String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let gcnet_path = resource_dir.join("weights").join("gcnet.onnx");
+    let nafdpm_path = resource_dir.join("weights").join("nafdpm.onnx");
+    Ok(gcnet_path.exists() && nafdpm_path.exists())
+}
+
+/// 获取文档增强模型信息
+#[tauri::command]
+fn get_enhance_model_info(app: tauri::AppHandle) -> Result<ModelInfo, String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let gcnet_path = resource_dir.join("weights").join("gcnet.onnx");
+    let nafdpm_path = resource_dir.join("weights").join("nafdpm.onnx");
+    
+    let exists = gcnet_path.exists() && nafdpm_path.exists();
+    let mut total_size = 0.0;
+    
+    if gcnet_path.exists() {
+        if let Ok(metadata) = std::fs::metadata(&gcnet_path) {
+            total_size += metadata.len() as f64 / 1024.0 / 1024.0;
+        }
+    }
+    if nafdpm_path.exists() {
+        if let Ok(metadata) = std::fs::metadata(&nafdpm_path) {
+            total_size += metadata.len() as f64 / 1024.0 / 1024.0;
+        }
+    }
+    
+    Ok(ModelInfo {
+        name: "文档增强模型包".to_string(),
+        size_mb: if total_size > 0.0 { total_size } else { 50.0 },
+        description: "包含去阴影(GCNet)和去模糊(NAFDPM)模型，用于文档图像增强。".to_string(),
+        download_url: "".to_string(),
+        exists,
+    })
+}
+
+/// 下载文档增强模型（带进度）
+#[tauri::command]
+async fn download_enhance_model(app: tauri::AppHandle, window: tauri::Window) -> Result<(), String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    let weights_dir = resource_dir.join("weights");
+    
+    std::fs::create_dir_all(&weights_dir)
+        .map_err(|e| format!("创建weights目录失败: {}", e))?;
+    
+    let models = vec![
+        ("gcnet.onnx", "https://modelscope.cn/models/RapidAI/RapidUnDistort/resolve/master/models/gcnet.onnx"),
+        ("nafdpm.onnx", "https://modelscope.cn/models/RapidAI/RapidUnDistort/resolve/master/models/nafdpm.onnx"),
+    ];
+    
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
+    
+    let total_models = models.len();
+    let mut completed = 0;
+    
+    for (filename, url) in models {
+        let model_path = weights_dir.join(filename);
+        
+        if model_path.exists() {
+            completed += 1;
+            continue;
+        }
+        
+        let response = client
+            .get(url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .send()
+            .await
+            .map_err(|e| format!("下载 {} 失败: {}", filename, e))?;
+        
+        if !response.status().is_success() {
+            return Err(format!("下载 {} 失败，HTTP状态码: {}", filename, response.status()));
+        }
+        
+        let total_size = response.content_length().unwrap_or(0);
+        let mut downloaded = 0u64;
+        let mut stream = response.bytes_stream();
+        use futures::StreamExt;
+        
+        let mut file = std::fs::File::create(&model_path)
+            .map_err(|e| format!("创建文件 {} 失败: {}", filename, e))?;
+        
+        use std::io::Write;
+        
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| format!("读取数据失败: {}", e))?;
+            file.write_all(&chunk).map_err(|e| format!("写入文件失败: {}", e))?;
+            downloaded += chunk.len() as u64;
+            
+            if total_size > 0 {
+                let file_progress = downloaded as f64 / total_size as f64;
+                let overall_progress = ((completed as f64 + file_progress) / total_models as f64 * 100.0) as u32;
+                let _ = window.emit("enhance-download-progress", overall_progress);
+            }
+        }
+        
+        completed += 1;
+        let overall_progress = (completed as f64 / total_models as f64 * 100.0) as u32;
+        let _ = window.emit("enhance-download-progress", overall_progress);
+    }
+    
+    let _ = window.emit("enhance-download-complete", ());
+    
+    Ok(())
+}
+
+/// 删除文档增强模型
+#[tauri::command]
+fn delete_enhance_model(app: tauri::AppHandle) -> Result<(), String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    
+    let models = vec!["gcnet.onnx", "nafdpm.onnx", "drnet.onnx", "unetcnn.onnx"];
+    
+    for model_name in models {
+        let model_path = resource_dir.join("weights").join(model_name);
+        if model_path.exists() {
+            std::fs::remove_file(&model_path)
+                .map_err(|e| format!("删除模型文件失败: {}", e))?;
+        }
+    }
+    
+    Ok(())
+}
+
+// ==================== UVDoc 文档扭曲矫正推理 ====================
+
+/// 使用 UVDoc 模型矫正扭曲文档
+fn unwarp_document_uvdoc(
+    img: &DynamicImage,
+    model_path: &str,
+) -> Result<DynamicImage, String> {
+    use ort::session::Session;
+    use ort::value::Tensor;
+    
+    log::info!("加载 UVDoc 模型: {}", model_path);
+    
+    let mut session = Session::builder()
+        .map_err(|e| format!("创建 Session builder 失败: {}", e))?
+        .commit_from_file(model_path)
+        .map_err(|e| format!("加载 UVDoc 模型失败: {}", e))?;
+    
+    log::info!("UVDoc 模型加载成功");
+    
+    let (orig_width, orig_height) = (img.width(), img.height());
+    
+    let target_size = 288usize;
+    let resized = img.resize_exact(target_size as u32, target_size as u32, image::imageops::FilterType::Triangle);
+    
+    let rgba = resized.to_rgba8();
+    let mut input_data = vec![0.0f32; target_size * target_size * 3];
+    
+    for (y, row) in rgba.rows().enumerate() {
+        for (x, pixel) in row.enumerate() {
+            let r = pixel[0] as f32 / 255.0;
+            let g = pixel[1] as f32 / 255.0;
+            let b = pixel[2] as f32 / 255.0;
+            
+            let base_idx = (y * target_size + x) * 3;
+            input_data[base_idx] = r;
+            input_data[base_idx + 1] = g;
+            input_data[base_idx + 2] = b;
+        }
+    }
+    
+    let input_shape = [1usize, 3usize, target_size, target_size];
+    let input_tensor = Tensor::from_array((input_shape, input_data.into_boxed_slice()))
+        .map_err(|e| format!("创建输入tensor失败: {}", e))?;
+    
+    log::info!("UVDoc 开始推理");
+    
+    let outputs = session.run(ort::inputs![input_tensor])
+        .map_err(|e| format!("UVDoc 推理失败: {}", e))?;
+    
+    let (grid_shape, grid_data) = outputs[0].try_extract_tensor::<f32>()
+        .map_err(|e| format!("获取输出失败: {}", e))?;
+    
+    let grid_dims: Vec<usize> = grid_shape.iter().map(|d| *d as usize).collect();
+    log::info!("UVDoc 输出维度: {:?}", grid_dims);
+    
+    let grid_height = grid_dims[2];
+    let grid_width = grid_dims[3];
+    
+    let mut result = image::RgbaImage::new(orig_width, orig_height);
+    
+    let scale_x = orig_width as f32 / (grid_width - 1) as f32;
+    let scale_y = orig_height as f32 / (grid_height - 1) as f32;
+    
+    let orig_rgba = img.to_rgba8();
+    
+    for y in 0..orig_height {
+        for x in 0..orig_width {
+            let src_x_f = x as f32 / scale_x;
+            let src_y_f = y as f32 / scale_y;
+            
+            let src_x = src_x_f.min((grid_width - 1) as f32).max(0.0) as usize;
+            let src_y = src_y_f.min((grid_height - 1) as f32).max(0.0) as usize;
+            
+            let grid_idx = src_y * grid_width + src_x;
+            
+            let coord_x = grid_data[grid_idx * 2] * orig_width as f32;
+            let coord_y = grid_data[grid_idx * 2 + 1] * orig_height as f32;
+            
+            let sample_x = coord_x.clamp(0.0, (orig_width - 1) as f32) as u32;
+            let sample_y = coord_y.clamp(0.0, (orig_height - 1) as f32) as u32;
+            
+            let pixel = orig_rgba.get_pixel(sample_x, sample_y);
+            result.put_pixel(x, y, *pixel);
+        }
+    }
+    
+    log::info!("UVDoc 矫正完成");
+    
+    Ok(DynamicImage::ImageRgba8(result))
+}
+
+/// 文档扭曲矫正命令
+#[tauri::command]
+fn unwarp_document(app: tauri::AppHandle, request: DocumentScanRequest) -> Result<DocumentScanResult, String> {
+    let img = decode_base64_image(&request.image_data)?;
+    
+    log::info!("开始文档扭曲矫正，图像尺寸: {}x{}", img.width(), img.height());
+    
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    
+    let uvdoc_model_path = resource_dir.join("weights").join("uvdoc.onnx");
+    
+    if !uvdoc_model_path.exists() {
+        return Err("UVDoc 模型未安装，请在设置中下载".to_string());
+    }
+    
+    let result_img = unwarp_document_uvdoc(&img, uvdoc_model_path.to_string_lossy().to_string().as_str())?;
+    
+    let mut buffer = Vec::new();
+    result_img
+        .write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
+        .map_err(|e| format!("Failed to encode image: {}", e))?;
+    
+    let result_image = format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(&buffer));
+    
+    Ok(DocumentScanResult {
+        enhanced_image: result_image,
+        confidence: 1.0,
+        text_bbox: None,
+    })
+}
+
+// ==================== 文档增强推理 ====================
+
+/// 使用 GCNet 模型去除阴影
+fn remove_shadow_gcnet(
+    img: &DynamicImage,
+    model_path: &str,
+) -> Result<DynamicImage, String> {
+    use ort::session::Session;
+    use ort::value::Tensor;
+    
+    log::info!("加载 GCNet 去阴影模型: {}", model_path);
+    
+    let mut session = Session::builder()
+        .map_err(|e| format!("创建 Session builder 失败: {}", e))?
+        .commit_from_file(model_path)
+        .map_err(|e| format!("加载 GCNet 模型失败: {}", e))?;
+    
+    let (orig_width, orig_height) = (img.width(), img.height());
+    
+    let target_size = 640usize;
+    let scale_x = orig_width as f32 / target_size as f32;
+    let scale_y = orig_height as f32 / target_size as f32;
+    
+    let resized = img.resize_exact(target_size as u32, target_size as u32, image::imageops::FilterType::Triangle);
+    
+    let rgba = resized.to_rgba8();
+    let mut input_data = vec![0.0f32; target_size * target_size * 3];
+    
+    for (y, row) in rgba.rows().enumerate() {
+        for (x, pixel) in row.enumerate() {
+            let base_idx = (y * target_size + x) * 3;
+            input_data[base_idx] = pixel[0] as f32 / 255.0;
+            input_data[base_idx + 1] = pixel[1] as f32 / 255.0;
+            input_data[base_idx + 2] = pixel[2] as f32 / 255.0;
+        }
+    }
+    
+    let input_shape = [1usize, 3usize, target_size, target_size];
+    let input_tensor = Tensor::from_array((input_shape, input_data.into_boxed_slice()))
+        .map_err(|e| format!("创建输入tensor失败: {}", e))?;
+    
+    log::info!("GCNet 开始推理");
+    
+    let outputs = session.run(ort::inputs![input_tensor])
+        .map_err(|e| format!("GCNet 推理失败: {}", e))?;
+    
+    let (output_shape, output_data) = outputs[0].try_extract_tensor::<f32>()
+        .map_err(|e| format!("获取输出失败: {}", e))?;
+    
+    let out_dims: Vec<usize> = output_shape.iter().map(|d| *d as usize).collect();
+    log::info!("GCNet 输出维度: {:?}", out_dims);
+    
+    let out_height = out_dims[2];
+    let out_width = out_dims[3];
+    
+    let mut result = image::RgbaImage::new(orig_width, orig_height);
+    let orig_rgba = img.to_rgba8();
+    
+    for y in 0..orig_height {
+        for x in 0..orig_width {
+            let src_x = (x as f32 / scale_x) as usize;
+            let src_y = (y as f32 / scale_y) as usize;
+            
+            let src_x = src_x.min(out_width - 1);
+            let src_y = src_y.min(out_height - 1);
+            
+            let idx = src_y * out_width + src_x;
+            
+            let r = (output_data[idx * 3] * 255.0).clamp(0.0, 255.0) as u8;
+            let g = (output_data[idx * 3 + 1] * 255.0).clamp(0.0, 255.0) as u8;
+            let b = (output_data[idx * 3 + 2] * 255.0).clamp(0.0, 255.0) as u8;
+            
+            let orig_pixel = orig_rgba.get_pixel(x, y);
+            result.put_pixel(x, y, image::Rgba([r, g, b, orig_pixel[3]]));
+        }
+    }
+    
+    log::info!("GCNet 去阴影完成");
+    
+    Ok(DynamicImage::ImageRgba8(result))
+}
+
+/// 使用 NAFDPM 模型去除模糊
+fn remove_blur_nafdpm(
+    img: &DynamicImage,
+    model_path: &str,
+) -> Result<DynamicImage, String> {
+    use ort::session::Session;
+    use ort::value::Tensor;
+    
+    log::info!("加载 NAFDPM 去模糊模型: {}", model_path);
+    
+    let mut session = Session::builder()
+        .map_err(|e| format!("创建 Session builder 失败: {}", e))?
+        .commit_from_file(model_path)
+        .map_err(|e| format!("加载 NAFDPM 模型失败: {}", e))?;
+    
+    let (orig_width, orig_height) = (img.width(), img.height());
+    
+    let target_size = 256usize;
+    let scale_x = orig_width as f32 / target_size as f32;
+    let scale_y = orig_height as f32 / target_size as f32;
+    
+    let resized = img.resize_exact(target_size as u32, target_size as u32, image::imageops::FilterType::Triangle);
+    
+    let rgba = resized.to_rgba8();
+    let mut input_data = vec![0.0f32; target_size * target_size * 3];
+    
+    for (y, row) in rgba.rows().enumerate() {
+        for (x, pixel) in row.enumerate() {
+            let base_idx = (y * target_size + x) * 3;
+            input_data[base_idx] = pixel[0] as f32 / 255.0;
+            input_data[base_idx + 1] = pixel[1] as f32 / 255.0;
+            input_data[base_idx + 2] = pixel[2] as f32 / 255.0;
+        }
+    }
+    
+    let input_shape = [1usize, 3usize, target_size, target_size];
+    let input_tensor = Tensor::from_array((input_shape, input_data.into_boxed_slice()))
+        .map_err(|e| format!("创建输入tensor失败: {}", e))?;
+    
+    log::info!("NAFDPM 开始推理");
+    
+    let outputs = session.run(ort::inputs![input_tensor])
+        .map_err(|e| format!("NAFDPM 推理失败: {}", e))?;
+    
+    let (output_shape, output_data) = outputs[0].try_extract_tensor::<f32>()
+        .map_err(|e| format!("获取输出失败: {}", e))?;
+    
+    let out_dims: Vec<usize> = output_shape.iter().map(|d| *d as usize).collect();
+    log::info!("NAFDPM 输出维度: {:?}", out_dims);
+    
+    let out_height = out_dims[2];
+    let out_width = out_dims[3];
+    
+    let mut result = image::RgbaImage::new(orig_width, orig_height);
+    let orig_rgba = img.to_rgba8();
+    
+    for y in 0..orig_height {
+        for x in 0..orig_width {
+            let src_x = (x as f32 / scale_x) as usize;
+            let src_y = (y as f32 / scale_y) as usize;
+            
+            let src_x = src_x.min(out_width - 1);
+            let src_y = src_y.min(out_height - 1);
+            
+            let idx = src_y * out_width + src_x;
+            
+            let r = (output_data[idx * 3] * 255.0).clamp(0.0, 255.0) as u8;
+            let g = (output_data[idx * 3 + 1] * 255.0).clamp(0.0, 255.0) as u8;
+            let b = (output_data[idx * 3 + 2] * 255.0).clamp(0.0, 255.0) as u8;
+            
+            let orig_pixel = orig_rgba.get_pixel(x, y);
+            result.put_pixel(x, y, image::Rgba([r, g, b, orig_pixel[3]]));
+        }
+    }
+    
+    log::info!("NAFDPM 去模糊完成");
+    
+    Ok(DynamicImage::ImageRgba8(result))
+}
+
+/// 文档增强命令（去阴影+去模糊）
+#[tauri::command]
+fn enhance_document(app: tauri::AppHandle, request: DocumentScanRequest, enable_unshadow: bool, enable_unblur: bool) -> Result<DocumentScanResult, String> {
+    let mut img = decode_base64_image(&request.image_data)?;
+    
+    log::info!("开始文档增强，图像尺寸: {}x{}", img.width(), img.height());
+    
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("获取资源目录失败: {}", e))?;
+    
+    if enable_unshadow {
+        let gcnet_path = resource_dir.join("weights").join("gcnet.onnx");
+        if gcnet_path.exists() {
+            match remove_shadow_gcnet(&img, gcnet_path.to_string_lossy().to_string().as_str()) {
+                Ok(enhanced) => {
+                    img = enhanced;
+                    log::info!("去阴影完成");
+                }
+                Err(e) => {
+                    log::warn!("去阴影失败: {}", e);
+                }
+            }
+        } else {
+            log::warn!("GCNet 模型未安装，跳过去阴影");
+        }
+    }
+    
+    if enable_unblur {
+        let nafdpm_path = resource_dir.join("weights").join("nafdpm.onnx");
+        if nafdpm_path.exists() {
+            match remove_blur_nafdpm(&img, nafdpm_path.to_string_lossy().to_string().as_str()) {
+                Ok(enhanced) => {
+                    img = enhanced;
+                    log::info!("去模糊完成");
+                }
+                Err(e) => {
+                    log::warn!("去模糊失败: {}", e);
+                }
+            }
+        } else {
+            log::warn!("NAFDPM 模型未安装，跳过去模糊");
+        }
+    }
+    
+    let mut buffer = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
+        .map_err(|e| format!("Failed to encode image: {}", e))?;
+    
+    let result_image = format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(&buffer));
+    
+    Ok(DocumentScanResult {
+        enhanced_image: result_image,
+        confidence: 1.0,
+        text_bbox: None,
+    })
 }
 
 // ==================== 高级文档增强算法 ====================
@@ -2453,7 +3274,7 @@ fn adaptive_binarize_custom(img: &DynamicImage, block_size: u32, c: i32) -> Dyna
     let gray = img.to_luma8();
     let (width, height) = gray.dimensions();
     
-    let block_size = block_size.max(3).min(99) | 1;
+    let block_size = block_size.clamp(3, 99) | 1;
     let half = block_size / 2;
     
     let integral_width = width as usize + 1;
@@ -2488,8 +3309,8 @@ fn adaptive_binarize_custom(img: &DynamicImage, block_size: u32, c: i32) -> Dyna
             let sum = integral[idx4] - integral[idx2] - integral[idx3] + integral[idx1];
             let mean = sum as f64 / count as f64;
             
-            let pixel_val = gray.get_pixel(x, y)[0] as f64;
-            let threshold = mean - c as f64;
+            let pixel_val = f64::from(gray.get_pixel(x, y)[0]);
+            let threshold = mean - f64::from(c);
             
             let value = if pixel_val > threshold { 255 } else { 0 };
             result.put_pixel(x, y, Luma([value]));
@@ -2556,7 +3377,7 @@ fn enhance_document_advanced_internal(img: &DynamicImage, binarize: bool) -> Dyn
 }
 
 /// 文档增强选项
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct DocumentEnhanceOptions {
     pub binarize: bool,
 }
@@ -2580,7 +3401,7 @@ fn enhance_document_advanced(image_data: String, options: DocumentEnhanceOptions
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    use simplelog::*;
+    use simplelog::{CombinedLogger, WriteLogger, LevelFilter, Config, TermLogger, TerminalMode, ColorChoice};
     use std::fs::File;
     
     let config_dir = dirs::config_dir()
@@ -2619,9 +3440,9 @@ pub fn run() {
             }
         }))
         .setup(|app| {
-            let window = app.get_webview_window("main").unwrap();
+            let window = app.get_webview_window("main")
+                .expect("Failed to get main window");
             
-            // 初始化 GPU 上下文
             std::thread::spawn(|| {
                 match pollster::block_on(gpu::GpuContext::init()) {
                     Ok(_) => log::info!("GPU 上下文初始化成功"),
@@ -2631,7 +3452,8 @@ pub fn run() {
             
             let _ = window.set_decorations(false);
             
-            let config_dir = app.path().app_config_dir().unwrap();
+            let config_dir = app.path().app_config_dir()
+                .expect("Failed to get config directory");
             let config_path = config_dir.join("config.json");
             
             let is_first_run = !config_path.exists();
@@ -2666,8 +3488,8 @@ pub fn run() {
                 if let Ok(config_content) = std::fs::read_to_string(&config_path) {
                     if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_content) {
                         if let (Some(width), Some(height)) = (
-                            config.get("width").and_then(|v| v.as_u64()),
-                            config.get("height").and_then(|v| v.as_u64())
+                            config.get("width").and_then(serde_json::Value::as_u64),
+                            config.get("height").and_then(serde_json::Value::as_u64)
                         ) {
                             let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
                                 width: width as u32,
@@ -2754,7 +3576,23 @@ pub fn run() {
             scan_document,
             enhance_document_advanced,
             detect_text_east,
-            get_east_model_path
+            get_east_model_path,
+            detect_text_dbnet,
+            get_dbnet_model_path,
+            check_dbnet_model_exists,
+            get_dbnet_model_info,
+            download_dbnet_model,
+            delete_dbnet_model,
+            check_uvdoc_model_exists,
+            get_uvdoc_model_info,
+            download_uvdoc_model,
+            delete_uvdoc_model,
+            check_enhance_model_exists,
+            get_enhance_model_info,
+            download_enhance_model,
+            delete_enhance_model,
+            unwarp_document,
+            enhance_document
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
