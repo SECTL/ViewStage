@@ -29,6 +29,6 @@ wasm-viewstage/pkg/
 src/wasm/
 
 #models cache
-.venv/*
-DexiNed/*
-cache/*
+.venv/
+DexiNed/
+cache/
