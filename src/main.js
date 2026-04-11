@@ -20,18 +20,22 @@ let currentAnimationId = null;
 let pendingTransform = null;
 let transformRafId = null;
 
-// 节流更新 transform（减少 DOM 操作频率）
 function scheduleTransformUpdate(x, y, scale) {
-    pendingTransform = { x, y, scale };
+    if (!pendingTransform) {
+        pendingTransform = { x: 0, y: 0, scale: 1 };
+    }
+    pendingTransform.x = x;
+    pendingTransform.y = y;
+    pendingTransform.scale = scale;
     
     if (transformRafId === null) {
         transformRafId = requestAnimationFrame(() => {
             if (pendingTransform) {
-                const { x, y, scale } = pendingTransform;
-                dom.canvasWrapper.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
-                lastCanvasTransform.x = x;
-                lastCanvasTransform.y = y;
-                lastCanvasTransform.scale = scale;
+                const pt = pendingTransform;
+                dom.canvasWrapper.style.transform = `translate3d(${pt.x}px, ${pt.y}px, 0) scale(${pt.scale})`;
+                lastCanvasTransform.x = pt.x;
+                lastCanvasTransform.y = pt.y;
+                lastCanvasTransform.scale = pt.scale;
             }
             transformRafId = null;
         });
@@ -468,7 +472,9 @@ window.state = state;
 
 let cachedCanvasRect = null;
 let cachedVisibleRect = null;
-let cachedVisibleRectKey = null;
+let cachedVisibleRectScale = null;
+let cachedVisibleRectX = null;
+let cachedVisibleRectY = null;
 
 let offscreenCanvasPool = [];
 const MAX_OFFSCREEN_CANVAS = 2;
@@ -1496,8 +1502,14 @@ function updateCanvasBgColor(color) {
     }
 }
 
-// 计算画布移动边界 (缩放后)
+let cachedMoveBoundScale = null;
+
 function updateMoveBound() {
+    if (cachedMoveBoundScale === state.scale) {
+        return;
+    }
+    cachedMoveBoundScale = state.scale;
+    
     const screenW = DRAW_CONFIG.screenW;
     const screenH = DRAW_CONFIG.screenH;
     const scaledW = DRAW_CONFIG.canvasW * state.scale;
@@ -1527,10 +1539,16 @@ function clampCanvasPosition() {
 }
 
 function getVisibleRect() {
-    const key = `${state.scale}-${state.canvasX}-${state.canvasY}`;
-    if (cachedVisibleRectKey === key && cachedVisibleRect) {
+    if (cachedVisibleRectScale === state.scale && 
+        cachedVisibleRectX === state.canvasX && 
+        cachedVisibleRectY === state.canvasY && 
+        cachedVisibleRect) {
         return cachedVisibleRect;
     }
+    
+    cachedVisibleRectScale = state.scale;
+    cachedVisibleRectX = state.canvasX;
+    cachedVisibleRectY = state.canvasY;
     
     const scale = state.scale || 1;
     const screenW = DRAW_CONFIG.screenW;
@@ -1553,7 +1571,6 @@ function getVisibleRect() {
         width: visibleW,
         height: visibleH
     };
-    cachedVisibleRectKey = key;
     
     return cachedVisibleRect;
 }
@@ -2119,9 +2136,8 @@ function bindCanvasMouseEvents() {
  */
 function handlePointerDown(e) {
     e.preventDefault();
-    const rect = dom.drawCanvas.getBoundingClientRect();
+    state.drawCanvasRect = dom.drawCanvas.getBoundingClientRect();
     
-    // 保存压感值
     state.currentPressure = e.pressure || 0.5;
     
     if (state.drawMode === 'move') {
@@ -2134,15 +2150,15 @@ function handlePointerDown(e) {
         hidePenControlPanel();
         state.isDrawing = true;
         startDrawingMode();
-        state.lastX = (e.clientX - rect.left) / getSafeScale();
-        state.lastY = (e.clientY - rect.top) / getSafeScale();
+        state.lastX = (e.clientX - state.drawCanvasRect.left) / getSafeScale();
+        state.lastY = (e.clientY - state.drawCanvasRect.top) / getSafeScale();
         startStroke('draw');
     } else if (state.drawMode === 'eraser') {
         hidePenControlPanel();
         state.isDrawing = true;
         startDrawingMode();
-        state.lastX = (e.clientX - rect.left) / getSafeScale();
-        state.lastY = (e.clientY - rect.top) / getSafeScale();
+        state.lastX = (e.clientX - state.drawCanvasRect.left) / getSafeScale();
+        state.lastY = (e.clientY - state.drawCanvasRect.top) / getSafeScale();
         startStroke('erase');
     }
 }
@@ -2153,7 +2169,6 @@ function handlePointerDown(e) {
 function handlePointerMove(e) {
     e.preventDefault();
     
-    // 更新压感值
     state.currentPressure = e.pressure || 0.5;
     
     if (state.drawMode === 'eraser') {
@@ -2168,15 +2183,11 @@ function handlePointerMove(e) {
         const transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
         dom.canvasWrapper.style.transform = transform;
         
-        if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
-            updateCameraVideoStyle();
-        }
-        
         lastCanvasTransform.x = state.canvasX;
         lastCanvasTransform.y = state.canvasY;
         lastCanvasTransform.scale = state.scale;
     } else if (state.isDrawing) {
-        const rect = dom.drawCanvas.getBoundingClientRect();
+        const rect = state.drawCanvasRect;
         const x = (e.clientX - rect.left) / getSafeScale();
         const y = (e.clientY - rect.top) / getSafeScale();
         
@@ -2184,12 +2195,9 @@ function handlePointerMove(e) {
         const dy = y - state.lastY;
         const distSq = dx * dx + dy * dy;
         
-        // 增大距离阈值到2px，减少GPU绘制调用
         if (distSq > 4) {
-            // 先调用 addStrokePoint 来计算动态线宽
             addStrokePoint(state.lastX, state.lastY, x, y, state.currentPressure);
             
-            // 直接绘制，不收集点
             const type = state.drawMode === 'eraser' ? 'erase' : 'draw';
             const color = state.drawMode === 'comment' ? DRAW_CONFIG.penColor : '#000000';
             const lineWidth = state.drawMode === 'comment' ? DRAW_CONFIG.penWidth : DRAW_CONFIG.eraserSize;
@@ -2226,7 +2234,6 @@ async function handlePointerUp(e) {
             cancelAnimationFrame(state.drawRafId);
             state.drawRafId = null;
         }
-        await flushDrawPoints();
         await endStroke();
     }
 }
@@ -2246,20 +2253,16 @@ async function handlePointerLeave(e) {
             cancelAnimationFrame(state.drawRafId);
             state.drawRafId = null;
         }
-        await flushDrawPoints();
         await endStroke();
     }
 }
 
 /**
  * 鼠标按下处理
- * - move模式: 开始拖拽
- * - comment模式: 开始绘制笔画
- * - eraser模式: 开始擦除
  */
 function handleMouseDown(e) {
     e.preventDefault();
-    const rect = dom.drawCanvas.getBoundingClientRect();
+    state.drawCanvasRect = dom.drawCanvas.getBoundingClientRect();
     
     if (state.drawMode === 'move') {
         state.isDragging = true;
@@ -2271,23 +2274,21 @@ function handleMouseDown(e) {
         hidePenControlPanel();
         state.isDrawing = true;
         startDrawingMode();
-        state.lastX = (e.clientX - rect.left) / getSafeScale();
-        state.lastY = (e.clientY - rect.top) / getSafeScale();
+        state.lastX = (e.clientX - state.drawCanvasRect.left) / getSafeScale();
+        state.lastY = (e.clientY - state.drawCanvasRect.top) / getSafeScale();
         startStroke('draw');
     } else if (state.drawMode === 'eraser') {
         hidePenControlPanel();
         state.isDrawing = true;
         startDrawingMode();
-        state.lastX = (e.clientX - rect.left) / getSafeScale();
-        state.lastY = (e.clientY - rect.top) / getSafeScale();
+        state.lastX = (e.clientX - state.drawCanvasRect.left) / getSafeScale();
+        state.lastY = (e.clientY - state.drawCanvasRect.top) / getSafeScale();
         startStroke('erase');
     }
 }
 
 /**
  * 鼠标移动处理
- * - 拖拽: 更新画布位置
- * - 绘制: 收集点并批量绘制 (RAF优化)
  */
 function handleMouseMove(e) {
     e.preventDefault();
@@ -2301,21 +2302,14 @@ function handleMouseMove(e) {
         state.canvasY = e.clientY - state.startDragY;
         clampCanvasPosition();
         
-        // 直接更新容器 transform，提高跟手性
         const transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
         dom.canvasWrapper.style.transform = transform;
         
-        // 更新 video 元素
-        if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
-            updateCameraVideoStyle();
-        }
-        
-        // 更新 lastCanvasTransform
         lastCanvasTransform.x = state.canvasX;
         lastCanvasTransform.y = state.canvasY;
         lastCanvasTransform.scale = state.scale;
     } else if (state.isDrawing) {
-        const rect = dom.drawCanvas.getBoundingClientRect();
+        const rect = state.drawCanvasRect;
         const x = (e.clientX - rect.left) / getSafeScale();
         const y = (e.clientY - rect.top) / getSafeScale();
         
@@ -2323,12 +2317,9 @@ function handleMouseMove(e) {
         const dy = y - state.lastY;
         const distSq = dx * dx + dy * dy;
         
-        // 钢笔效果：更小的距离阈值，使线条更流畅（0.3px）
         if (distSq > 0.09) {
-            // 先调用 addStrokePoint 来计算动态线宽
             addStrokePoint(state.lastX, state.lastY, x, y);
             
-            // 直接绘制，不收集点
             const type = state.drawMode === 'eraser' ? 'erase' : 'draw';
             const color = state.drawMode === 'comment' ? DRAW_CONFIG.penColor : '#000000';
             const lineWidth = state.drawMode === 'comment' ? DRAW_CONFIG.penWidth : DRAW_CONFIG.eraserSize;
@@ -2340,19 +2331,13 @@ function handleMouseMove(e) {
                 x, 
                 y, 
                 color, 
-                lineWidth,
-                state.lastLineWidth,
-                state.currentLineWidth
+                lineWidth
             );
             
             state.lastX = x;
             state.lastY = y;
         }
     }
-}
-
-async function flushDrawPoints() {
-    // 不再需要此函数，绘制已即时完成
 }
 
 async function handleMouseUp(e) {
@@ -2390,13 +2375,11 @@ function handleWheel(e) {
     const newScale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, state.scale + delta));
     
     if (newScale !== state.scale) {
-        const containerRect = dom.canvasContainer.getBoundingClientRect();
+        const containerRect = getCachedCanvasRect();
         const mouseX = e.clientX - containerRect.left;
         const mouseY = e.clientY - containerRect.top;
         
         const oldScale = state.scale;
-        
-        updateMoveBound();
         
         const scaleRatio = newScale / oldScale;
         const targetX = mouseX - (mouseX - state.canvasX) * scaleRatio;
@@ -2406,6 +2389,7 @@ function handleWheel(e) {
         state.canvasX = targetX;
         state.canvasY = targetY;
         
+        updateMoveBound();
         clampCanvasPosition();
         animateCanvasTransform(state.canvasX, state.canvasY, state.scale, 100);
     }
@@ -2422,7 +2406,7 @@ function bindCanvasTouchEvents() {
 function handleTouchStart(e) {
     e.preventDefault();
     const touches = e.touches;
-    const rect = dom.drawCanvas.getBoundingClientRect();
+    state.drawCanvasRect = dom.drawCanvas.getBoundingClientRect();
     
     if (touches.length === 1) {
         const touch = touches[0];
@@ -2435,35 +2419,38 @@ function handleTouchStart(e) {
         } else if (state.drawMode === 'comment') {
             state.isDrawing = true;
             startDrawingMode();
-            state.lastX = (touch.clientX - rect.left) / getSafeScale();
-            state.lastY = (touch.clientY - rect.top) / getSafeScale();
+            state.lastX = (touch.clientX - state.drawCanvasRect.left) / getSafeScale();
+            state.lastY = (touch.clientY - state.drawCanvasRect.top) / getSafeScale();
             startStroke('draw');
         } else if (state.drawMode === 'eraser') {
             state.isDrawing = true;
             startDrawingMode();
             updateEraserHintPos(touch.clientX, touch.clientY);
-            state.lastX = (touch.clientX - rect.left) / getSafeScale();
-            state.lastY = (touch.clientY - rect.top) / getSafeScale();
+            state.lastX = (touch.clientX - state.drawCanvasRect.left) / getSafeScale();
+            state.lastY = (touch.clientY - state.drawCanvasRect.top) / getSafeScale();
             startStroke('erase');
         }
     } else if (touches.length === 2) {
         state.isScaling = true;
         state.isDragging = false;
         state.isDrawing = false;
-        state.startDistance = getTouchDistance(touches[0], touches[1]);
+        state.startDistanceSq = getTouchDistanceSq(touches[0], touches[1]);
         state.startScale = state.scale;
         state.startScaleX = (touches[0].clientX + touches[1].clientX) / 2;
         state.startScaleY = (touches[0].clientY + touches[1].clientY) / 2;
         state.startCanvasX = state.canvasX;
         state.startCanvasY = state.canvasY;
         dom.canvasWrapper.classList.add('dragging');
+        
+        if (state.isCameraOpen && dom.cameraVideo) {
+            dom.cameraVideo.style.visibility = 'hidden';
+        }
     }
 }
 
 function handleTouchMove(e) {
     e.preventDefault();
     const touches = e.touches;
-    const rect = dom.drawCanvas.getBoundingClientRect();
     
     if (touches.length === 1 && state.isDragging) {
         const touch = touches[0];
@@ -2471,16 +2458,9 @@ function handleTouchMove(e) {
         state.canvasY = touch.clientY - state.startDragY;
         clampCanvasPosition();
         
-        // 直接更新容器 transform，提高跟手性
         const transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
         dom.canvasWrapper.style.transform = transform;
         
-        // 更新 video 元素
-        if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
-            updateCameraVideoStyle();
-        }
-        
-        // 更新 lastCanvasTransform
         lastCanvasTransform.x = state.canvasX;
         lastCanvasTransform.y = state.canvasY;
         lastCanvasTransform.scale = state.scale;
@@ -2490,22 +2470,18 @@ function handleTouchMove(e) {
             updateEraserHintPos(touch.clientX, touch.clientY);
         }
         
-        const x = (touch.clientX - rect.left) / getSafeScale();
-        const y = (touch.clientY - rect.top) / getSafeScale();
+        const x = (touch.clientX - state.drawCanvasRect.left) / getSafeScale();
+        const y = (touch.clientY - state.drawCanvasRect.top) / getSafeScale();
         
-        // 获取触控压感（如果有的话）
         const pressure = (touch.force > 0) ? touch.force : 0.5;
         
         const dx = x - state.lastX;
         const dy = y - state.lastY;
         const distSq = dx * dx + dy * dy;
         
-        // 钢笔效果：更小的距离阈值，使线条更流畅（0.3px）
         if (distSq > 0.09) {
-            // 先调用 addStrokePoint 来计算动态线宽
             addStrokePoint(state.lastX, state.lastY, x, y, pressure);
             
-            // 直接绘制，不收集点
             const type = state.drawMode === 'eraser' ? 'erase' : 'draw';
             const color = state.drawMode === 'comment' ? DRAW_CONFIG.penColor : '#000000';
             const lineWidth = state.drawMode === 'comment' ? DRAW_CONFIG.penWidth : DRAW_CONFIG.eraserSize;
@@ -2517,20 +2493,18 @@ function handleTouchMove(e) {
                 x, 
                 y, 
                 color, 
-                lineWidth,
-                state.lastLineWidth,
-                state.currentLineWidth
+                lineWidth
             );
             
             state.lastX = x;
             state.lastY = y;
         }
     } else if (touches.length === 2 && state.isScaling) {
-        const currentDistance = getTouchDistance(touches[0], touches[1]);
-        const scaleRatio = currentDistance / state.startDistance;
+        const currentDistanceSq = getTouchDistanceSq(touches[0], touches[1]);
+        const scaleRatio = Math.sqrt(currentDistanceSq / state.startDistanceSq);
         let newScale = state.startScale * scaleRatio;
         const maxScale = state.isCameraOpen ? DRAW_CONFIG.maxScaleCamera : DRAW_CONFIG.maxScaleImage;
-        newScale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, newScale));
+        newScale = newScale < DRAW_CONFIG.minScale ? DRAW_CONFIG.minScale : (newScale > maxScale ? maxScale : newScale);
         
         const centerX = (touches[0].clientX + touches[1].clientX) / 2;
         const centerY = (touches[0].clientY + touches[1].clientY) / 2;
@@ -2540,16 +2514,7 @@ function handleTouchMove(e) {
         state.canvasY = centerY - (state.startScaleY - state.startCanvasY) * finalRatio;
         state.scale = newScale;
         
-        updateMoveBound();
-        clampCanvasPosition();
-        
-        // 使用节流更新 transform
         scheduleTransformUpdate(state.canvasX, state.canvasY, state.scale);
-        
-        // 更新 video 元素
-        if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
-            updateCameraVideoStyle();
-        }
     }
 }
 
@@ -2562,6 +2527,14 @@ async function handleTouchEnd(e) {
         dom.canvasWrapper.classList.remove('dragging');
         dom.drawCanvas.classList.remove('dragging');
         
+        if (state.isCameraOpen && dom.cameraVideo) {
+            dom.cameraVideo.style.visibility = 'visible';
+        }
+        
+        updateMoveBound();
+        clampCanvasPosition();
+        dom.canvasWrapper.style.transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
+        
         if (state.isDrawing) {
             state.isDrawing = false;
             endDrawingMode();
@@ -2569,11 +2542,18 @@ async function handleTouchEnd(e) {
                 cancelAnimationFrame(state.drawRafId);
                 state.drawRafId = null;
             }
-            await flushDrawPoints();
             await endStroke();
         }
     } else if (e.touches.length === 1) {
         state.isScaling = false;
+        if (state.isCameraOpen && dom.cameraVideo) {
+            dom.cameraVideo.style.visibility = 'visible';
+        }
+        
+        updateMoveBound();
+        clampCanvasPosition();
+        dom.canvasWrapper.style.transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
+        
         const touch = e.touches[0];
         if (state.drawMode === 'move') {
             state.isDragging = true;
@@ -2583,10 +2563,10 @@ async function handleTouchEnd(e) {
     }
 }
 
-function getTouchDistance(touch1, touch2) {
+function getTouchDistanceSq(touch1, touch2) {
     const dx = touch2.clientX - touch1.clientX;
     const dy = touch2.clientY - touch1.clientY;
-    return Math.max(1, Math.sqrt(dx * dx + dy * dy));
+    return dx * dx + dy * dy;
 }
 
 function updateCanvasTransform() {
@@ -2600,70 +2580,34 @@ function updateCanvasTransform() {
     lastCanvasTransform.y = state.canvasY;
     lastCanvasTransform.scale = state.scale;
     
-    // 只对容器设置 transform，减少 DOM 操作
     const transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
     dom.canvasWrapper.style.transform = transform;
-    
-    // video 元素需要单独处理（因为它有额外的偏移）
-    if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
-        updateCameraVideoStyle();
-    }
 }
 
 function animateCanvasTransform(targetX, targetY, targetScale, duration = 250) {
-    // 取消之前的动画
     if (currentAnimationId !== null) {
-        cancelAnimationFrame(currentAnimationId);
+        clearTimeout(currentAnimationId);
         currentAnimationId = null;
     }
     
-    const startX = state.canvasX;
-    const startY = state.canvasY;
-    const startScale = state.scale;
+    state.canvasX = targetX;
+    state.canvasY = targetY;
+    state.scale = targetScale;
     
-    const deltaX = targetX - startX;
-    const deltaY = targetY - startY;
-    const deltaScale = targetScale - startScale;
+    updateMoveBound();
+    clampCanvasPosition();
     
-    const startTime = performance.now();
+    lastCanvasTransform.x = state.canvasX;
+    lastCanvasTransform.y = state.canvasY;
+    lastCanvasTransform.scale = state.scale;
     
     dom.canvasWrapper.classList.add('smooth-transform');
+    dom.canvasWrapper.style.transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
     
-    function animate(currentTime) {
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        
-        const easeProgress = 1 - Math.pow(1 - progress, 3);
-        
-        state.canvasX = startX + deltaX * easeProgress;
-        state.canvasY = startY + deltaY * easeProgress;
-        state.scale = startScale + deltaScale * easeProgress;
-        
-        updateMoveBound();
-        clampCanvasPosition();
-        
-        lastCanvasTransform.x = state.canvasX;
-        lastCanvasTransform.y = state.canvasY;
-        lastCanvasTransform.scale = state.scale;
-        
-        // 只对容器设置 transform
-        const transform = `translate3d(${state.canvasX}px, ${state.canvasY}px, 0) scale(${state.scale})`;
-        dom.canvasWrapper.style.transform = transform;
-        
-        // 更新 video 元素
-        if (dom.cameraVideo && state.isCameraOpen && state.isCameraReady) {
-            updateCameraVideoStyle();
-        }
-        
-        if (progress < 1) {
-            currentAnimationId = requestAnimationFrame(animate);
-        } else {
-            currentAnimationId = null;
-            dom.canvasWrapper.classList.remove('smooth-transform');
-        }
-    }
-    
-    currentAnimationId = requestAnimationFrame(animate);
+    currentAnimationId = setTimeout(() => {
+        currentAnimationId = null;
+        dom.canvasWrapper.classList.remove('smooth-transform');
+    }, duration);
 }
 
 // 撤销功能 - 混合方案：路径记录 + ImageData 压缩
@@ -3224,279 +3168,6 @@ function perpendicularDistance(px, py, x1, y1, x2, y2) {
     }
     
     return distance(px, py, xx, yy);
-}
-
-/**
- * 批量收集线段点
- */
-class PointCollector {
-    constructor() {
-        this.points = [];
-        this.lastTime = Date.now();
-        this.lastX = 0;
-        this.lastY = 0;
-    }
-    
-    addPoint(fromX, fromY, toX, toY) {
-        const qFromX = quantizeCoord(fromX);
-        const qFromY = quantizeCoord(fromY);
-        const qToX = quantizeCoord(toX);
-        const qToY = quantizeCoord(toY);
-        
-        if (distance(qFromX, qFromY, qToX, qToY) < POINT_OPTIMIZATION.minDistance) {
-            return false;
-        }
-        
-        const now = Date.now();
-        if (now - this.lastTime < POINT_OPTIMIZATION.batchInterval) {
-            return false;
-        }
-        
-        this.lastTime = now;
-        this.lastX = qToX;
-        this.lastY = qToY;
-        
-        this.points.push({
-            fromX: qFromX,
-            fromY: qFromY,
-            toX: qToX,
-            toY: qToY
-        });
-        
-        if (this.points.length > POINT_OPTIMIZATION.maxPointsPerStroke) {
-            this.points = simplifyPoints(this.points, POINT_OPTIMIZATION.epsilon);
-        }
-        
-        return true;
-    }
-    
-    getPoints() {
-        return this.points;
-    }
-    
-    clear() {
-        this.points = [];
-        this.lastTime = Date.now();
-    }
-}
-
-
-
-// ==================== 批处理绘制系统 ====================
-// 批量绘制命令管理：减少Canvas状态切换，提高绘制效率
-
-/**
- * 批处理绘制管理器
- * 按状态分组批量处理绘制命令
- */
-class BatchDrawManager {
-    constructor() {
-        this.batches = new Map(); // 按状态分组的批处理
-        this.maxBatchSize = 300;   // 每批最大命令数（进一步增加以减少flush次数）
-        this.batchInterval = 16;   // 批处理间隔 (ms)
-        this.lastBatchTime = 0;     // 上次批处理时间
-        this.isDrawing = false;     // 是否正在绘制中
-        this.pendingFlush = false;  // 是否有待处理的flush
-        this.minDistance = 0.5;     // 最小点间距，用于过滤冗余点（增加以减少点数量）
-        this.variableWidthCommands = []; // 可变线宽命令队列
-    }
-    
-    /**
-     * 添加绘制命令（支持可变线宽）
-     */
-    addCommand(type, fromX, fromY, toX, toY, color, lineWidth, fromWidth = null, toWidth = null) {
-        // 计算距离，过滤太近的点
-        const distance = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
-        if (distance < this.minDistance) {
-            return; // 跳过太近的点
-        }
-        
-        // 生成状态键
-        const stateKey = `${type}-${color}-${lineWidth}`;
-        
-        // 获取或创建批处理
-        if (!this.batches.has(stateKey)) {
-            this.batches.set(stateKey, {
-                type,
-                color,
-                lineWidth,
-                commands: []
-            });
-        }
-        
-        const batch = this.batches.get(stateKey);
-        batch.commands.push({ fromX, fromY, toX, toY });
-        
-        // 检查批处理大小
-        if (batch.commands.length >= this.maxBatchSize) {
-            this.flushBatch(stateKey);
-        }
-    }
-    
-    /**
-     * 开始绘制
-     */
-    startDrawing() {
-        this.isDrawing = true;
-        this.pendingFlush = false;
-    }
-    
-    /**
-     * 结束绘制
-     */
-    async endDrawing() {
-        this.isDrawing = false;
-        await this.optimizeCommands();
-        this.flushAll();
-    }
-    
-    /**
-     * 绘制可变线宽线段（使用多边形模拟）
-     */
-    drawVariableWidthLine(ctx, x1, y1, x2, y2, w1, w2, color, isErase) {
-        if (isErase) {
-            ctx.globalCompositeOperation = 'destination-out';
-            ctx.fillStyle = 'rgba(0, 0, 0, 1)';
-        } else {
-            ctx.globalCompositeOperation = 'source-over';
-            ctx.fillStyle = color;
-        }
-        
-        const angle = Math.atan2(y2 - y1, x2 - x1);
-        const perpAngle = angle + Math.PI / 2;
-        
-        const hw1 = w1 / 2;
-        const hw2 = w2 / 2;
-        
-        const cos = Math.cos(perpAngle);
-        const sin = Math.sin(perpAngle);
-        
-        ctx.beginPath();
-        ctx.moveTo(x1 + cos * hw1, y1 + sin * hw1);
-        ctx.lineTo(x2 + cos * hw2, y2 + sin * hw2);
-        ctx.lineTo(x2 - cos * hw2, y2 - sin * hw2);
-        ctx.lineTo(x1 - cos * hw1, y1 - sin * hw1);
-        ctx.closePath();
-        ctx.fill();
-        
-        // 绘制两端圆形
-        ctx.beginPath();
-        ctx.arc(x1, y1, hw1, 0, Math.PI * 2);
-        ctx.fill();
-        
-        ctx.beginPath();
-        ctx.arc(x2, y2, hw2, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    
-    /**
-     * 执行单个批处理
-     */
-    flushBatch(stateKey) {
-        const batch = this.batches.get(stateKey);
-        if (!batch || batch.commands.length === 0) return;
-        
-        const ctx = dom.drawCtx;
-        const isErase = batch.type === 'erase';
-        
-        if (isErase) {
-            ctx.globalCompositeOperation = 'destination-out';
-            ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
-        } else {
-            ctx.globalCompositeOperation = 'source-over';
-            ctx.strokeStyle = batch.color;
-        }
-        
-        ctx.lineWidth = batch.lineWidth;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        
-        const path = new Path2D();
-        for (const cmd of batch.commands) {
-            path.moveTo(cmd.fromX, cmd.fromY);
-            path.lineTo(cmd.toX, cmd.toY);
-        }
-        ctx.stroke(path);
-        
-        batch.commands = [];
-    }
-    
-    /**
-     * 执行所有批处理
-     */
-    flushAll() {
-        const ctx = dom.drawCtx;
-        
-        // 先绘制可变线宽命令
-        if (this.variableWidthCommands.length > 0) {
-            for (const cmd of this.variableWidthCommands) {
-                this.drawVariableWidthLine(
-                    ctx,
-                    cmd.fromX, cmd.fromY,
-                    cmd.toX, cmd.toY,
-                    cmd.fromWidth, cmd.toWidth,
-                    cmd.color,
-                    cmd.type === 'erase'
-                );
-            }
-            this.variableWidthCommands = [];
-        }
-        
-        if (this.batches.size === 0) {
-            ctx.globalCompositeOperation = 'source-over';
-            return;
-        }
-        
-        // 不变的状态设置移到循环外部
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        
-        for (const [stateKey, batch] of this.batches) {
-            if (batch.commands.length === 0) continue;
-            
-            const isErase = batch.type === 'erase';
-            
-            // 只设置变化的状态
-            if (isErase) {
-                ctx.globalCompositeOperation = 'destination-out';
-                ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
-            } else {
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.strokeStyle = batch.color;
-            }
-            
-            ctx.lineWidth = batch.lineWidth;
-            
-            const path = new Path2D();
-            for (const cmd of batch.commands) {
-                path.moveTo(cmd.fromX, cmd.fromY);
-                path.lineTo(cmd.toX, cmd.toY);
-            }
-            ctx.stroke(path);
-            
-            batch.commands = [];
-        }
-        
-        // 恢复默认状态
-        ctx.globalCompositeOperation = 'source-over';
-        
-        this.batches.clear();
-    }
-    
-    /**
-     * 清空所有批处理
-     */
-    clear() {
-        this.batches.clear();
-        this.variableWidthCommands = [];
-    }
-    
-    /**
-     * 获取批处理数量
-     */
-    getBatchCount() {
-        return this.batches.size;
-    }
 }
 
 /**
@@ -4075,9 +3746,14 @@ async function generateThumbnail(imageData, maxSize = 150, fixedRatio = true) {
     return generateThumbnailFallback(imageData, maxSize, fixedRatio);
 }
 
-function generateThumbnailFallback(imageData, maxSize = 150, fixedRatio = true) {
+async function generateThumbnailFallback(imageData, maxSize = 150, fixedRatio = true) {
     const img = new Image();
-    img.src = imageData;
+    
+    await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageData;
+    });
     
     let thumbW, thumbH, scaledW, scaledH, offsetX, offsetY;
     
@@ -5676,8 +5352,8 @@ async function importImage() {
             });
             
             let thumbnail;
-            if (thumbnails[i] && thumbnails[i].length > 0) {
-                const thumbBlob = await fetch(thumbnails[i]).then(r => r.blob());
+            if (thumbnails[i] && thumbnails[i].thumbnail) {
+                const thumbBlob = await fetch(thumbnails[i].thumbnail).then(r => r.blob());
                 thumbnail = URL.createObjectURL(thumbBlob);
             } else {
                 thumbnail = await generateThumbnailBlob(imgData.blob, 150);

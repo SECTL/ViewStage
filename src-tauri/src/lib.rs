@@ -632,6 +632,14 @@ fn compact_strokes(request: CompactStrokesRequest) -> Result<String, String> {
     
     for stroke in &request.strokes {
         let points = &stroke.points;
+        
+        if stroke.stroke_type == "clear" {
+            for pixel in canvas.pixels_mut() {
+                *pixel = Rgba([0, 0, 0, 0]);
+            }
+            continue;
+        }
+        
         if points.is_empty() {
             continue;
         }
