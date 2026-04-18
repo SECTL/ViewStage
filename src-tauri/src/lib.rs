@@ -59,6 +59,30 @@ static DEXINED_CACHE: once_cell::sync::Lazy<Mutex<Option<Arc<Mutex<ort::session:
 static DEXINED_MODEL_PATH: once_cell::sync::Lazy<Mutex<Option<PathBuf>>> = 
     once_cell::sync::Lazy::new(|| Mutex::new(None));
 
+/// 全局 UVDoc 模型缓存
+static UVDOC_CACHE: once_cell::sync::Lazy<Mutex<Option<Arc<Mutex<ort::session::Session>>>>> = 
+    once_cell::sync::Lazy::new(|| Mutex::new(None));
+static UVDOC_MODEL_PATH: once_cell::sync::Lazy<Mutex<Option<PathBuf>>> = 
+    once_cell::sync::Lazy::new(|| Mutex::new(None));
+
+/// 全局 GCNet 模型缓存
+static GCNET_CACHE: once_cell::sync::Lazy<Mutex<Option<Arc<Mutex<ort::session::Session>>>>> = 
+    once_cell::sync::Lazy::new(|| Mutex::new(None));
+static GCNET_MODEL_PATH: once_cell::sync::Lazy<Mutex<Option<PathBuf>>> = 
+    once_cell::sync::Lazy::new(|| Mutex::new(None));
+
+/// 全局 NAFDPM 模型缓存
+static NAFDPM_CACHE: once_cell::sync::Lazy<Mutex<Option<Arc<Mutex<ort::session::Session>>>>> = 
+    once_cell::sync::Lazy::new(|| Mutex::new(None));
+static NAFDPM_MODEL_PATH: once_cell::sync::Lazy<Mutex<Option<PathBuf>>> = 
+    once_cell::sync::Lazy::new(|| Mutex::new(None));
+
+/// 全局 DBNet (ONNX Runtime) 模型缓存
+static DBNET_ORT_CACHE: once_cell::sync::Lazy<Mutex<Option<Arc<Mutex<ort::session::Session>>>>> = 
+    once_cell::sync::Lazy::new(|| Mutex::new(None));
+static DBNET_ORT_MODEL_PATH: once_cell::sync::Lazy<Mutex<Option<PathBuf>>> = 
+    once_cell::sync::Lazy::new(|| Mutex::new(None));
+
 /// 获取或加载 DexiNed 模型
 fn get_or_load_dexined_model(model_path: &std::path::Path) -> Result<Arc<Mutex<ort::session::Session>>, String> {
     {
@@ -99,6 +123,216 @@ fn get_or_load_dexined_model(model_path: &std::path::Path) -> Result<Arc<Mutex<o
     }
     
     Ok(session)
+}
+
+/// 获取或加载 UVDoc 模型
+fn get_or_load_uvdoc_model(model_path: &std::path::Path) -> Result<Arc<Mutex<ort::session::Session>>, String> {
+    {
+        let cached_path = UVDOC_MODEL_PATH.lock().unwrap();
+        if let Some(ref path) = *cached_path {
+            if path == model_path {
+                let cached_session = UVDOC_CACHE.lock().unwrap();
+                if let Some(ref session) = *cached_session {
+                    log::info!("使用缓存的 UVDoc 模型");
+                    return Ok(session.clone());
+                }
+            }
+        }
+    }
+    
+    log::info!("加载 UVDoc 模型: {:?}", model_path);
+    
+    use ort::session::Session;
+    
+    let session = Session::builder()
+        .map_err(|e| format!("创建 Session builder 失败: {}", e))?
+        .commit_from_file(model_path)
+        .map_err(|e| format!("加载 UVDoc ONNX 模型失败: {}", e))?;
+    
+    log::info!("UVDoc 模型加载成功");
+    
+    let session = Arc::new(Mutex::new(session));
+    
+    {
+        let mut cached_session = UVDOC_CACHE.lock().unwrap();
+        *cached_session = Some(session.clone());
+    }
+    {
+        let mut cached_path = UVDOC_MODEL_PATH.lock().unwrap();
+        *cached_path = Some(model_path.to_path_buf());
+    }
+    
+    Ok(session)
+}
+
+/// 获取或加载 GCNet 模型
+fn get_or_load_gcnet_model(model_path: &std::path::Path) -> Result<Arc<Mutex<ort::session::Session>>, String> {
+    {
+        let cached_path = GCNET_MODEL_PATH.lock().unwrap();
+        if let Some(ref path) = *cached_path {
+            if path == model_path {
+                let cached_session = GCNET_CACHE.lock().unwrap();
+                if let Some(ref session) = *cached_session {
+                    log::info!("使用缓存的 GCNet 模型");
+                    return Ok(session.clone());
+                }
+            }
+        }
+    }
+    
+    log::info!("加载 GCNet 模型: {:?}", model_path);
+    
+    use ort::session::Session;
+    
+    let session = Session::builder()
+        .map_err(|e| format!("创建 Session builder 失败: {}", e))?
+        .commit_from_file(model_path)
+        .map_err(|e| format!("加载 GCNet ONNX 模型失败: {}", e))?;
+    
+    log::info!("GCNet 模型加载成功");
+    
+    let session = Arc::new(Mutex::new(session));
+    
+    {
+        let mut cached_session = GCNET_CACHE.lock().unwrap();
+        *cached_session = Some(session.clone());
+    }
+    {
+        let mut cached_path = GCNET_MODEL_PATH.lock().unwrap();
+        *cached_path = Some(model_path.to_path_buf());
+    }
+    
+    Ok(session)
+}
+
+/// 获取或加载 NAFDPM 模型
+fn get_or_load_nafdpm_model(model_path: &std::path::Path) -> Result<Arc<Mutex<ort::session::Session>>, String> {
+    {
+        let cached_path = NAFDPM_MODEL_PATH.lock().unwrap();
+        if let Some(ref path) = *cached_path {
+            if path == model_path {
+                let cached_session = NAFDPM_CACHE.lock().unwrap();
+                if let Some(ref session) = *cached_session {
+                    log::info!("使用缓存的 NAFDPM 模型");
+                    return Ok(session.clone());
+                }
+            }
+        }
+    }
+    
+    log::info!("加载 NAFDPM 模型: {:?}", model_path);
+    
+    use ort::session::Session;
+    
+    let session = Session::builder()
+        .map_err(|e| format!("创建 Session builder 失败: {}", e))?
+        .commit_from_file(model_path)
+        .map_err(|e| format!("加载 NAFDPM ONNX 模型失败: {}", e))?;
+    
+    log::info!("NAFDPM 模型加载成功");
+    
+    let session = Arc::new(Mutex::new(session));
+    
+    {
+        let mut cached_session = NAFDPM_CACHE.lock().unwrap();
+        *cached_session = Some(session.clone());
+    }
+    {
+        let mut cached_path = NAFDPM_MODEL_PATH.lock().unwrap();
+        *cached_path = Some(model_path.to_path_buf());
+    }
+    
+    Ok(session)
+}
+
+/// 获取或加载 DBNet (ONNX Runtime) 模型
+fn get_or_load_dbnet_ort_model(model_path: &std::path::Path) -> Result<Arc<Mutex<ort::session::Session>>, String> {
+    {
+        let cached_path = DBNET_ORT_MODEL_PATH.lock().unwrap();
+        if let Some(ref path) = *cached_path {
+            if path == model_path {
+                let cached_session = DBNET_ORT_CACHE.lock().unwrap();
+                if let Some(ref session) = *cached_session {
+                    log::info!("使用缓存的 DBNet 模型");
+                    return Ok(session.clone());
+                }
+            }
+        }
+    }
+    
+    log::info!("加载 DBNet 模型: {:?}", model_path);
+    
+    use ort::session::Session;
+    
+    let session = Session::builder()
+        .map_err(|e| format!("创建 Session builder 失败: {}", e))?
+        .commit_from_file(model_path)
+        .map_err(|e| format!("加载 DBNet ONNX 模型失败: {}", e))?;
+    
+    log::info!("DBNet 模型加载成功");
+    
+    let session = Arc::new(Mutex::new(session));
+    
+    {
+        let mut cached_session = DBNET_ORT_CACHE.lock().unwrap();
+        *cached_session = Some(session.clone());
+    }
+    {
+        let mut cached_path = DBNET_ORT_MODEL_PATH.lock().unwrap();
+        *cached_path = Some(model_path.to_path_buf());
+    }
+    
+    Ok(session)
+}
+
+/// 清空所有模型缓存
+#[tauri::command]
+fn clear_model_cache() -> Result<(), String> {
+    log::info!("清空所有模型缓存");
+    
+    {
+        let mut cache = DEXINED_CACHE.lock().unwrap();
+        *cache = None;
+    }
+    {
+        let mut path = DEXINED_MODEL_PATH.lock().unwrap();
+        *path = None;
+    }
+    {
+        let mut cache = UVDOC_CACHE.lock().unwrap();
+        *cache = None;
+    }
+    {
+        let mut path = UVDOC_MODEL_PATH.lock().unwrap();
+        *path = None;
+    }
+    {
+        let mut cache = GCNET_CACHE.lock().unwrap();
+        *cache = None;
+    }
+    {
+        let mut path = GCNET_MODEL_PATH.lock().unwrap();
+        *path = None;
+    }
+    {
+        let mut cache = NAFDPM_CACHE.lock().unwrap();
+        *cache = None;
+    }
+    {
+        let mut path = NAFDPM_MODEL_PATH.lock().unwrap();
+        *path = None;
+    }
+    {
+        let mut cache = DBNET_ORT_CACHE.lock().unwrap();
+        *cache = None;
+    }
+    {
+        let mut path = DBNET_ORT_MODEL_PATH.lock().unwrap();
+        *path = None;
+    }
+    
+    log::info!("模型缓存已清空");
+    Ok(())
 }
 
 // ==================== 数据结构 ====================
@@ -356,7 +590,7 @@ fn get_cds_dir() -> Result<String, String> {
     Ok(cds_dir.to_string_lossy().to_string())
 }
 
-/// 获取用户主题目录 (%APPDATA%/com.viewstage.app/themes)
+/// 获取用户主题目录 (%APPDATA%/SECTL/ViewStage/themes)
 #[tauri::command]
 fn get_theme_dir(app: tauri::AppHandle) -> Result<String, String> {
     let config_dir = app.path().app_config_dir()
@@ -372,7 +606,7 @@ fn get_theme_dir(app: tauri::AppHandle) -> Result<String, String> {
     Ok(theme_dir.to_string_lossy().to_string())
 }
 
-/// 获取模型文件目录 (%APPDATA%/com.viewstage.app/models)
+/// 获取模型文件目录 (%APPDATA%/SECTL/ViewStage/models)
 fn get_models_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let config_dir = app.path().app_config_dir()
         .map_err(|e| format!("获取配置目录失败: {}", e))?;
@@ -1280,8 +1514,12 @@ async fn convert_docx_to_pdf_from_bytes(file_data: Vec<u8>, file_name: String, a
     let cache_dir = config_dir.join("cache");
     fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
     
+    let folder_name = format!("document_{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+    let doc_cache_dir = cache_dir.join(&folder_name);
+    fs::create_dir_all(&doc_cache_dir).map_err(|e| e.to_string())?;
+    
     let temp_name = format!("temp_{}.docx", chrono::Local::now().format("%Y%m%d%H%M%S"));
-    let temp_docx_path = cache_dir.join(&temp_name);
+    let temp_docx_path = doc_cache_dir.join(&temp_name);
     
     {
         let mut file = fs::File::create(&temp_docx_path)
@@ -1292,8 +1530,8 @@ async fn convert_docx_to_pdf_from_bytes(file_data: Vec<u8>, file_name: String, a
             .map_err(|e| format!("同步文件失败: {}", e))?;
     }
     
-    let pdf_name = temp_name.replace(".docx", ".pdf");
-    let pdf_path = cache_dir.join(&pdf_name);
+    let pdf_name = format!("{}.pdf", folder_name);
+    let pdf_path = doc_cache_dir.join(&pdf_name);
     
     if pdf_path.exists() {
         fs::remove_file(&pdf_path).map_err(|e| e.to_string())?;
@@ -1313,7 +1551,7 @@ async fn convert_docx_to_pdf_from_bytes(file_data: Vec<u8>, file_name: String, a
                 convert_with_wps_com(&docx_path_str, &pdf_path_str)
             } else if r.is_err() && detection.has_libreoffice {
                 println!("Word 转换失败，尝试 LibreOffice...");
-                convert_with_libreoffice(&docx_path_str, &pdf_path_str, &cache_dir)
+                convert_with_libreoffice(&docx_path_str, &pdf_path_str, &doc_cache_dir)
             } else {
                 r
             }
@@ -1325,13 +1563,13 @@ async fn convert_docx_to_pdf_from_bytes(file_data: Vec<u8>, file_name: String, a
                 convert_with_word_com(&docx_path_str, &pdf_path_str)
             } else if r.is_err() && detection.has_libreoffice {
                 println!("WPS 转换失败，尝试 LibreOffice...");
-                convert_with_libreoffice(&docx_path_str, &pdf_path_str, &cache_dir)
+                convert_with_libreoffice(&docx_path_str, &pdf_path_str, &doc_cache_dir)
             } else {
                 r
             }
         }
         OfficeSoftware::LibreOffice => {
-            convert_with_libreoffice(&docx_path_str, &pdf_path_str, &cache_dir)
+            convert_with_libreoffice(&docx_path_str, &pdf_path_str, &doc_cache_dir)
         }
         OfficeSoftware::None => {
             Err("未检测到可用的 Office 软件，请安装 Microsoft Word、WPS Office 或 LibreOffice".to_string())
@@ -1393,11 +1631,12 @@ async fn convert_docx_to_pdf(docx_path: String, app: tauri::AppHandle) -> Result
     let cache_dir = config_dir.join("cache");
     fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
     
-    let pdf_name = docx_absolute.file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("converted")
-        .to_string() + ".pdf";
-    let pdf_path = cache_dir.join(&pdf_name);
+    let folder_name = format!("document_{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+    let doc_cache_dir = cache_dir.join(&folder_name);
+    fs::create_dir_all(&doc_cache_dir).map_err(|e| e.to_string())?;
+    
+    let pdf_name = format!("{}.pdf", folder_name);
+    let pdf_path = doc_cache_dir.join(&pdf_name);
     
     if pdf_path.exists() {
         fs::remove_file(&pdf_path).map_err(|e| e.to_string())?;
@@ -1414,7 +1653,7 @@ async fn convert_docx_to_pdf(docx_path: String, app: tauri::AppHandle) -> Result
             convert_with_wps_com(&docx_path_str, &pdf_path_str)?;
         }
         OfficeSoftware::LibreOffice => {
-            let output_dir = cache_dir.to_str()
+            let output_dir = doc_cache_dir.to_str()
                 .ok_or("Invalid cache directory path")?
                 .to_string();
             Command::new("soffice")
@@ -1554,7 +1793,7 @@ async fn set_file_type_icons(app: tauri::AppHandle) -> Result<(), String> {
     let pdf_icon = resource_dir.join("icons").join("pdf.ico").to_string_lossy().to_string();
     let word_icon = resource_dir.join("icons").join("word.ico").to_string_lossy().to_string();
     
-    let app_id = "com.viewstage.app";
+    let app_id = "SECTL.ViewStage";
     
     println!("PDF 图标路径: {}", pdf_icon);
     println!("Word 图标路径: {}", word_icon);
@@ -2795,19 +3034,10 @@ fn detect_text_regions_dbnet_ort(
     model_path: &str,
     binary_threshold: f32
 ) -> Result<Option<(i32, i32, i32, i32)>, String> {
-    use ort::session::Session;
     use ort::value::Tensor;
     
-    log::info!("加载 ONNX Runtime DBNet 模型: {}", model_path);
-    
-    let mut session = Session::builder()
-        .map_err(|e| format!("创建 Session builder 失败: {}", e))?
-        .commit_from_file(model_path)
-        .map_err(|e| format!("加载ONNX模型失败: {}", e))?;
-    
-    log::info!("ONNX Runtime DBNet 模型加载成功，输入: {:?}, 输出: {:?}", 
-        session.inputs().iter().map(|i| i.name()).collect::<Vec<_>>(),
-        session.outputs().iter().map(|o| o.name()).collect::<Vec<_>>());
+    let session = get_or_load_dbnet_ort_model(std::path::Path::new(model_path))?;
+    let mut session = session.lock().unwrap();
     
     let (orig_width, orig_height) = (img.width() as i32, img.height() as i32);
     
@@ -3277,17 +3507,10 @@ fn unwarp_document_uvdoc(
     img: &DynamicImage,
     model_path: &str,
 ) -> Result<DynamicImage, String> {
-    use ort::session::Session;
     use ort::value::Tensor;
     
-    log::info!("加载 UVDoc 模型: {}", model_path);
-    
-    let mut session = Session::builder()
-        .map_err(|e| format!("创建 Session builder 失败: {}", e))?
-        .commit_from_file(model_path)
-        .map_err(|e| format!("加载 UVDoc 模型失败: {}", e))?;
-    
-    log::info!("UVDoc 模型加载成功");
+    let session = get_or_load_uvdoc_model(std::path::Path::new(model_path))?;
+    let mut session = session.lock().unwrap();
     
     let (orig_width, orig_height) = (img.width(), img.height());
     
@@ -3399,15 +3622,10 @@ fn remove_shadow_gcnet(
     img: &DynamicImage,
     model_path: &str,
 ) -> Result<DynamicImage, String> {
-    use ort::session::Session;
     use ort::value::Tensor;
     
-    log::info!("加载 GCNet 去阴影模型: {}", model_path);
-    
-    let mut session = Session::builder()
-        .map_err(|e| format!("创建 Session builder 失败: {}", e))?
-        .commit_from_file(model_path)
-        .map_err(|e| format!("加载 GCNet 模型失败: {}", e))?;
+    let session = get_or_load_gcnet_model(std::path::Path::new(model_path))?;
+    let mut session = session.lock().unwrap();
     
     let (orig_width, orig_height) = (img.width(), img.height());
     
@@ -3479,15 +3697,10 @@ fn remove_blur_nafdpm(
     img: &DynamicImage,
     model_path: &str,
 ) -> Result<DynamicImage, String> {
-    use ort::session::Session;
     use ort::value::Tensor;
     
-    log::info!("加载 NAFDPM 去模糊模型: {}", model_path);
-    
-    let mut session = Session::builder()
-        .map_err(|e| format!("创建 Session builder 失败: {}", e))?
-        .commit_from_file(model_path)
-        .map_err(|e| format!("加载 NAFDPM 模型失败: {}", e))?;
+    let session = get_or_load_nafdpm_model(std::path::Path::new(model_path))?;
+    let mut session = session.lock().unwrap();
     
     let (orig_width, orig_height) = (img.width(), img.height());
     
@@ -3619,15 +3832,18 @@ fn normalize_illumination(img: &DynamicImage, sigma: f32) -> DynamicImage {
     let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
     
-    let r_channel: GrayImage = ImageBuffer::from_fn(width, height, |x, y| {
-        Luma([rgba.get_pixel(x, y)[0]])
-    });
-    let g_channel: GrayImage = ImageBuffer::from_fn(width, height, |x, y| {
-        Luma([rgba.get_pixel(x, y)[1]])
-    });
-    let b_channel: GrayImage = ImageBuffer::from_fn(width, height, |x, y| {
-        Luma([rgba.get_pixel(x, y)[2]])
-    });
+    let mut r_channel: GrayImage = ImageBuffer::new(width, height);
+    let mut g_channel: GrayImage = ImageBuffer::new(width, height);
+    let mut b_channel: GrayImage = ImageBuffer::new(width, height);
+    
+    for y in 0..height {
+        for x in 0..width {
+            let pixel = rgba.get_pixel(x, y);
+            r_channel.put_pixel(x, y, Luma([pixel[0]]));
+            g_channel.put_pixel(x, y, Luma([pixel[1]]));
+            b_channel.put_pixel(x, y, Luma([pixel[2]]));
+        }
+    }
     
     let r_blurred = gaussian_blur_f32(&r_channel, sigma);
     let g_blurred = gaussian_blur_f32(&g_channel, sigma);
@@ -3639,10 +3855,11 @@ fn normalize_illumination(img: &DynamicImage, sigma: f32) -> DynamicImage {
     
     for y in 0..height {
         for x in 0..width {
-            let r_orig = rgba.get_pixel(x, y)[0] as f32;
-            let g_orig = rgba.get_pixel(x, y)[1] as f32;
-            let b_orig = rgba.get_pixel(x, y)[2] as f32;
-            let a = rgba.get_pixel(x, y)[3];
+            let pixel = rgba.get_pixel(x, y);
+            let r_orig = pixel[0] as f32;
+            let g_orig = pixel[1] as f32;
+            let b_orig = pixel[2] as f32;
+            let a = pixel[3];
             
             let r_bg = r_blurred.get_pixel(x, y)[0] as f32;
             let g_bg = g_blurred.get_pixel(x, y)[0] as f32;
@@ -3803,7 +4020,8 @@ pub fn run() {
     
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("com.viewstage.app");
+        .join("SECTL")
+        .join("ViewStage");
     let log_dir = config_dir.join("log");
     
     if let Err(e) = std::fs::create_dir_all(&log_dir) {
@@ -3985,7 +4203,8 @@ pub fn run() {
             detect_edges_dexined,
             import_dexined_model,
             delete_dexined_model,
-            detect_document_boundary_dexined
+            detect_document_boundary_dexined,
+            clear_model_cache
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

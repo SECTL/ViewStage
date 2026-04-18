@@ -461,6 +461,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     highFrameRateToggle.checked = settings.highFrameRate || false;
                 }
                 
+                // 显示文档扫描按钮设置
+                const showDocScanButtonToggle = document.getElementById('showDocScanButtonToggle');
+                if (showDocScanButtonToggle) {
+                    showDocScanButtonToggle.checked = settings.showDocScanButton !== false;
+                }
+                
                 // 主题设置
                 const themeSelected = document.getElementById('themeSelected');
                 const themeOptionsContainer = document.getElementById('themeOptions');
@@ -905,6 +911,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     restartModal.classList.add('active');
                 }
             }
+        });
+    }
+    
+    // 显示文档扫描按钮开关
+    const showDocScanButtonToggle = document.getElementById('showDocScanButtonToggle');
+    if (showDocScanButtonToggle) {
+        showDocScanButtonToggle.addEventListener('change', async () => {
+            await saveSettings({ showDocScanButton: showDocScanButtonToggle.checked });
         });
     }
     

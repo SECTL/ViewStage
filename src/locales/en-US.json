@@ -151,6 +151,7 @@
     "clearFailed": "Clear Failed",
     "docScan": "Document Scan",
     "docScanModels": "Document Scan Models",
+    "showDocScanButton": "Show Document Scan Button",
     "openLogDirFailed": "Failed to open log directory",
     "noCameraPermission": "No Camera Permission",
     "noCameraDetected": "No Camera Detected",

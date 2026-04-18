@@ -453,6 +453,8 @@
 }
 
 .triangle-track path {
+    fill: rgba(255, 255, 255, 0.4);
+    stroke: none;
     transition: all 0.2s ease;
 }
 
@@ -464,8 +466,8 @@
     height: 18px;
     border-radius: 50%;
     background: #3498db;
-    border: 2px solid white;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    border: 3px solid #fff;
+    box-shadow: 0 0 0 2px #000, 0 0 0 4px #fff;
     transition: all 0.2s ease;
     z-index: 2;
     user-select: none;
@@ -517,9 +519,9 @@
 }
 
 .pen-color-btn.active{
-    border-color: #fff;
-    transform: scale(1.1);
-    box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+    border: 3px solid #fff;
+    outline: 2px solid #000;
+    outline-offset: -5px;
 }
 
 .settings-panel {

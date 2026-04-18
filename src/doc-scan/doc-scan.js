@@ -93,18 +93,14 @@ async function getScanImageData() {
         return window.state.currentImage.src;
     }
     
-    if (window.state?.currentFolderIndex >= 0 && window.state?.currentFolderPageIndex >= 0) {
-        const imageCanvas = document.getElementById('imageCanvas');
-        if (imageCanvas) {
-            return imageCanvas.toDataURL('image/png');
-        }
-    }
-    
-    if (window.state?.currentImageIndex >= 0) {
-        const imageCanvas = document.getElementById('imageCanvas');
-        if (imageCanvas) {
-            return imageCanvas.toDataURL('image/png');
-        }
+    const imageElement = document.getElementById('imageElement');
+    if (imageElement && imageElement.src) {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = parseInt(imageElement.style.width) || imageElement.naturalWidth;
+        tempCanvas.height = parseInt(imageElement.style.height) || imageElement.naturalHeight;
+        const ctx = tempCanvas.getContext('2d');
+        ctx.drawImage(imageElement, 0, 0, tempCanvas.width, tempCanvas.height);
+        return tempCanvas.toDataURL('image/png');
     }
     
     throw new Error('没有可用的图像');
@@ -151,11 +147,7 @@ async function applyScanResult(result) {
         
         if (window.state.imageList && window.state.currentImageIndex < window.state.imageList.length) {
             window.state.imageList[window.state.currentImageIndex].full = result.enhanced_image;
-            
-            if (window.generateThumbnail) {
-                const thumbnail = await window.generateThumbnail(enhancedImg, 150);
-                window.state.imageList[window.state.currentImageIndex].thumbnail = thumbnail;
-            }
+            window.state.imageList[window.state.currentImageIndex].thumbnail = result.enhanced_image;
             
             if (window.updateSidebarContent) {
                 window.updateSidebarContent();

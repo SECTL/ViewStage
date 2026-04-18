@@ -151,6 +151,7 @@
     "clearFailed": "清除失败",
     "docScan": "文档扫描",
     "docScanModels": "文档扫描模型",
+    "showDocScanButton": "显示文档扫描按钮",
     "openLogDirFailed": "打开日志目录失败",
     "noCameraPermission": "无摄像头权限",
     "noCameraDetected": "未检测到摄像头",

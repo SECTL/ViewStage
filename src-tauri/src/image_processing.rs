@@ -114,8 +114,7 @@ pub fn apply_enhance_filter(img: &DynamicImage, contrast: f32, brightness: f32, 
     }
     
     if sharpen > 0.0 && width > 2 && height > 2 {
-        let original = enhanced_img.clone();
-        let original_raw = original.as_raw();
+        let original_raw = enhanced_img.as_raw();
         let sharpen_amount = sharpen / 100.0;
         
         let sharpened_pixels: Vec<(u32, u32, Rgba<u8>)> = (1..height - 1)

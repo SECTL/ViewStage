@@ -98,7 +98,7 @@ body {
 
 /* 三层Canvas：底层背景，中间图像层，顶层绘制 */
 .canvas-base,
-.canvas-image,
+.image-element,
 .canvas-draw {
     position: absolute;
     user-select: none;
@@ -131,9 +131,11 @@ body {
     transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
-.canvas-image {
+.image-element {
     z-index: 2;
     background-color: transparent;
+    object-fit: contain;
+    pointer-events: none;
 }
 
 .canvas-draw {
@@ -152,6 +154,12 @@ body {
     -webkit-transform: translateZ(0);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
+    will-change: transform, opacity;
+    contain: layout style paint;
+}
+
+.camera-video.scaling {
+    opacity: 0;
 }
 
 .canvas-draw.drawing {

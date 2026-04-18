@@ -2,7 +2,7 @@
  * ViewStage - 摄像头及PDF展台应用
  * 
  * 架构说明：
- * - 三层Canvas：背景层(bgCanvas) → 图像层(imageCanvas) → 批注层(drawCanvas)
+ * - 图像层(imageElement) + 批注层(drawCanvas)
  * - 批注系统：笔画记录 + 压缩存储 + 撤销支持
  * - 图像处理：Rust后端并行处理（增强、缩略图、旋转）
  * 
@@ -136,6 +136,7 @@ window.DRAW_CONFIG = DRAW_CONFIG;
 function getSafeScale() {
     return Math.max(0.001, state.scale || 1);
 }
+window.getSafeScale = getSafeScale;
 
 // ==================== 真实笔触效果管理器 ====================
 // 根据速度和压感动态调整线宽，模拟真实笔触效果
@@ -361,6 +362,8 @@ let state = {
     fileList: [],                  // 文件列表 (PDF等)
     currentFolderIndex: -1,        // 当前文件夹索引
     currentFolderPageIndex: -1,    // 当前页索引
+    pdfDocuments: new Map(),       // PDF文档对象缓存 (热加载)
+    loadedPages: new Set(),        // 已加载的页面ID集合
     
     // 真实笔触效果
     currentPressure: 0.5,          // 当前压感值 (0-1)
@@ -657,6 +660,12 @@ async function loadCameraSetting() {
                 console.log('已加载高帧率绘制设置:', settings.highFrameRate);
             }
             
+            // 加载文档扫描按钮显示设置
+            if (settings.showDocScanButton !== undefined) {
+                dom.btnDocScan.style.display = settings.showDocScanButton ? '' : 'none';
+                console.log('已加载文档扫描按钮显示设置:', settings.showDocScanButton);
+            }
+            
             // 加载主题设置
             const themeName = settings.theme || 'simplify';
             await ThemeManager.setTheme(themeName);
@@ -799,6 +808,11 @@ function listenForPdfFileOpen() {
             console.log('画笔颜色已更改:', DRAW_CONFIG.penColors);
         }
         
+        if (settings.showDocScanButton !== undefined) {
+            dom.btnDocScan.style.display = settings.showDocScanButton ? '' : 'none';
+            console.log('文档扫描按钮显示已更改:', settings.showDocScanButton);
+        }
+        
         if (needRestartCamera && state.isCameraOpen) {
             console.log('摄像头设置已更改，重新初始化摄像头...');
             setCameraState(false).then(() => {
@@ -827,6 +841,122 @@ function listenForPdfFileOpen() {
     });
 }
 
+async function processPdfPagesLazy(pdf, totalPages, initialPages = 3, docNumber = null) {
+    const pages = [];
+    
+    async function processPage(pageNum) {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: DRAW_CONFIG.pdfScale });
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+        
+        await page.render({
+            canvasContext: ctx,
+            viewport: viewport
+        }).promise;
+        
+        const fullBlob = await new Promise((resolve, reject) => {
+            canvas.toBlob(blob => {
+                if (blob) resolve(blob);
+                else reject(new Error('Failed to create blob'));
+            }, 'image/jpeg', 0.85);
+        });
+        const fullUrl = URL.createObjectURL(fullBlob);
+        
+        let sourceId = null;
+        if (docNumber !== null) {
+            sourceId = `doc-${docNumber}-${pageNum}`;
+        }
+        
+        return {
+            full: fullUrl,
+            fullBlob: fullBlob,
+            thumbnail: fullUrl,
+            pageNum: pageNum,
+            strokeHistory: [],
+            baseImageURL: null,
+            viewState: {
+                scale: 1,
+                canvasX: -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2,
+                canvasY: -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2
+            },
+            sourceId: sourceId,
+            loaded: true
+        };
+    }
+    
+    const pagesToLoad = Math.min(initialPages, totalPages);
+    for (let i = 1; i <= pagesToLoad; i++) {
+        updateLoadingProgress(window.i18n?.t('loading.processingPage', { current: i, total: totalPages }) || `正在处理 ${i}/${totalPages} 页`);
+        const pageData = await processPage(i);
+        pages.push(pageData);
+        state.loadedPages.add(pageData.sourceId);
+    }
+    
+    for (let i = pagesToLoad + 1; i <= totalPages; i++) {
+        let sourceId = null;
+        if (docNumber !== null) {
+            sourceId = `doc-${docNumber}-${i}`;
+        }
+        pages.push({
+            full: null,
+            fullBlob: null,
+            thumbnail: null,
+            pageNum: i,
+            strokeHistory: [],
+            baseImageURL: null,
+            viewState: {
+                scale: 1,
+                canvasX: -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2,
+                canvasY: -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2
+            },
+            sourceId: sourceId,
+            loaded: false
+        });
+    }
+    
+    return pages;
+}
+
+async function loadPdfPage(pdf, pageNum, docNumber) {
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale: DRAW_CONFIG.pdfScale });
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    
+    await page.render({
+        canvasContext: ctx,
+        viewport: viewport
+    }).promise;
+    
+    const fullBlob = await new Promise((resolve, reject) => {
+        canvas.toBlob(blob => {
+            if (blob) resolve(blob);
+            else reject(new Error('Failed to create blob'));
+        }, 'image/jpeg', 0.85);
+    });
+    const fullUrl = URL.createObjectURL(fullBlob);
+    
+    let sourceId = null;
+    if (docNumber !== null) {
+        sourceId = `doc-${docNumber}-${pageNum}`;
+    }
+    
+    return {
+        full: fullUrl,
+        fullBlob: fullBlob,
+        thumbnail: fullUrl,
+        pageNum: pageNum,
+        loaded: true
+    };
+}
+
 async function processPdfPagesParallel(pdf, totalPages, batchSize = 4, docNumber = null) {
     const pages = [];
     let processedCount = 0;
@@ -853,12 +983,9 @@ async function processPdfPagesParallel(pdf, totalPages, batchSize = 4, docNumber
         });
         const fullUrl = URL.createObjectURL(fullBlob);
         
-        const thumbnail = await generateThumbnailFromCanvas(canvas, 150);
-        
         processedCount++;
         updateLoadingProgress(window.i18n?.t('loading.processingPage', { current: processedCount, total: totalPages }) || `正在处理 ${processedCount}/${totalPages} 页`);
         
-        // 生成源ID
         let sourceId = null;
         if (docNumber !== null) {
             sourceId = `doc-${docNumber}-${pageNum}`;
@@ -867,7 +994,7 @@ async function processPdfPagesParallel(pdf, totalPages, batchSize = 4, docNumber
         return {
             full: fullUrl,
             fullBlob: fullBlob,
-            thumbnail: thumbnail,
+            thumbnail: fullUrl,
             pageNum: pageNum,
             strokeHistory: [],
             baseImageURL: null,
@@ -894,86 +1021,6 @@ async function processPdfPagesParallel(pdf, totalPages, batchSize = 4, docNumber
     pages.sort((a, b) => a.pageNum - b.pageNum);
     
     return pages;
-}
-
-async function generateThumbnailFromCanvas(canvas, maxSize = 150) {
-    const img = new Image();
-    const blob = await new Promise((resolve, reject) => {
-        canvas.toBlob(b => {
-            if (b) resolve(b);
-            else reject(new Error('Failed to create blob'));
-        }, 'image/jpeg', 0.85);
-    });
-    const blobUrl = URL.createObjectURL(blob);
-    
-    await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = blobUrl;
-    });
-    
-    let thumbW, thumbH;
-    if (img.width > img.height) {
-        thumbW = maxSize;
-        thumbH = (img.height / img.width) * maxSize;
-    } else {
-        thumbH = maxSize;
-        thumbW = (img.width / img.height) * maxSize;
-    }
-    
-    const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = thumbW;
-    thumbCanvas.height = thumbH;
-    const thumbCtx = thumbCanvas.getContext('2d');
-    thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
-    
-    URL.revokeObjectURL(blobUrl);
-    
-    const thumbBlob = await new Promise((resolve, reject) => {
-        thumbCanvas.toBlob(blob => {
-            if (blob) resolve(blob);
-            else reject(new Error('Failed to create thumbnail blob'));
-        }, 'image/jpeg', 0.7);
-    });
-    
-    return URL.createObjectURL(thumbBlob);
-}
-
-async function generateThumbnailBlob(blob, maxSize = 150) {
-    const img = new Image();
-    const url = URL.createObjectURL(blob);
-    
-    await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = url;
-    });
-    
-    let thumbW, thumbH;
-    if (img.width > img.height) {
-        thumbW = maxSize;
-        thumbH = (img.height / img.width) * maxSize;
-    } else {
-        thumbH = maxSize;
-        thumbW = (img.width / img.height) * maxSize;
-    }
-    
-    const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = thumbW;
-    thumbCanvas.height = thumbH;
-    const thumbCtx = thumbCanvas.getContext('2d');
-    thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
-    
-    URL.revokeObjectURL(url);
-    
-    const thumbBlob = await new Promise((resolve, reject) => {
-        thumbCanvas.toBlob(blob => {
-            if (blob) resolve(blob);
-            else reject(new Error('Failed to create thumbnail blob'));
-        }, 'image/jpeg', 0.7);
-    });
-    
-    return URL.createObjectURL(thumbBlob);
 }
 
 async function loadPdfFromPath(filePath) {
@@ -1103,13 +1150,18 @@ async function loadPdfFromPath(filePath) {
             const folder = {
                 name: fileName,
                 pages: [],
-                isPdf: true
+                isPdf: true,
+                pdfDoc: pdf,
+                totalPages: totalPages,
+                docNumber: sourceIdCounters.doc
             };
             
-            sourceIdCounters.doc++;  // 增加文档计数器
+            sourceIdCounters.doc++;
             const docNumber = sourceIdCounters.doc;
             
-            const processedPages = await processPdfPagesParallel(pdf, totalPages, 4, docNumber);
+            state.pdfDocuments.set(docNumber, pdf);
+            
+            const processedPages = await processPdfPagesLazy(pdf, totalPages, 3, docNumber);
             folder.pages = processedPages;
             
             state.fileList.push(folder);
@@ -1267,9 +1319,6 @@ async function handleResize() {
 
 // 调整画布大小
 async function resizeCanvas(newScreenW, newScreenH) {
-    const oldCanvasW = DRAW_CONFIG.canvasW;
-    const oldCanvasH = DRAW_CONFIG.canvasH;
-    
     // 保存当前状态
     const oldScale = state.scale;
     const oldCanvasX = state.canvasX;
@@ -1299,12 +1348,6 @@ async function resizeCanvas(newScreenW, newScreenH) {
     
     updateMoveBound();
     
-    // 图像层：摄像头模式下不使用，跳过以提升性能
-    if (!state.isCameraOpen) {
-        dom.imageCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
-        dom.imageCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
-    }
-    
     // 批注层：摄像头模式下如果没有批注，可以跳过尺寸设置
     const hasStrokes = state.strokeHistory && state.strokeHistory.length > 0;
     const hasBaseImage = state.baseImageObj !== null;
@@ -1315,30 +1358,15 @@ async function resizeCanvas(newScreenW, newScreenH) {
     }
     
     // 所有层 CSS 尺寸相同
+    dom.imageElement.style.width = DRAW_CONFIG.canvasW + 'px';
+    dom.imageElement.style.height = DRAW_CONFIG.canvasH + 'px';
     dom.drawCanvas.style.width = DRAW_CONFIG.canvasW + 'px';
     dom.drawCanvas.style.height = DRAW_CONFIG.canvasH + 'px';
-    
-    // imageCanvas CSS 尺寸：摄像头模式下跳过
-    if (!state.isCameraOpen) {
-        dom.imageCanvas.style.width = DRAW_CONFIG.canvasW + 'px';
-        dom.imageCanvas.style.height = DRAW_CONFIG.canvasH + 'px';
-    }
-    
-    // 图像层上下文：摄像头模式下跳过
-    if (!state.isCameraOpen) {
-        dom.imageCtx.setTransform(1, 0, 0, 1, 0, 0);
-        dom.imageCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
-    }
     
     // 批注层上下文：只在有内容时设置
     if (!state.isCameraOpen || hasStrokes || hasBaseImage) {
         dom.drawCtx.setTransform(1, 0, 0, 1, 0, 0);
         dom.drawCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
-    }
-    
-    if (!state.isCameraOpen) {
-        dom.imageCtx.imageSmoothingEnabled = true;
-        dom.imageCtx.imageSmoothingQuality = 'high';
     }
     
     if (!state.isCameraOpen || hasStrokes || hasBaseImage) {
@@ -1353,7 +1381,6 @@ async function resizeCanvas(newScreenW, newScreenH) {
     if (state.currentImage) {
         drawImageToCenter(state.currentImage);
     }
-    // 摄像头模式下不需要重绘 imageCanvas，video 元素直接显示
     
     // 重新绘制批注
     if (state.strokeHistory.length > 0 || state.baseImageObj) {
@@ -1376,7 +1403,7 @@ async function resizeCanvas(newScreenW, newScreenH) {
 function initDOM() {
     dom.canvasContainer = document.getElementById('canvasContainer');
     dom.canvasWrapper = document.getElementById('canvasWrapper');
-    dom.imageCanvas = document.getElementById('imageCanvas');
+    dom.imageElement = document.getElementById('imageElement');
     dom.drawCanvas = document.getElementById('drawCanvas');
     dom.cameraVideo = document.getElementById('cameraVideo');
     dom.eraserHint = document.getElementById('eraserHint');
@@ -1412,12 +1439,11 @@ function initDOM() {
     dom.btnApplyScan = document.getElementById('btnApplyScan');
     dom.btnCancelScan = document.getElementById('btnCancelScan');
     
-    if (!dom.imageCanvas || !dom.drawCanvas || !dom.canvasContainer) {
-        console.error('必需的 Canvas 元素未找到');
+    if (!dom.imageElement || !dom.drawCanvas || !dom.canvasContainer) {
+        console.error('必需的元素未找到');
         return false;
     }
     
-    dom.imageCtx = dom.imageCanvas.getContext('2d', { alpha: true, desynchronized: true });
     dom.drawCtx = dom.drawCanvas.getContext('2d', { alpha: true, desynchronized: true });
     
     return true;
@@ -1455,25 +1481,17 @@ function initCanvas() {
         baseImageURL: null
     };
     
-    // 图像层：物理尺寸 = CSS尺寸 × dpr
-    dom.imageCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
-    dom.imageCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
-    
     // 批注层：物理尺寸 = CSS尺寸 × dpr
     dom.drawCanvas.width = DRAW_CONFIG.canvasW * DRAW_CONFIG.dpr;
     dom.drawCanvas.height = DRAW_CONFIG.canvasH * DRAW_CONFIG.dpr;
     
     // 所有层 CSS 尺寸相同
-    dom.imageCanvas.style.width = DRAW_CONFIG.canvasW + 'px';
-    dom.imageCanvas.style.height = DRAW_CONFIG.canvasH + 'px';
+    dom.imageElement.style.width = DRAW_CONFIG.canvasW + 'px';
+    dom.imageElement.style.height = DRAW_CONFIG.canvasH + 'px';
     dom.drawCanvas.style.width = DRAW_CONFIG.canvasW + 'px';
     dom.drawCanvas.style.height = DRAW_CONFIG.canvasH + 'px';
     
-    dom.imageCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
     dom.drawCtx.scale(DRAW_CONFIG.dpr, DRAW_CONFIG.dpr);
-    
-    dom.imageCtx.imageSmoothingEnabled = true;
-    dom.imageCtx.imageSmoothingQuality = 'high';
     
     const dc = dom.drawCtx;
     dc.imageSmoothingEnabled = true;
@@ -1592,7 +1610,6 @@ function bindAllEvents() {
     bindPenControlEvents();
     bindCanvasMouseEvents();
     bindCanvasTouchEvents();
-    bindSidebarEvents();
     bindSettingsEvents();
     bindClickOutside();
 }
@@ -1985,15 +2002,15 @@ function updateColorButtonActive() {
 // 设置笔触样式
 function setPenStyle() {
     const dc = dom.drawCtx;
+    const scale = getSafeScale();
     dc.strokeStyle = DRAW_CONFIG.penColor;
-    dc.lineWidth = DRAW_CONFIG.penWidth;
+    dc.lineWidth = DRAW_CONFIG.penWidth / scale;
     dc.lineCap = 'round';
     dc.lineJoin = 'round';
     dc.miterLimit = 10;
     dc.globalCompositeOperation = 'source-over';
 }
 
-// 设置橡皮样式
 function setEraserStyle() {
     const dc = dom.drawCtx;
     dc.lineWidth = DRAW_CONFIG.eraserSize;
@@ -2003,22 +2020,11 @@ function setEraserStyle() {
     dc.globalCompositeOperation = 'destination-out';
 }
 
-function setSmoothingQuality(quality) {
-    if (dom.imageCtx) {
-        dom.imageCtx.imageSmoothingQuality = quality;
-    }
-    if (dom.drawCtx) {
-        dom.drawCtx.imageSmoothingQuality = quality;
-    }
-}
-
 function startDrawingMode() {
-    setSmoothingQuality('high');
     dom.canvasWrapper.classList.add('drawing');
 }
 
 function endDrawingMode() {
-    setSmoothingQuality('high');
     dom.canvasWrapper.classList.remove('drawing');
 }
 
@@ -2096,18 +2102,35 @@ function showPenControlPanel(targetBtn, mode) {
 }
 
 function hidePenControlPanel() {
-    dom.penControlPanel.classList.remove('visible');
-    dom.penControlPanel.style.opacity = '0';
-    dom.penControlPanel.style.visibility = 'hidden';
+    const panel = dom.penControlPanel;
+    if (!panel.classList.contains('visible')) return;
+    panel.classList.remove('visible');
+    panel.style.opacity = '0';
+    panel.style.visibility = 'hidden';
 }
 
+let eraserHintRafId = null;
+let eraserHintPendingPos = null;
+
 function updateEraserHintPos(clientX, clientY) {
-    const rect = getCachedCanvasRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    dom.eraserHint.style.left = `${x}px`;
-    dom.eraserHint.style.top = `${y}px`;
-    dom.eraserHint.style.transform = `translate(-50%, -50%) scale(${state.scale})`;
+    eraserHintPendingPos = { clientX, clientY };
+    
+    if (eraserHintRafId !== null) return;
+    
+    eraserHintRafId = requestAnimationFrame(() => {
+        eraserHintRafId = null;
+        if (!eraserHintPendingPos) return;
+        
+        const { clientX, clientY } = eraserHintPendingPos;
+        eraserHintPendingPos = null;
+        
+        const rect = getCachedCanvasRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        dom.eraserHint.style.left = `${x}px`;
+        dom.eraserHint.style.top = `${y}px`;
+        dom.eraserHint.style.transform = `translate(-50%, -50%) scale(${state.scale})`;
+    });
 }
 
 // ==================== 画布交互事件 ====================
@@ -2150,15 +2173,17 @@ function handlePointerDown(e) {
         hidePenControlPanel();
         state.isDrawing = true;
         startDrawingMode();
-        state.lastX = (e.clientX - state.drawCanvasRect.left) / getSafeScale();
-        state.lastY = (e.clientY - state.drawCanvasRect.top) / getSafeScale();
+        state.cachedInvScale = 1 / getSafeScale();
+        state.lastX = (e.clientX - state.drawCanvasRect.left) * state.cachedInvScale;
+        state.lastY = (e.clientY - state.drawCanvasRect.top) * state.cachedInvScale;
         startStroke('draw');
     } else if (state.drawMode === 'eraser') {
         hidePenControlPanel();
         state.isDrawing = true;
         startDrawingMode();
-        state.lastX = (e.clientX - state.drawCanvasRect.left) / getSafeScale();
-        state.lastY = (e.clientY - state.drawCanvasRect.top) / getSafeScale();
+        state.cachedInvScale = 1 / getSafeScale();
+        state.lastX = (e.clientX - state.drawCanvasRect.left) * state.cachedInvScale;
+        state.lastY = (e.clientY - state.drawCanvasRect.top) * state.cachedInvScale;
         startStroke('erase');
     }
 }
@@ -2188,8 +2213,9 @@ function handlePointerMove(e) {
         lastCanvasTransform.scale = state.scale;
     } else if (state.isDrawing) {
         const rect = state.drawCanvasRect;
-        const x = (e.clientX - rect.left) / getSafeScale();
-        const y = (e.clientY - rect.top) / getSafeScale();
+        const invScale = state.cachedInvScale;
+        const x = (e.clientX - rect.left) * invScale;
+        const y = (e.clientY - rect.top) * invScale;
         
         const dx = x - state.lastX;
         const dy = y - state.lastY;
@@ -2198,18 +2224,14 @@ function handlePointerMove(e) {
         if (distSq > 4) {
             addStrokePoint(state.lastX, state.lastY, x, y, state.currentPressure);
             
-            const type = state.drawMode === 'eraser' ? 'erase' : 'draw';
-            const color = state.drawMode === 'comment' ? DRAW_CONFIG.penColor : '#000000';
-            const lineWidth = state.drawMode === 'comment' ? DRAW_CONFIG.penWidth : DRAW_CONFIG.eraserSize;
-            
             batchDrawManager.addCommand(
-                type, 
+                state.cachedDrawType, 
                 state.lastX, 
                 state.lastY, 
                 x, 
                 y, 
-                color, 
-                lineWidth
+                state.cachedDrawColor, 
+                state.cachedDrawLineWidth
             );
             
             state.lastX = x;
@@ -2274,15 +2296,17 @@ function handleMouseDown(e) {
         hidePenControlPanel();
         state.isDrawing = true;
         startDrawingMode();
-        state.lastX = (e.clientX - state.drawCanvasRect.left) / getSafeScale();
-        state.lastY = (e.clientY - state.drawCanvasRect.top) / getSafeScale();
+        state.cachedInvScale = 1 / getSafeScale();
+        state.lastX = (e.clientX - state.drawCanvasRect.left) * state.cachedInvScale;
+        state.lastY = (e.clientY - state.drawCanvasRect.top) * state.cachedInvScale;
         startStroke('draw');
     } else if (state.drawMode === 'eraser') {
         hidePenControlPanel();
         state.isDrawing = true;
         startDrawingMode();
-        state.lastX = (e.clientX - state.drawCanvasRect.left) / getSafeScale();
-        state.lastY = (e.clientY - state.drawCanvasRect.top) / getSafeScale();
+        state.cachedInvScale = 1 / getSafeScale();
+        state.lastX = (e.clientX - state.drawCanvasRect.left) * state.cachedInvScale;
+        state.lastY = (e.clientY - state.drawCanvasRect.top) * state.cachedInvScale;
         startStroke('erase');
     }
 }
@@ -2310,8 +2334,9 @@ function handleMouseMove(e) {
         lastCanvasTransform.scale = state.scale;
     } else if (state.isDrawing) {
         const rect = state.drawCanvasRect;
-        const x = (e.clientX - rect.left) / getSafeScale();
-        const y = (e.clientY - rect.top) / getSafeScale();
+        const invScale = state.cachedInvScale;
+        const x = (e.clientX - rect.left) * invScale;
+        const y = (e.clientY - rect.top) * invScale;
         
         const dx = x - state.lastX;
         const dy = y - state.lastY;
@@ -2320,18 +2345,14 @@ function handleMouseMove(e) {
         if (distSq > 0.09) {
             addStrokePoint(state.lastX, state.lastY, x, y);
             
-            const type = state.drawMode === 'eraser' ? 'erase' : 'draw';
-            const color = state.drawMode === 'comment' ? DRAW_CONFIG.penColor : '#000000';
-            const lineWidth = state.drawMode === 'comment' ? DRAW_CONFIG.penWidth : DRAW_CONFIG.eraserSize;
-            
             batchDrawManager.addCommand(
-                type, 
+                state.cachedDrawType, 
                 state.lastX, 
                 state.lastY, 
                 x, 
                 y, 
-                color, 
-                lineWidth
+                state.cachedDrawColor, 
+                state.cachedDrawLineWidth
             );
             
             state.lastX = x;
@@ -2419,15 +2440,17 @@ function handleTouchStart(e) {
         } else if (state.drawMode === 'comment') {
             state.isDrawing = true;
             startDrawingMode();
-            state.lastX = (touch.clientX - state.drawCanvasRect.left) / getSafeScale();
-            state.lastY = (touch.clientY - state.drawCanvasRect.top) / getSafeScale();
+            state.cachedInvScale = 1 / getSafeScale();
+            state.lastX = (touch.clientX - state.drawCanvasRect.left) * state.cachedInvScale;
+            state.lastY = (touch.clientY - state.drawCanvasRect.top) * state.cachedInvScale;
             startStroke('draw');
         } else if (state.drawMode === 'eraser') {
             state.isDrawing = true;
             startDrawingMode();
             updateEraserHintPos(touch.clientX, touch.clientY);
-            state.lastX = (touch.clientX - state.drawCanvasRect.left) / getSafeScale();
-            state.lastY = (touch.clientY - state.drawCanvasRect.top) / getSafeScale();
+            state.cachedInvScale = 1 / getSafeScale();
+            state.lastX = (touch.clientX - state.drawCanvasRect.left) * state.cachedInvScale;
+            state.lastY = (touch.clientY - state.drawCanvasRect.top) * state.cachedInvScale;
             startStroke('erase');
         }
     } else if (touches.length === 2) {
@@ -2443,7 +2466,7 @@ function handleTouchStart(e) {
         dom.canvasWrapper.classList.add('dragging');
         
         if (state.isCameraOpen && dom.cameraVideo) {
-            dom.cameraVideo.style.visibility = 'hidden';
+            dom.cameraVideo.classList.add('scaling');
         }
     }
 }
@@ -2470,8 +2493,9 @@ function handleTouchMove(e) {
             updateEraserHintPos(touch.clientX, touch.clientY);
         }
         
-        const x = (touch.clientX - state.drawCanvasRect.left) / getSafeScale();
-        const y = (touch.clientY - state.drawCanvasRect.top) / getSafeScale();
+        const invScale = state.cachedInvScale;
+        const x = (touch.clientX - state.drawCanvasRect.left) * invScale;
+        const y = (touch.clientY - state.drawCanvasRect.top) * invScale;
         
         const pressure = (touch.force > 0) ? touch.force : 0.5;
         
@@ -2482,18 +2506,14 @@ function handleTouchMove(e) {
         if (distSq > 0.09) {
             addStrokePoint(state.lastX, state.lastY, x, y, pressure);
             
-            const type = state.drawMode === 'eraser' ? 'erase' : 'draw';
-            const color = state.drawMode === 'comment' ? DRAW_CONFIG.penColor : '#000000';
-            const lineWidth = state.drawMode === 'comment' ? DRAW_CONFIG.penWidth : DRAW_CONFIG.eraserSize;
-            
             batchDrawManager.addCommand(
-                type, 
+                state.cachedDrawType, 
                 state.lastX, 
                 state.lastY, 
                 x, 
                 y, 
-                color, 
-                lineWidth
+                state.cachedDrawColor, 
+                state.cachedDrawLineWidth
             );
             
             state.lastX = x;
@@ -2528,7 +2548,7 @@ async function handleTouchEnd(e) {
         dom.drawCanvas.classList.remove('dragging');
         
         if (state.isCameraOpen && dom.cameraVideo) {
-            dom.cameraVideo.style.visibility = 'visible';
+            dom.cameraVideo.classList.remove('scaling');
         }
         
         updateMoveBound();
@@ -2547,7 +2567,7 @@ async function handleTouchEnd(e) {
     } else if (e.touches.length === 1) {
         state.isScaling = false;
         if (state.isCameraOpen && dom.cameraVideo) {
-            dom.cameraVideo.style.visibility = 'visible';
+            dom.cameraVideo.classList.remove('scaling');
         }
         
         updateMoveBound();
@@ -2618,66 +2638,63 @@ function startStroke(type) {
         color: DRAW_CONFIG.penColor,
         lineWidth: DRAW_CONFIG.penWidth,
         eraserSize: DRAW_CONFIG.eraserSize,
-        // 边界框（用于脏区域渲染）
         bounds: {
             minX: Infinity,
             minY: Infinity,
             maxX: -Infinity,
             maxY: -Infinity
         },
-        // 钢笔模式：不需要可变线宽数据
         variableWidths: null
     };
     
-    // 重置状态
     state.currentPressure = 0.5;
     state.currentLineWidth = DRAW_CONFIG.penWidth;
     state.lastLineWidth = DRAW_CONFIG.penWidth;
     
-    // 开始批处理绘制
+    state.cachedDrawType = type;
+    state.cachedDrawColor = type === 'draw' ? DRAW_CONFIG.penColor : '#000000';
+    state.cachedDrawLineWidth = type === 'draw' ? DRAW_CONFIG.penWidth : DRAW_CONFIG.eraserSize;
+    
     batchDrawManager.startDrawing();
 }
 
 function addStrokePoint(fromX, fromY, toX, toY, pressure = 0.5) {
-    if (state.currentStroke) {
-        // 更新边界框
-        const bounds = state.currentStroke.bounds;
-        bounds.minX = Math.min(bounds.minX, fromX, toX);
-        bounds.minY = Math.min(bounds.minY, fromY, toY);
-        bounds.maxX = Math.max(bounds.maxX, fromX, toX);
-        bounds.maxY = Math.max(bounds.maxY, fromY, toY);
-        
-        // 钢笔模式：计算轻微压感变化的线宽
-        if (state.currentStroke.type === 'draw') {
-            state.currentPressure = pressure;
-            const baseWidth = state.currentStroke.lineWidth;
-            
-            state.lastLineWidth = state.currentLineWidth;
-            state.currentLineWidth = realPenManager.calculateLineWidth(
-                baseWidth,
-                0,  // 钢笔模式不需要速度
-                pressure
-            );
-        }
-        
-        // 检查是否需要添加连接点
-        if (state.currentStroke.points.length > 0) {
-            const lastPoint = state.currentStroke.points[state.currentStroke.points.length - 1];
-            const gapDistance = distance(lastPoint.toX, lastPoint.toY, fromX, fromY);
-            
-            // 如果距离过大，添加连接点
-            if (gapDistance > 1.5) { // 1.5px 阈值
-                state.currentStroke.points.push({
-                    fromX: lastPoint.toX,
-                    fromY: lastPoint.toY,
-                    toX: fromX,
-                    toY: fromY
-                });
-            }
-        }
-        
-        state.currentStroke.points.push({ fromX, fromY, toX, toY });
+    const stroke = state.currentStroke;
+    if (!stroke) return;
+    
+    const bounds = stroke.bounds;
+    if (fromX < bounds.minX) bounds.minX = fromX;
+    if (toX < bounds.minX) bounds.minX = toX;
+    if (fromY < bounds.minY) bounds.minY = fromY;
+    if (toY < bounds.minY) bounds.minY = toY;
+    if (fromX > bounds.maxX) bounds.maxX = fromX;
+    if (toX > bounds.maxX) bounds.maxX = toX;
+    if (fromY > bounds.maxY) bounds.maxY = fromY;
+    if (toY > bounds.maxY) bounds.maxY = toY;
+    
+    if (stroke.type === 'draw') {
+        state.currentPressure = pressure;
+        state.lastLineWidth = state.currentLineWidth;
+        state.currentLineWidth = stroke.lineWidth * (0.9 + pressure * 0.2);
     }
+    
+    const points = stroke.points;
+    const len = points.length;
+    if (len > 0) {
+        const lastPoint = points[len - 1];
+        const dx = fromX - lastPoint.toX;
+        const dy = fromY - lastPoint.toY;
+        if (dx * dx + dy * dy > 2.25) {
+            points.push({
+                fromX: lastPoint.toX,
+                fromY: lastPoint.toY,
+                toX: fromX,
+                toY: fromY
+            });
+        }
+    }
+    
+    points.push({ fromX, fromY, toX, toY });
 }
 
 async function endStroke() {
@@ -2800,6 +2817,7 @@ function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
 
 async function redrawAllStrokes(dirtyRect = null) {
     const ctx = dom.drawCtx;
+    const scale = getSafeScale();
     
     const visibleRect = getVisibleRect();
     
@@ -2922,7 +2940,7 @@ async function redrawAllStrokes(dirtyRect = null) {
             
             const x1 = point.fromX, y1 = point.fromY;
             const x2 = point.toX, y2 = point.toY;
-            const w1 = widthInfo.fromWidth, w2 = widthInfo.toWidth;
+            const w1 = widthInfo.fromWidth / scale, w2 = widthInfo.toWidth / scale;
             
             const angle = Math.atan2(y2 - y1, x2 - x1);
             const perpAngle = angle + Math.PI / 2;
@@ -2948,7 +2966,7 @@ async function redrawAllStrokes(dirtyRect = null) {
     // 批量绘制固定线宽笔画
     for (const [stateKey, group] of fixedWidthStrokes) {
         ctx.strokeStyle = group.color;
-        ctx.lineWidth = group.lineWidth;
+        ctx.lineWidth = group.lineWidth / scale;
         
         const drawPath = new Path2D();
         for (const stroke of group.strokes) {
@@ -3012,9 +3030,10 @@ async function drawEraserStroke(stroke) {
 async function drawStroke(stroke) {
     if (!stroke.points || stroke.points.length < 1) return;
     
+    const scale = getSafeScale();
     setContextState(dom.drawCtx, {
         strokeStyle: stroke.color || DRAW_CONFIG.penColor,
-        lineWidth: stroke.lineWidth || DRAW_CONFIG.penWidth,
+        lineWidth: (stroke.lineWidth || DRAW_CONFIG.penWidth) / scale,
         lineCap: 'round',
         lineJoin: 'round',
         globalCompositeOperation: 'source-over'
@@ -3211,24 +3230,13 @@ function setContextState(ctx, state) {
 async function drawStrokes(ctx, strokes) {
     if (strokes.length === 0) return;
     
-    const totalStrokes = strokes.length;
-    
-    // 视口基于 Canvas 尺寸
-    const viewport = {
-        x: 0,
-        y: 0,
-        width: DRAW_CONFIG.canvasW,
-        height: DRAW_CONFIG.canvasH
-    };
-    
-    // 直接使用全部笔画
-    const visibleStrokes = strokes;
+    const scale = getSafeScale();
     
     // 按状态分组，使用 Path2D 批量绘制
     const eraseStrokes = new Map();
-    const drawStrokes = new Map();
+    const drawStrokesMap = new Map();
     
-    for (const stroke of visibleStrokes) {
+    for (const stroke of strokes) {
         if (stroke.type === 'erase') {
             const sizeKey = stroke.eraserSize || DRAW_CONFIG.eraserSize;
             if (!eraseStrokes.has(sizeKey)) {
@@ -3237,14 +3245,14 @@ async function drawStrokes(ctx, strokes) {
             eraseStrokes.get(sizeKey).push(stroke);
         } else if (stroke.type === 'draw' || stroke.type === 'comment') {
             const stateKey = `${stroke.color || DRAW_CONFIG.penColor}-${stroke.lineWidth || DRAW_CONFIG.penWidth}`;
-            if (!drawStrokes.has(stateKey)) {
-                drawStrokes.set(stateKey, {
+            if (!drawStrokesMap.has(stateKey)) {
+                drawStrokesMap.set(stateKey, {
                     color: stroke.color || DRAW_CONFIG.penColor,
                     lineWidth: stroke.lineWidth || DRAW_CONFIG.penWidth,
                     strokes: []
                 });
             }
-            drawStrokes.get(stateKey).strokes.push(stroke);
+            drawStrokesMap.get(stateKey).strokes.push(stroke);
         }
     }
     
@@ -3280,9 +3288,9 @@ async function drawStrokes(ctx, strokes) {
     
     // 批量绘制普通笔画
     ctx.globalCompositeOperation = 'source-over';
-    for (const [stateKey, group] of drawStrokes) {
+    for (const [stateKey, group] of drawStrokesMap) {
         ctx.strokeStyle = group.color;
-        ctx.lineWidth = group.lineWidth;
+        ctx.lineWidth = group.lineWidth / scale;
         
         const path = new Path2D();
         for (const stroke of group.strokes) {
@@ -3313,21 +3321,21 @@ function scheduleCompact() {
     if (state.strokeHistory.length <= state.MAX_UNDO_STEPS) return;
     if (compactIdleId !== null) return;
     
-    // 检查是否有 'clear' 类型的笔画，如果有则不压缩
     const hasClearStroke = state.strokeHistory.some(stroke => stroke.type === 'clear');
     if (hasClearStroke) {
         console.log('检测到清空操作，跳过压缩以保留撤销能力');
         return;
     }
     
-    const strokesToCompact = state.strokeHistory.slice(0, state.strokeHistory.length - state.MAX_UNDO_STEPS);
-    state.strokeHistory = state.strokeHistory.slice(state.strokeHistory.length - state.MAX_UNDO_STEPS);
-    
-    if (strokesToCompact.length === 0) return;
+    const hasEraserStroke = state.strokeHistory.some(stroke => stroke.type === 'erase');
+    if (hasEraserStroke) {
+        console.log('检测到橡皮擦操作，跳过压缩以保留撤销能力');
+        return;
+    }
     
     compactIdleId = requestIdleCallback((deadline) => {
         compactIdleId = null;
-        doCompactStrokes(strokesToCompact);
+        doCompactStrokes();
     }, { timeout: 2000 });
 }
 
@@ -3335,7 +3343,25 @@ function scheduleCompact() {
  * 执行笔画压缩
  * 优先使用Rust并行处理，失败时降级到前端Canvas
  */
-async function doCompactStrokes(strokesToCompact) {
+async function doCompactStrokes() {
+    if (state.strokeHistory.length <= state.MAX_UNDO_STEPS) return;
+    
+    const hasClearStroke = state.strokeHistory.some(stroke => stroke.type === 'clear');
+    if (hasClearStroke) {
+        console.log('压缩执行前检测到清空操作，取消压缩');
+        return;
+    }
+    
+    const hasEraserStroke = state.strokeHistory.some(stroke => stroke.type === 'erase');
+    if (hasEraserStroke) {
+        console.log('压缩执行前检测到橡皮擦操作，取消压缩');
+        return;
+    }
+    
+    const strokesToCompact = state.strokeHistory.slice(0, state.strokeHistory.length - state.MAX_UNDO_STEPS);
+    
+    if (strokesToCompact.length === 0) return;
+    
     const loadId = ++state.baseImageLoadId;
     
     if (window.__TAURI__) {
@@ -3352,6 +3378,8 @@ async function doCompactStrokes(strokesToCompact) {
             const result = await invoke('compact_strokes', { request });
             
             if (loadId !== state.baseImageLoadId) return;
+            
+            state.strokeHistory = state.strokeHistory.slice(state.strokeHistory.length - state.MAX_UNDO_STEPS);
             
             state.baseImageURL = result;
             state.baseImageObj = null;
@@ -3384,6 +3412,8 @@ async function doCompactStrokes(strokesToCompact) {
         return;
     }
     
+    state.strokeHistory = state.strokeHistory.slice(state.strokeHistory.length - state.MAX_UNDO_STEPS);
+    
     state.baseImageURL = offscreen.canvas.toDataURL('image/png');
     state.baseImageObj = null;
     const img = new Image();
@@ -3410,6 +3440,14 @@ async function saveSnapshot() {
 }
 
 async function undo() {
+    if (compactIdleId !== null) {
+        cancelIdleCallback(compactIdleId);
+        compactIdleId = null;
+        console.log('撤销操作：取消正在进行的压缩任务');
+    }
+    
+    state.baseImageLoadId++;
+    
     if (state.strokeHistory.length === 0) return;
     
     const lastStroke = state.strokeHistory[state.strokeHistory.length - 1];
@@ -3431,7 +3469,6 @@ async function undo() {
         }
     } else {
         state.strokeHistory.pop();
-        // 撤销时重绘整个批注层，不使用局部重绘
         await redrawAllStrokes();
     }
     
@@ -3446,9 +3483,10 @@ function updateUndoBtnStatus() {
 // 清空画布
 function clearDrawCanvas() {
     dom.drawCtx.clearRect(0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
+    const scale = getSafeScale();
     setContextState(dom.drawCtx, {
         strokeStyle: DRAW_CONFIG.penColor,
-        lineWidth: DRAW_CONFIG.penWidth,
+        lineWidth: DRAW_CONFIG.penWidth / scale,
         lineCap: 'round',
         lineJoin: 'round',
         globalCompositeOperation: 'source-over'
@@ -3555,7 +3593,15 @@ function saveMergedCanvas() {
     mergedCtx.fillStyle = '#3a3a3a';
     mergedCtx.fillRect(0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
     
-    mergedCtx.drawImage(dom.imageCanvas, 0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
+    // 绘制图片层
+    if (dom.imageElement.src) {
+        mergedCtx.drawImage(dom.imageElement, 
+            parseFloat(dom.imageElement.style.left) || 0, 
+            parseFloat(dom.imageElement.style.top) || 0, 
+            parseFloat(dom.imageElement.style.width) || DRAW_CONFIG.canvasW, 
+            parseFloat(dom.imageElement.style.height) || DRAW_CONFIG.canvasH
+        );
+    }
     mergedCtx.drawImage(dom.drawCanvas, 0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
     
     const link = document.createElement('a');
@@ -3691,10 +3737,8 @@ async function rotateImage(direction) {
         state.currentImage = rotatedImg;
         
         if (state.currentImageIndex >= 0 && state.currentImageIndex < state.imageList.length) {
-            const thumbnail = await generateThumbnail(rotatedImg.src, 150);
-            
             state.imageList[state.currentImageIndex].full = rotatedImg.src;
-            state.imageList[state.currentImageIndex].thumbnail = thumbnail;
+            state.imageList[state.currentImageIndex].thumbnail = rotatedImg.src;
             state.imageList[state.currentImageIndex].width = rotatedImg.width;
             state.imageList[state.currentImageIndex].height = rotatedImg.height;
             
@@ -3726,84 +3770,6 @@ function rotateImageFallback(img, direction) {
     }
     
     return canvas.toDataURL('image/png');
-}
-
-async function generateThumbnail(imageData, maxSize = 150, fixedRatio = true) {
-    if (window.__TAURI__) {
-        try {
-            const { invoke } = window.__TAURI__.core;
-            const thumbnail = await invoke('generate_thumbnail', { 
-                imageData: imageData, 
-                maxSize: maxSize,
-                fixedRatio: fixedRatio
-            });
-            return thumbnail;
-        } catch (error) {
-            console.error('Rust 缩略图生成失败，使用前端降级方案:', error);
-        }
-    }
-    
-    return generateThumbnailFallback(imageData, maxSize, fixedRatio);
-}
-
-async function generateThumbnailFallback(imageData, maxSize = 150, fixedRatio = true) {
-    const img = new Image();
-    
-    await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = imageData;
-    });
-    
-    let thumbW, thumbH, scaledW, scaledH, offsetX, offsetY;
-    
-    if (fixedRatio) {
-        thumbW = maxSize;
-        thumbH = Math.round(maxSize * 9 / 16);
-        
-        const imgRatio = img.width / img.height;
-        const canvasRatio = 16 / 9;
-        
-        if (imgRatio > canvasRatio) {
-            scaledW = thumbW;
-            scaledH = thumbW / imgRatio;
-        } else {
-            scaledH = thumbH;
-            scaledW = thumbH * imgRatio;
-        }
-        
-        offsetX = (thumbW - scaledW) / 2;
-        offsetY = (thumbH - scaledH) / 2;
-    } else {
-        if (img.width > img.height) {
-            thumbW = maxSize;
-            thumbH = (img.height / img.width) * maxSize;
-        } else {
-            thumbH = maxSize;
-            thumbW = (img.width / img.height) * maxSize;
-        }
-        scaledW = thumbW;
-        scaledH = thumbH;
-        offsetX = 0;
-        offsetY = 0;
-    }
-    
-    const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = thumbW;
-    thumbCanvas.height = thumbH;
-    const thumbCtx = thumbCanvas.getContext('2d');
-    
-    thumbCtx.fillStyle = '#000000';
-    thumbCtx.fillRect(0, 0, thumbW, thumbH);
-    
-    thumbCtx.drawImage(img, offsetX, offsetY, scaledW, scaledH);
-    
-    return thumbCanvas.toDataURL('image/jpeg', 0.7);
-}
-
-// 侧边栏事件
-function bindSidebarEvents() {
-    dom.btnExpand.addEventListener('click', toggleSidebar);
 }
 
 function toggleSidebar() {
@@ -4977,45 +4943,47 @@ async function openCamera() {
 }
 
 /**
- * 显示无摄像头提示信息（绘制到画布上）
+ * 显示无摄像头提示信息
  */
 function showNoCameraMessage(message) {
-    if (!dom.imageCanvas || !dom.imageCtx) return;
+    if (!dom.canvasContainer) return;
     
-    const ctx = dom.imageCtx;
-    const width = DRAW_CONFIG.canvasW;
-    const height = DRAW_CONFIG.canvasH;
+    let msgElement = document.getElementById('noCameraMessage');
+    if (!msgElement) {
+        msgElement = document.createElement('div');
+        msgElement.id = 'noCameraMessage';
+        msgElement.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(30, 30, 30, 0.9);
+            z-index: 10;
+            pointer-events: none;
+        `;
+        dom.canvasContainer.appendChild(msgElement);
+    }
     
-    ctx.clearRect(0, 0, width, height);
-    
-    ctx.fillStyle = 'rgba(30, 30, 30, 0.9)';
-    ctx.fillRect(0, 0, width, height);
-    
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    
-    const centerX = width / 2;
-    const centerY = height / 2;
-    
-    ctx.font = `bold ${Math.round(width * 0.035)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('( $ _ $ )', centerX, centerY - height * 0.06);
-    
-    ctx.font = `${Math.round(width * 0.018)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.fillText(window.i18n?.t('camera.deviceNotFound') || '找不到展台设备', centerX, centerY + height * 0.015);
-    
-    ctx.font = `${Math.round(width * 0.012)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.fillText(message, centerX, centerY + height * 0.045);
+    msgElement.innerHTML = `
+        <div style="font-size: 2.5vw; color: #fff; margin-bottom: 2vh;">( $ _ $ )</div>
+        <div style="font-size: 1.2vw; color: rgba(255,255,255,0.8); margin-bottom: 1vh;">${window.i18n?.t('camera.deviceNotFound') || '找不到展台设备'}</div>
+        <div style="font-size: 0.9vw; color: rgba(255,255,255,0.5);">${message}</div>
+    `;
+    msgElement.style.display = 'flex';
 }
 
 /**
  * 隐藏无摄像头提示信息
  */
 function hideNoCameraMessage() {
-    if (dom.imageCtx) {
-        dom.imageCtx.clearRect(0, 0, dom.imageCanvas.width, dom.imageCanvas.height);
+    const msgElement = document.getElementById('noCameraMessage');
+    if (msgElement) {
+        msgElement.style.display = 'none';
     }
 }
 
@@ -5075,17 +5043,13 @@ function updateCameraVideoStyle() {
     if (!videoW || !videoH) return;
     
     const rotation = state.cameraRotation;
-    const isRotated = rotation === 90 || rotation === 270;
     
-    // 视频原始比例
     const videoRatio = videoW / videoH;
     
-    // 屏幕比例
     const screenW = DRAW_CONFIG.screenW;
     const screenH = DRAW_CONFIG.screenH;
     const screenRatio = screenW / screenH;
     
-    // 计算视频在屏幕上的显示大小（基于原始比例）
     let drawW, drawH;
     if (videoRatio > screenRatio) {
         drawW = screenW;
@@ -5095,13 +5059,11 @@ function updateCameraVideoStyle() {
         drawW = screenH * videoRatio;
     }
     
-    // 计算居中偏移
     const canvasW = DRAW_CONFIG.canvasW;
     const canvasH = DRAW_CONFIG.canvasH;
     const offsetX = (canvasW - drawW) / 2;
     const offsetY = (canvasH - drawH) / 2;
     
-    // 检查是否有变化
     const styleChanged = 
         lastVideoStyleCache.drawW !== drawW ||
         lastVideoStyleCache.drawH !== drawH ||
@@ -5112,16 +5074,8 @@ function updateCameraVideoStyle() {
     
     if (!styleChanged) return;
     
-    // 更新缓存
     lastVideoStyleCache = { drawW, drawH, offsetX, offsetY, rotation, isMirrored: state.isMirrored };
     
-    // 设置 video 元素大小 - 始终使用 drawW x drawH
-    video.style.width = drawW + 'px';
-    video.style.height = drawH + 'px';
-    video.style.left = offsetX + 'px';
-    video.style.top = offsetY + 'px';
-    
-    // 简单变换：只需要旋转和镜像，位置由 left/top 控制
     let transforms = [];
     
     if (rotation !== 0) {
@@ -5132,8 +5086,17 @@ function updateCameraVideoStyle() {
         transforms.push('scaleX(-1)');
     }
     
-    video.style.transform = transforms.join(' ');
-    video.style.transformOrigin = 'center center';
+    const transformStr = transforms.join(' ');
+    
+    video.style.cssText = `
+        width: ${drawW}px;
+        height: ${drawH}px;
+        left: ${offsetX}px;
+        top: ${offsetY}px;
+        transform: ${transformStr};
+        transform-origin: center center;
+        display: block;
+    `;
 }
 
 function startCameraPreview() {
@@ -5141,7 +5104,6 @@ function startCameraPreview() {
     if (!video) return;
     
     updateCameraVideoStyle();
-    video.style.display = 'block';
 }
 
 function createCameraControls() {
@@ -5306,37 +5268,6 @@ async function importImage() {
             });
         }
         
-        let thumbnails = [];
-        
-        if (window.__TAURI__ && imageDataList.length > 1) {
-            try {
-                updateLoadingProgress(window.i18n?.t('loading.generatingThumbnails') || '正在并行生成缩略图...');
-                const { invoke } = window.__TAURI__.core;
-                
-                const base64Promises = imageDataList.map(async (imgData) => {
-                    return await new Promise((resolve) => {
-                        const reader = new FileReader();
-                        reader.onload = (e) => resolve(e.target.result);
-                        reader.onerror = () => resolve('');
-                        reader.readAsDataURL(imgData.blob);
-                    });
-                });
-                const base64Images = await Promise.all(base64Promises);
-                
-                thumbnails = await invoke('generate_thumbnails_batch', {
-                    images: base64Images.map((data, i) => ({
-                        image_data: data,
-                        name: imageDataList[i].name
-                    })),
-                    maxSize: 150,
-                    fixedRatio: false
-                });
-                console.log('Rust 批量缩略图生成完成');
-            } catch (error) {
-                console.error('Rust 批量缩略图生成失败，使用前端降级方案:', error);
-            }
-        }
-        
         for (let i = 0; i < imageDataList.length; i++) {
             const imgData = imageDataList[i];
             const isLast = (i === imageDataList.length - 1);
@@ -5351,17 +5282,9 @@ async function importImage() {
                 img.src = imgData.data;
             });
             
-            let thumbnail;
-            if (thumbnails[i] && thumbnails[i].thumbnail) {
-                const thumbBlob = await fetch(thumbnails[i].thumbnail).then(r => r.blob());
-                thumbnail = URL.createObjectURL(thumbBlob);
-            } else {
-                thumbnail = await generateThumbnailBlob(imgData.blob, 150);
-            }
-            
             const newImgData = {
                 full: imgData.data,
-                thumbnail: thumbnail,
+                thumbnail: imgData.data,
                 name: imgData.name,
                 width: img.width,
                 height: img.height,
@@ -5413,11 +5336,10 @@ async function importImage() {
 async function addImageToList(img, name, isLast = true) {
     const blob = await fetch(img.src).then(r => r.blob());
     const blobUrl = URL.createObjectURL(blob);
-    const thumbnail = await generateThumbnailBlob(blob, 150);
     
     const imgData = {
         full: blobUrl,
-        thumbnail: thumbnail,
+        thumbnail: blobUrl,
         name: name,
         width: img.width,
         height: img.height,
@@ -5466,11 +5388,10 @@ async function addImageToList(img, name, isLast = true) {
 async function addImageToListNoHighlight(img, name) {
     const blob = await fetch(img.src).then(r => r.blob());
     const blobUrl = URL.createObjectURL(blob);
-    const thumbnail = await generateThumbnailBlob(blob, 150);
     
     const imgData = {
         full: blobUrl,
-        thumbnail: thumbnail,
+        thumbnail: blobUrl,
         name: name,
         width: img.width,
         height: img.height,
@@ -5491,7 +5412,6 @@ async function addImageToListNoHighlight(img, name) {
 
 // 暴露必要的函数到 window 对象，供 doc-scan.js 使用
 window.addImageToListNoHighlight = addImageToListNoHighlight;
-window.generateThumbnail = generateThumbnail;
 window.updateSidebarContent = updateSidebarContent;
 window.clearAllDrawings = clearAllDrawings;
 
@@ -5521,9 +5441,17 @@ function drawImageToCenter(img) {
     drawX = (canvasW - drawW) / 2;
     drawY = (canvasH - drawH) / 2;
     
-    dom.imageCtx.drawImage(img, drawX, drawY, drawW, drawH);
+    dom.imageElement.src = img.src;
+    dom.imageElement.style.left = drawX + 'px';
+    dom.imageElement.style.top = drawY + 'px';
+    dom.imageElement.style.width = drawW + 'px';
+    dom.imageElement.style.height = drawH + 'px';
 }
 
 function clearImageLayer() {
-    dom.imageCtx.clearRect(0, 0, DRAW_CONFIG.canvasW, DRAW_CONFIG.canvasH);
+    dom.imageElement.src = '';
+    dom.imageElement.style.left = '0';
+    dom.imageElement.style.top = '0';
+    dom.imageElement.style.width = DRAW_CONFIG.canvasW + 'px';
+    dom.imageElement.style.height = DRAW_CONFIG.canvasH + 'px';
 }
