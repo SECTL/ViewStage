@@ -17,7 +17,6 @@ export async function renderStrokesToContext(ctx, strokes, options = {}) {
     if (strokes.length === 0) return;
 
     const DRAW_CONFIG = window.DRAW_CONFIG;
-    const renderScale = options.renderScale || 1;
     const penManager = options.penManager || null;
 
     resetContextState();
@@ -50,14 +49,13 @@ export async function renderStrokesToContext(ctx, strokes, options = {}) {
         const hasStoredWidths = stroke.storedWidths && stroke.storedWidths.length > 0;
         const hasVariableWidths = stroke.variableWidths && stroke.variableWidths.length > 0;
         const strokeColor = stroke.color || DRAW_CONFIG.penColor;
-        const strokeScale = stroke.scale || 1;
         let baseLineWidth;
         if (stroke.type === 'erase') {
             baseLineWidth = stroke.eraserSize || (stroke.eraserSizeRaw / (stroke.scale || 1));
         } else if (stroke.type === 'draw') {
-            baseLineWidth = (stroke.lineWidth || DRAW_CONFIG.penWidth) * strokeScale / renderScale;
+            baseLineWidth = stroke.lineWidth || DRAW_CONFIG.penWidth;
         } else {
-            baseLineWidth = (stroke.lineWidth || (stroke.type === 'erase' ? DRAW_CONFIG.eraserSize : DRAW_CONFIG.penWidth)) * strokeScale / renderScale;
+            baseLineWidth = stroke.lineWidth || (stroke.type === 'erase' ? DRAW_CONFIG.eraserSize : DRAW_CONFIG.penWidth);
         }
 
         if (stroke.type === 'erase') {
@@ -77,7 +75,7 @@ export async function renderStrokesToContext(ctx, strokes, options = {}) {
                 batch_flush();
                 const tessellated = penManager.build_tessellated_stroke(stroke, pen_effect);
                 if (tessellated) {
-                    penManager.render_tessellated_stroke(ctx, tessellated, strokeScale / renderScale);
+                    penManager.render_tessellated_stroke(ctx, tessellated, 1);
                     continue;
                 }
             }
@@ -93,7 +91,7 @@ export async function renderStrokesToContext(ctx, strokes, options = {}) {
             batch_flush();
             if (stroke.type === 'erase') {
                 const eraser = window.__eraser;
-                if (eraser) eraser.renderEraseStroke(ctx, stroke, baseLineWidth, strokeScale, renderScale);
+                if (eraser) eraser.renderEraseStroke(ctx, stroke, baseLineWidth);
                 continue;
             }
             let varBatchActive = false;
@@ -104,9 +102,9 @@ export async function renderStrokesToContext(ctx, strokes, options = {}) {
                 const point = stroke.points[i];
                 let lineWidth;
                 if (hasStoredWidths && stroke.storedWidths[i] !== undefined) {
-                    lineWidth = stroke.storedWidths[i] * strokeScale / renderScale;
+                    lineWidth = stroke.storedWidths[i];
                 } else if (hasVariableWidths && stroke.variableWidths[i] !== undefined) {
-                    lineWidth = stroke.variableWidths[i] * strokeScale / renderScale;
+                    lineWidth = stroke.variableWidths[i];
                 } else {
                     lineWidth = baseLineWidth;
                 }
@@ -139,7 +137,7 @@ export async function renderStrokesToContext(ctx, strokes, options = {}) {
         if (stroke.type === 'erase') {
             batch_flush();
             const eraser = window.__eraser;
-            if (eraser) eraser.renderEraseStroke(ctx, stroke, baseLineWidth, strokeScale, renderScale);
+            if (eraser) eraser.renderEraseStroke(ctx, stroke, baseLineWidth);
             continue;
         }
 

@@ -20,7 +20,7 @@ export function renderEraseSegment(ctx, fromX, fromY, toX, toY, lineWidth) {
     }
 }
 
-export function renderEraseStroke(ctx, stroke, baseLineWidth, strokeScale, renderScale) {
+export function renderEraseStroke(ctx, stroke, baseLineWidth) {
     const hasStoredWidths = stroke.storedWidths && stroke.storedWidths.length > 0;
     const hasVariableWidths = stroke.variableWidths && stroke.variableWidths.length > 0;
     ctx.beginPath();
@@ -28,9 +28,9 @@ export function renderEraseStroke(ctx, stroke, baseLineWidth, strokeScale, rende
         const pt = stroke.points[i];
         let w;
         if (hasStoredWidths && stroke.storedWidths[i] !== undefined) {
-            w = stroke.storedWidths[i] * strokeScale / renderScale;
+            w = stroke.storedWidths[i];
         } else if (hasVariableWidths && stroke.variableWidths[i] !== undefined) {
-            w = stroke.variableWidths[i] * strokeScale / renderScale;
+            w = stroke.variableWidths[i];
         } else {
             w = baseLineWidth;
         }
