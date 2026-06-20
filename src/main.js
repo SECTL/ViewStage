@@ -661,8 +661,8 @@ let state = {
     camera_contrast: 1.4,
     useFrontCamera: false,
     defaultCameraId: null,
-    cameraWidth: 1280,
-    cameraHeight: 720,
+    cameraWidth: null,
+    cameraHeight: null,
     wasCameraOpenBeforeMinimize: false,
     currentImage: null,
     imageList: [],
@@ -2282,6 +2282,7 @@ function main_setup_tool_events() {
         }
     });
     dom.btnPhoto.addEventListener('click', main_save_photo);
+    dom.btnLight.addEventListener('click', main_handle_light_toggle);
     dom.btnSettings.addEventListener('click', main_show_settings);
     dom.btnSave.addEventListener('click', main_handle_file_sidebar_toggle);
     dom.btnMinimize.addEventListener('click', main_hide_window);
@@ -2359,6 +2360,31 @@ function main_handle_menu_outside_click(e) {
     
     if (menuPopup && !menuPopup.contains(e.target) && !btnMenu.contains(e.target)) {
         main_hide_menu();
+    }
+}
+
+// 展台灯开关
+let __lightOn = false;
+let __lightAvailable = false;
+
+async function main_handle_light_toggle() {
+    if (!window.__TAURI__ || !__lightAvailable) return;
+    try {
+        const { invoke } = window.__TAURI__.core;
+        const img = dom.btnLight.querySelector('img');
+        if (__lightOn) {
+            await invoke('camera_light_off');
+            __lightOn = false;
+            dom.btnLight.classList.remove('active');
+            if (img) img.src = ThemeManager.theme_fetch_icon_path('light-off');
+        } else {
+            await invoke('camera_light_on');
+            __lightOn = true;
+            dom.btnLight.classList.add('active');
+            if (img) img.src = ThemeManager.theme_fetch_icon_path('light');
+        }
+    } catch (e) {
+        console.error('展台灯控制失败:', e);
     }
 }
 

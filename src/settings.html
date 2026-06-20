@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   ViewStage 设置窗口
-  侧边栏导航：应用设置、存储、Canvas调节、信号源调节、主题、关于
+  侧边栏导航：应用设置、存储、Canvas调节、展台及摄像头、主题、关于
 -->
 <html lang="zh-CN">
 <head>
@@ -412,6 +412,16 @@
                                 <div class="select-option" data-value="180">180° (<span data-i18n="settings.rotationUpsideDown">倒置</span>)</div>
                                 <div class="select-option" data-value="270">270° (<span data-i18n="settings.rotationCounterClockwise">逆时针</span>)</div>
                             </div>
+                        </div>
+                    </div>
+                    <div class="setting-item flex-start" id="cameraLightItem" style="display:none">
+                        <span class="setting-label" data-i18n="settings.cameraLight">展台灯</span>
+                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="cameraLightToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="setting-hint" data-i18n="settings.cameraLightHint" style="text-align:right;">控制展台补光灯开关</span>
                         </div>
                     </div>
 

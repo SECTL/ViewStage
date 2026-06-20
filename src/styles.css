@@ -1348,3 +1348,10 @@ body.blur-enabled .sidebar {
     -webkit-backdrop-filter: blur(6px);
     will-change: transform;
 }
+
+
+/* 展台灯按钮 — 未检测到希沃设备时强制关闭状态 */
+.toolbar-btn.function-btn.no-seewo {
+    opacity: 0.4;
+    cursor: not-allowed;
+}

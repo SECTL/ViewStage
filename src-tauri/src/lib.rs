@@ -8,6 +8,7 @@ use zip::ZipArchive;
 use std::io::{Read, Write};
 
 mod image_processing;
+mod camera_light;
 
 use image_processing::{
     image_fetch_base64_data,
@@ -3812,6 +3813,55 @@ fn run_memreduct_raw(_args: &[&str]) -> Result<i32, String> {
     Err("内存清理仅在 Windows 上可用".to_string())
 }
 
+// ==================== 展台灯控制命令 ====================
+
+#[tauri::command]
+fn camera_light_on() -> Result<(), String> {
+    camera_light::camera_light_set_on()
+}
+
+#[tauri::command]
+fn camera_light_off() -> Result<(), String> {
+    camera_light::camera_light_set_off()
+}
+
+#[tauri::command]
+fn camera_light_get_state() -> Result<(bool, u8), String> {
+    camera_light::camera_light_get_state()
+}
+
+#[tauri::command]
+fn camera_light_detect() -> bool {
+    camera_light::camera_light_detect()
+}
+
+#[tauri::command]
+async fn camera_light_detect_and_save(app: tauri::AppHandle) -> bool {
+    let config_dir = app.path().app_config_dir().unwrap_or_default();
+    let device_path = config_dir.join("device.json");
+
+    // device.json 存在则直接读缓存，不再重复检测
+    if device_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&device_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if val.get("seewoDetected").and_then(|v| v.as_bool()) == Some(true) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // 首次：检测并写入 device.json
+    let detected = camera_light::camera_light_detect();
+    let data = serde_json::json!({ "seewoDetected": detected });
+    if let Some(parent) = device_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&device_path, serde_json::to_string_pretty(&data).unwrap_or_default());
+    detected
+}
+
 /// 应用入口函数
 ///
 /// 初始化日志、注册 Tauri 插件和 IPC 命令，配置 OOBE/主窗口启动流程。
@@ -3982,7 +4032,12 @@ pub fn app_init_run() {
             memreduct_get_usage,
             telemetry_http_post,
             telemetry_http_get,
-            telemetry_fetch_cpu_gpu
+            telemetry_fetch_cpu_gpu,
+            camera_light_on,
+            camera_light_off,
+            camera_light_get_state,
+            camera_light_detect,
+            camera_light_detect_and_save
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

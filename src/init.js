@@ -60,6 +60,7 @@ function dom_init_all() {
     dom.btnEraser = document.getElementById('btnEraser');
     dom.btnUndo = document.getElementById('btnUndo');
     dom.btnPhoto = document.getElementById('btnPhoto');
+    dom.btnLight = document.getElementById('btnLight');
     dom.btnSettings = document.getElementById('btnSettings');
     dom.btnExpand = document.getElementById('btnExpand');
     dom.btnSave = document.getElementById('btnSave');
@@ -167,8 +168,8 @@ async function settings_load_camera_config() {
             }
 
             if (settings.cameraWidth && settings.cameraHeight) {
-                state.cameraWidth = Number(settings.cameraWidth) || 1280;
-                state.cameraHeight = Number(settings.cameraHeight) || 720;
+                state.cameraWidth = Number(settings.cameraWidth) || null;
+                state.cameraHeight = Number(settings.cameraHeight) || null;
             }
 
             if (settings.defaultRotation !== undefined) {
@@ -424,6 +425,14 @@ async function main_init_all() {
         window.main_setup_all_events();
         console.log('[init] draw_save_snapshot');
         await draw_save_snapshot();
+
+        // 展台灯可用性检测（非阻塞，检测结果写入 device.json 后不再重复 HID 枚举）
+        window.__TAURI__?.core?.invoke('camera_light_detect_and_save').then(detected => {
+            window.__lightAvailable = detected;
+            if (!detected && dom.btnLight) {
+                dom.btnLight.classList.add('no-seewo');
+            }
+        }).catch(() => {});
 
         console.log('[init] resize listener');
         window.addEventListener('resize', window.main_handle_resize);

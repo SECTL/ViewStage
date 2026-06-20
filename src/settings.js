@@ -748,8 +748,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             cameraResolutionOptionsContainer.appendChild(option);
         });
         
-        const targetWidth = savedWidth || (resolutions[0]?.w || 1280);
-        const targetHeight = savedHeight || (resolutions[0]?.h || 720);
+        const targetWidth = savedWidth || (resolutions[0]?.w || 0);
+        const targetHeight = savedHeight || (resolutions[0]?.h || 0);
         const targetRes = `${targetWidth}x${targetHeight}`;
         
         const resOptions = cameraResolutionOptionsContainer.querySelectorAll('.select-option');
@@ -1428,6 +1428,37 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await invoke('mirror_update_state', { enabled: mirrorToggle.checked });
             } catch (error) {
                 console.error('设置镜像状态失败:', error);
+            }
+        });
+    }
+
+    // 展台灯开关
+    const cameraLightToggle = document.getElementById('cameraLightToggle');
+    const cameraLightItem = document.getElementById('cameraLightItem');
+    if (cameraLightToggle && cameraLightItem) {
+        (async () => {
+            try {
+                const { invoke } = window.__TAURI__.core;
+                const seewoDetected = await invoke('camera_light_detect_and_save');
+                if (!seewoDetected) return;
+                cameraLightItem.style.display = '';
+                try {
+                    const [isOn] = await invoke('camera_light_get_state');
+                    cameraLightToggle.checked = isOn;
+                } catch (_) {}
+            } catch (_) {}
+        })();
+        cameraLightToggle.addEventListener('change', async () => {
+            try {
+                const { invoke } = window.__TAURI__.core;
+                if (cameraLightToggle.checked) {
+                    await invoke('camera_light_on');
+                } else {
+                    await invoke('camera_light_off');
+                }
+            } catch (error) {
+                console.error('展台灯控制失败:', error);
+                cameraLightToggle.checked = !cameraLightToggle.checked;
             }
         });
     }

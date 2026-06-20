@@ -16,32 +16,65 @@ export class CameraManager {
 
         this.d.saveCurrentSourceData();
 
+        // 如果没有保存的分辨率，探测摄像头能力以获取最高分辨率
+        let maxW = state.cameraWidth;
+        let maxH = state.cameraHeight;
+
+        // 确定目标设备 ID
+        let targetDeviceId = state.defaultCameraId;
+        if (!targetDeviceId) {
+            try {
+                let devices = await navigator.mediaDevices.enumerateDevices();
+                let videoDevices = devices.filter(d => d.kind === 'videoinput');
+                if (videoDevices.length > 0 && !videoDevices[0].label) {
+                    const temp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    temp.getTracks().forEach(t => t.stop());
+                    devices = await navigator.mediaDevices.enumerateDevices();
+                    videoDevices = devices.filter(d => d.kind === 'videoinput');
+                }
+                for (const d of videoDevices) {
+                    if (d.label.toLowerCase().includes('seewo')) {
+                        targetDeviceId = d.deviceId;
+                        break;
+                    }
+                }
+            } catch (_) {}
+        }
+
+        // 探测目标摄像头的最高分辨率
+        if (!maxW && targetDeviceId) {
+            try {
+                const probe = await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: { exact: targetDeviceId } },
+                    audio: false
+                });
+                const track = probe.getVideoTracks()[0];
+                const caps = track.getCapabilities();
+                track.stop();
+                probe.getTracks().forEach(t => t.stop());
+                if (caps.width?.max) maxW = caps.width.max;
+                if (caps.height?.max) maxH = caps.height.max;
+            } catch (_) {}
+        }
+
         let constraints;
-        if (state.defaultCameraId) {
+        if (targetDeviceId) {
+            const vc = { deviceId: { exact: targetDeviceId } };
+            if (maxW) vc.width = { ideal: maxW };
+            if (maxH) vc.height = { ideal: maxH };
+            constraints = { video: vc, audio: false };
+        } else if (maxW && maxH) {
             constraints = {
                 video: {
-                    deviceId: { exact: state.defaultCameraId },
-                    width: { ideal: state.cameraWidth || 1280 },
-                    height: { ideal: state.cameraHeight || 720 }
+                    width: { ideal: maxW },
+                    height: { ideal: maxH },
+                    facingMode: state.useFrontCamera ? 'user' : 'environment'
                 },
                 audio: false
             };
         } else {
-            const desiredFacingMode = state.useFrontCamera ? 'user' : 'environment';
-            let useFacingMode = true;
-            try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const videoDevices = devices.filter(d => d.kind === 'videoinput');
-                if (videoDevices.length <= 1) useFacingMode = false;
-            } catch (_) {
-                useFacingMode = false;
-            }
             constraints = {
-                video: {
-                    width: { ideal: state.cameraWidth || 1280 },
-                    height: { ideal: state.cameraHeight || 720 },
-                    ...(useFacingMode ? { facingMode: desiredFacingMode } : {})
-                },
+                video: { facingMode: state.useFrontCamera ? 'user' : 'environment' },
                 audio: false
             };
         }
@@ -52,7 +85,7 @@ export class CameraManager {
             if (constraintError.name === 'OverconstrainedError') {
                 console.warn('指定摄像头不可用，使用默认摄像头');
                 state.cameraStream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: { ideal: state.cameraWidth || 1280 }, height: { ideal: state.cameraHeight || 720 } },
+                    video: true,
                     audio: false
                 });
             } else {
@@ -60,6 +93,9 @@ export class CameraManager {
             }
         }
 
+        if (targetDeviceId && !state.defaultCameraId) {
+            state.defaultCameraId = targetDeviceId;
+        }
         state.isCameraOpen = true;
         state.cameraAvailable = true;
         this.d.updateSettingsControlsState();

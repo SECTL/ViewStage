@@ -19,8 +19,8 @@ const state = {
   restoreLastDoc: true,
   memCleanEnabled: true,
   cameraDeviceId: '',
-  cameraWidth: 1280,
-  cameraHeight: 720,
+  cameraWidth: null,
+  cameraHeight: null,
   defaultRotation: 0,
   cameraStream: null,
   cameraDevices: [],
@@ -1125,8 +1125,8 @@ function mergeSettings() {
     language: 'zh-CN',
     theme: 'com.viewstage.theme.simplify',
     defaultCamera: '',
-    cameraWidth: 1280,
-    cameraHeight: 720,
+    cameraWidth: null,
+    cameraHeight: null,
     penColors: PEN_COLORS.map(c => ({ r: c.r, g: c.g, b: c.b })),
   };
 
