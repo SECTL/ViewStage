@@ -2365,10 +2365,9 @@ function main_handle_menu_outside_click(e) {
 
 // 展台灯开关
 let __lightOn = false;
-let __lightAvailable = false;
 
 async function main_handle_light_toggle() {
-    if (!window.__TAURI__ || !__lightAvailable) return;
+    if (!window.__TAURI__ || !window.__lightAvailable) return;
     try {
         const { invoke } = window.__TAURI__.core;
         const img = dom.btnLight.querySelector('img');
