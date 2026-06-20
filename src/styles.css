@@ -1350,8 +1350,7 @@ body.blur-enabled .sidebar {
 }
 
 
-/* 展台灯按钮 — 未检测到希沃设备时强制关闭状态 */
+/* 展台灯按钮 — 未检测到展台设备时隐藏 */
 .toolbar-btn.function-btn.no-seewo {
-    opacity: 0.4;
-    cursor: not-allowed;
+    display: none;
 }
