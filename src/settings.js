@@ -1448,6 +1448,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } catch (_) {}
             } catch (_) {}
         })();
+        // 监听其它窗口的灯状态变更，保持 toggle 同步
+        if (window.__TAURI__) {
+            try {
+                window.__TAURI__.event.listen('camera-light-changed', (event) => {
+                    const isOn = event.payload?.isOn;
+                    if (isOn !== undefined) cameraLightToggle.checked = isOn;
+                });
+            } catch (_) {}
+        }
         cameraLightToggle.addEventListener('change', async () => {
             try {
                 const { invoke } = window.__TAURI__.core;

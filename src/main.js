@@ -2283,6 +2283,24 @@ function main_setup_tool_events() {
     });
     dom.btnPhoto.addEventListener('click', main_save_photo);
     dom.btnLight.addEventListener('click', main_handle_light_toggle);
+    // 展台灯状态同步（来自设置页或其它窗口的开关操作）
+    if (window.__TAURI__) {
+        try {
+            window.__TAURI__.event.listen('camera-light-changed', (event) => {
+                const isOn = event.payload?.isOn;
+                if (isOn === undefined) return;
+                __lightOn = isOn;
+                const img = dom.btnLight?.querySelector('img');
+                if (isOn) {
+                    dom.btnLight?.classList.add('active');
+                    if (img) img.src = ThemeManager.theme_fetch_icon_path('light');
+                } else {
+                    dom.btnLight?.classList.remove('active');
+                    if (img) img.src = ThemeManager.theme_fetch_icon_path('light-off');
+                }
+            });
+        } catch (_) {}
+    }
     dom.btnSettings.addEventListener('click', main_show_settings);
     dom.btnSave.addEventListener('click', main_handle_file_sidebar_toggle);
     dom.btnMinimize.addEventListener('click', main_hide_window);

@@ -3816,13 +3816,17 @@ fn run_memreduct_raw(_args: &[&str]) -> Result<i32, String> {
 // ==================== 展台灯控制命令 ====================
 
 #[tauri::command]
-fn camera_light_on() -> Result<(), String> {
-    camera_light::camera_light_set_on()
+fn camera_light_on(app: tauri::AppHandle) -> Result<(), String> {
+    camera_light::camera_light_set_on()?;
+    let _ = app.emit("camera-light-changed", serde_json::json!({"isOn": true}));
+    Ok(())
 }
 
 #[tauri::command]
-fn camera_light_off() -> Result<(), String> {
-    camera_light::camera_light_set_off()
+fn camera_light_off(app: tauri::AppHandle) -> Result<(), String> {
+    camera_light::camera_light_set_off()?;
+    let _ = app.emit("camera-light-changed", serde_json::json!({"isOn": false}));
+    Ok(())
 }
 
 #[tauri::command]
