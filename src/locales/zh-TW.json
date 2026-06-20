@@ -82,6 +82,8 @@
     "themeImportSuccess": "主題導入成功，重新啟動後生效。",
     "themeImportFailed": "主題導入失敗",
     "themeChanged": "主題已變更，重新啟動後生效。",
+    "blur": "介面模糊效果",
+    "blurHint": "為工具欄和側邊欄添加毛玻璃模糊效果",
     "themeBuiltinSuffix": "（內建主題）",
     "apply": "應用",
     "delete": "刪除",

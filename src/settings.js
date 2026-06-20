@@ -504,6 +504,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     telemetryToggle.checked = telemetryEnabled;
                 }
 
+                const blurEnabled = settings.blurEnabled === true;
+                const blurToggle = document.getElementById('blurToggle');
+                if (blurToggle) {
+                    blurToggle.checked = blurEnabled;
+                }
+                document.body.classList.toggle('blur-enabled', blurEnabled);
+
                 // 文档关联状态检测（功能检测）
                 async function checkAssociation(ext, statusElId) {
                     const statusEl = document.getElementById(statusElId);
@@ -1952,6 +1959,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (telemetryToggle) {
         telemetryToggle.addEventListener('change', async () => {
             await settings_save_all_local({ telemetryEnabled: telemetryToggle.checked });
+        });
+    }
+
+    // 界面模糊效果开关
+    const blurToggle = document.getElementById('blurToggle');
+    if (blurToggle) {
+        blurToggle.addEventListener('change', async () => {
+            document.body.classList.toggle('blur-enabled', blurToggle.checked);
+            await settings_save_all_local({ blurEnabled: blurToggle.checked });
         });
     }
 

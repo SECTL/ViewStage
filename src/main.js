@@ -1196,7 +1196,10 @@ function main_setup_pdf_file_open() {
             });
         }
 
-        
+        if (settings.blurEnabled !== undefined) {
+            document.body.classList.toggle('blur-enabled', settings.blurEnabled === true);
+        }
+
         if (settings.penMinWidthRatio !== undefined && DRAW_CONFIG.developerMode) {
             DRAW_CONFIG.penMinWidthRatio = settings.penMinWidthRatio;
         }

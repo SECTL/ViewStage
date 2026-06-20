@@ -1374,7 +1374,8 @@ fn config_fetch_default() -> serde_json::Value {
         "restoreLastDoc": true,
         "memclean": {
             "mask": 231
-        }
+        },
+        "blurEnabled": false
     })
 }
 

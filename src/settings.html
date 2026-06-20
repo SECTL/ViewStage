@@ -459,6 +459,16 @@
                 <div class="page" id="pageTheme">
                     <h2 class="page-title" data-i18n="settings.theme">主题</h2>
                     <div class="theme-grid" id="themeGrid"></div>
+                    <div class="setting-item flex-start">
+                        <span class="setting-label" data-i18n="settings.blur">界面模糊效果</span>
+                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="blurToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="setting-hint" data-i18n="settings.blurHint" style="text-align:right;">为工具栏和侧边栏添加毛玻璃模糊效果</span>
+                        </div>
+                    </div>
                     <div class="setting-item">
                         <span class="setting-label" data-i18n="settings.importTheme">导入主题</span>
                         <button class="btn-action" id="btnImportTheme" data-i18n="settings.importThemeBtn">导入 .vst 主题</button>

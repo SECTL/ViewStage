@@ -82,6 +82,8 @@
     "themeImportSuccess": "Theme imported, restart to apply.",
     "themeImportFailed": "Theme import failed",
     "themeChanged": "Theme changed, restart to apply.",
+    "blur": "Interface Blur",
+    "blurHint": "Add frosted glass blur effect to toolbars and sidebars",
     "themeBuiltinSuffix": " (Built-in)",
     "apply": "Apply",
     "delete": "Delete",

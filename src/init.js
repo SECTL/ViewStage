@@ -259,6 +259,10 @@ async function settings_load_camera_config() {
                 await ThemeManager.theme_update_active(themeName);
             }
 
+            if (settings.blurEnabled === true) {
+                document.body.classList.add('blur-enabled');
+            }
+
             const canvasBgColor = ThemeManager.theme_fetch_canvas_bg_color();
             DRAW_CONFIG.canvasBgColor = canvasBgColor;
             window.main_update_canvas_bg_color(canvasBgColor);

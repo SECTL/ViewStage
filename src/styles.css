@@ -1326,3 +1326,25 @@ body {
     border-radius: var(--rounded-xs);
     white-space: nowrap;
 }
+
+/* ===== 毛玻璃模糊效果 ===== */
+body.blur-enabled .toolbar-left,
+body.blur-enabled .toolbar-center,
+body.blur-enabled .toolbar-right,
+body.blur-enabled .bb-mode-group,
+body.blur-enabled .pen-control-panel,
+body.blur-enabled .settings-panel,
+body.blur-enabled .dr-page-sidebar,
+body.blur-enabled .menu-popup {
+    background: var(--blur-bg, rgba(26, 26, 26, 0.7));
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    will-change: transform;
+}
+
+body.blur-enabled .sidebar {
+    background: var(--blur-bg, rgba(26, 26, 26, 0.7));
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    will-change: transform;
+}

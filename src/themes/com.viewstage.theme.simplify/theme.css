@@ -47,6 +47,9 @@
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
     --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
     
+    --blur-bg: rgba(255, 255, 255, 0.6);
+    --blur-surface: rgba(245, 245, 245, 0.6);
+    
     --btn-height: 40px;
     --btn-height-sm: 32px;
     --btn-height-lg: 48px;
