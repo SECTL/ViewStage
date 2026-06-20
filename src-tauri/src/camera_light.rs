@@ -18,6 +18,7 @@ struct LightState {
     level: u8,
 }
 
+#[allow(dead_code)]
 struct Monitor {
     running: Arc<AtomicBool>,
     state: Arc<Mutex<LightState>>,
@@ -113,6 +114,7 @@ pub fn camera_light_start() -> Result<(), String> {
 }
 
 /// 停止后台监控
+#[allow(dead_code)]
 pub fn camera_light_stop() {
     if let Ok(mut guard) = MONITOR.lock() {
         if let Some(m) = guard.take() {
