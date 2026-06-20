@@ -8,6 +8,7 @@ use zip::ZipArchive;
 use std::io::{Read, Write};
 
 mod image_processing;
+#[cfg(target_os = "windows")]
 mod camera_light;
 
 use image_processing::{
@@ -3815,6 +3816,7 @@ fn run_memreduct_raw(_args: &[&str]) -> Result<i32, String> {
 
 // ==================== 展台灯控制命令 ====================
 
+#[cfg(target_os = "windows")]
 #[tauri::command]
 fn camera_light_on(app: tauri::AppHandle) -> Result<(), String> {
     camera_light::camera_light_set_on()?;
@@ -3822,6 +3824,13 @@ fn camera_light_on(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn camera_light_on(_app: tauri::AppHandle) -> Result<(), String> {
+    Err("展台灯控制仅支持 Windows".to_string())
+}
+
+#[cfg(target_os = "windows")]
 #[tauri::command]
 fn camera_light_off(app: tauri::AppHandle) -> Result<(), String> {
     camera_light::camera_light_set_off()?;
@@ -3829,41 +3838,66 @@ fn camera_light_off(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn camera_light_off(_app: tauri::AppHandle) -> Result<(), String> {
+    Err("展台灯控制仅支持 Windows".to_string())
+}
+
+#[cfg(target_os = "windows")]
 #[tauri::command]
 fn camera_light_get_state() -> Result<(bool, u8), String> {
     camera_light::camera_light_get_state()
 }
 
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn camera_light_get_state() -> Result<(bool, u8), String> {
+    Err("展台灯控制仅支持 Windows".to_string())
+}
+
+#[cfg(target_os = "windows")]
 #[tauri::command]
 fn camera_light_detect() -> bool {
     camera_light::camera_light_detect()
 }
 
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn camera_light_detect() -> bool {
+    false
+}
+
 #[tauri::command]
 async fn camera_light_detect_and_save(app: tauri::AppHandle) -> bool {
-    let config_dir = app.path().app_config_dir().unwrap_or_default();
-    let device_path = config_dir.join("device.json");
+    #[cfg(target_os = "windows")]
+    {
+        let config_dir = app.path().app_config_dir().unwrap_or_default();
+        let device_path = config_dir.join("device.json");
 
-    // device.json 存在则直接读缓存，不再重复检测
-    if device_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&device_path) {
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                if val.get("seewoDetected").and_then(|v| v.as_bool()) == Some(true) {
-                    return true;
+        if device_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&device_path) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if val.get("seewoDetected").and_then(|v| v.as_bool()) == Some(true) {
+                        return true;
+                    }
                 }
             }
+            return false;
         }
-        return false;
-    }
 
-    // 首次：检测并写入 device.json
-    let detected = camera_light::camera_light_detect();
-    let data = serde_json::json!({ "seewoDetected": detected });
-    if let Some(parent) = device_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        let detected = camera_light::camera_light_detect();
+        let data = serde_json::json!({ "seewoDetected": detected });
+        if let Some(parent) = device_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&device_path, serde_json::to_string_pretty(&data).unwrap_or_default());
+        detected
     }
-    let _ = std::fs::write(&device_path, serde_json::to_string_pretty(&data).unwrap_or_default());
-    detected
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
 }
 
 /// 应用入口函数
