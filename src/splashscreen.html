@@ -33,8 +33,6 @@
             background-color: #ffffff;
             overflow: hidden;
             display: flex;
-            opacity: 0;
-            animation: cardFadeIn 0.5s ease forwards;
         }
 
         .info-section {
@@ -49,15 +47,11 @@
             display: flex;
             align-items: center;
             gap: 14px;
-            opacity: 0;
-            animation: fadeIn 0.4s ease 0.15s forwards;
         }
 
         .center-content {
             margin-top: auto;
             margin-bottom: auto;
-            opacity: 0;
-            animation: fadeIn 0.4s ease 0.3s forwards;
         }
 
         .logo-wrapper {
@@ -139,28 +133,6 @@
             font-size: 9px;
             color: rgba(255, 255, 255, 0.7);
             text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-        }
-
-        @keyframes cardFadeIn {
-            from {
-                opacity: 0;
-                transform: scale(0.96);
-            }
-            to {
-                opacity: 1;
-                transform: scale(1);
-            }
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(6px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
         }
     </style>
 </head>
