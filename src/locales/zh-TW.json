@@ -306,7 +306,8 @@
     "saveScreenshot": "儲存畫布截圖",
     "notReady": "攝影機未就緒",
     "notReadyDesc": "攝影機尚未就緒，請稍後再試",
-    "photoName": "拍攝{n}"
+    "photoName": "拍攝{n}",
+    "requestPermission": "請求攝影機權限"
   },
   "errors": {
     "configFormatError": "設定檔格式不正確",

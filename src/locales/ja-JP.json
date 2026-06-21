@@ -303,7 +303,8 @@
     "saveScreenshot": "キャンバスのスクリーンショットを保存",
     "notReady": "カメラの準備ができていません",
     "notReadyDesc": "カメラの準備ができていません。後でもう一度お試しください",
-    "photoName": "キャプチャ {n}"
+    "photoName": "キャプチャ {n}",
+    "requestPermission": "カメラの権限をリクエスト"
   },
   "errors": {
     "configFormatError": "設定ファイルの形式が無効です",

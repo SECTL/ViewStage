@@ -309,7 +309,8 @@
     "saveScreenshot": "Save Canvas Screenshot",
     "notReady": "Camera Not Ready",
     "notReadyDesc": "Camera is not ready yet, please try again later",
-    "photoName": "Capture {n}"
+    "photoName": "Capture {n}",
+    "requestPermission": "Request Camera Permission"
   },
   "errors": {
     "configFormatError": "Invalid config file format",

@@ -309,7 +309,8 @@
     "saveScreenshot": "保存画布截图",
     "notReady": "摄像头未就绪",
     "notReadyDesc": "摄像头尚未就绪，请稍后再试",
-    "photoName": "拍摄{n}"
+    "photoName": "拍摄{n}",
+    "requestPermission": "请求摄像头权限"
   },
   "errors": {
     "configFormatError": "配置文件格式不正确",

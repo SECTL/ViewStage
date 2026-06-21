@@ -303,7 +303,8 @@
     "saveScreenshot": "캔버스 스크린샷 저장",
     "notReady": "카메라 준비 안 됨",
     "notReadyDesc": "카메라가 아직 준비되지 않았습니다. 나중에 다시 시도하세요",
-    "photoName": "캡처 {n}"
+    "photoName": "캡처 {n}",
+    "requestPermission": "카메라 권한 요청"
   },
   "errors": {
     "configFormatError": "설정 파일 형식이 잘못되었습니다",

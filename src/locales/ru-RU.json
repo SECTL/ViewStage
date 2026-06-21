@@ -303,7 +303,8 @@
     "saveScreenshot": "Сохранить снимок холста",
     "notReady": "Камера не готова",
     "notReadyDesc": "Камера ещё не готова. Повторите попытку позже",
-    "photoName": "Снимок {n}"
+    "photoName": "Снимок {n}",
+    "requestPermission": "Запросить разрешение камеры"
   },
   "errors": {
     "configFormatError": "Неверный формат файла конфигурации",

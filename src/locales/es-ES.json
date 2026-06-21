@@ -303,7 +303,8 @@
     "saveScreenshot": "Guardar captura de pantalla",
     "notReady": "Cámara no lista",
     "notReadyDesc": "La cámara aún no está lista. Inténtelo de nuevo más tarde",
-    "photoName": "Captura {n}"
+    "photoName": "Captura {n}",
+    "requestPermission": "Solicitar permiso de cámara"
   },
   "errors": {
     "configFormatError": "Formato archivo config no válido",

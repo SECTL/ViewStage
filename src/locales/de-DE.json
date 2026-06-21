@@ -303,7 +303,8 @@
     "saveScreenshot": "Leinwand-Screenshot speichern",
     "notReady": "Kamera nicht bereit",
     "notReadyDesc": "Kamera ist noch nicht bereit, bitte versuchen Sie es später erneut",
-    "photoName": "Aufnahme {n}"
+    "photoName": "Aufnahme {n}",
+    "requestPermission": "Kameraberechtigung anfordern"
   },
   "errors": {
     "configFormatError": "Ungültiges Konfigurationsdateiformat",

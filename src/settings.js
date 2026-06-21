@@ -136,6 +136,82 @@ document.addEventListener('DOMContentLoaded', async () => {
                 item.classList.add('disabled');
             }
         });
+
+        const permissionItem = document.getElementById('cameraPermissionItem');
+        if (permissionItem) {
+            permissionItem.style.display = '';
+        }
+    }
+
+    function settings_show_camera() {
+        const cameraSettingItems = [
+            document.querySelector('#cameraSelect')?.closest('.setting-item'),
+            document.querySelector('#cameraResolutionSelect')?.closest('.setting-item'),
+            document.querySelector('#mirrorToggle')?.closest('.setting-item'),
+        ];
+        
+        cameraSettingItems.forEach(item => {
+            if (item) {
+                item.classList.remove('disabled');
+            }
+        });
+
+        const permissionItem = document.getElementById('cameraPermissionItem');
+        if (permissionItem) {
+            permissionItem.style.display = 'none';
+        }
+    }
+
+    async function settings_populate_camera_devices(selectedDeviceId) {
+        const cameraSelected = document.getElementById('cameraSelected');
+        const cameraOptionsContainer = document.getElementById('cameraOptions');
+        const cameraResolutionSelected = document.getElementById('cameraResolutionSelected');
+        if (!cameraSelected || !cameraOptionsContainer) return;
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+        cameraOptionsContainer.innerHTML = '';
+
+        if (videoDevices.length === 0) {
+            cameraSelected.textContent = window.i18n?.format_translate('settings.noCameraDetected') || '未检测到摄像头';
+            cameraResolutionSelected.textContent = '-';
+            settings_hide_camera();
+            return;
+        }
+
+        videoDevices.forEach((device, index) => {
+            const option = document.createElement('div');
+            option.className = 'select-option';
+            option.dataset.value = device.deviceId;
+            
+            const cameraText = window.i18n?.format_translate('camera.camera') || '摄像头';
+            let label = device.label || `${cameraText} ${index + 1}`;
+            if (label.includes('back') || label.includes('后置') || label.includes('rear')) {
+                label = `${window.i18n?.format_translate('camera.rearCamera') || '后置'}: ${label}`;
+            } else if (label.includes('front') || label.includes('前置') || label.includes('user')) {
+                label = `${window.i18n?.format_translate('camera.frontCamera') || '前置'}: ${label}`;
+            }
+            
+            option.textContent = label;
+            cameraOptionsContainer.appendChild(option);
+        });
+
+        if (selectedDeviceId) {
+            const cameraOptions = cameraOptionsContainer.querySelectorAll('.select-option');
+            cameraOptions.forEach(option => {
+                if (option.dataset.value === selectedDeviceId) {
+                    option.classList.add('selected');
+                    cameraSelected.textContent = option.textContent;
+                }
+            });
+        }
+
+        const firstSelected = cameraOptionsContainer.querySelector('.select-option.selected');
+        if (!firstSelected && cameraOptionsContainer.firstElementChild) {
+            cameraOptionsContainer.firstElementChild.classList.add('selected');
+            cameraSelected.textContent = cameraOptionsContainer.firstElementChild.textContent;
+        }
     }
     
     // ==================== 设置加载 ====================
@@ -169,7 +245,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const cameraResolutionSelected = document.getElementById('cameraResolutionSelected');
                 
                 let hasCameraPermission = false;
-                let hasCamera = false;
                 let cameraStream = null;
                 
                 try {
@@ -183,62 +258,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 if (cameraSelected && cameraOptionsContainer) {
                     try {
-                        const devices = await navigator.mediaDevices.enumerateDevices();
-                        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-                        hasCamera = videoDevices.length > 0;
-                        
-                        cameraOptionsContainer.innerHTML = '';
-                        
-                            if (!hasCameraPermission) {
-                                cameraSelected.textContent = window.i18n?.format_translate('settings.noCameraPermission') || '无摄像头权限';
-                                cameraResolutionSelected.textContent = '-';
-                                settings_hide_camera();
-                            } else if (videoDevices.length === 0) {
-                                cameraSelected.textContent = window.i18n?.format_translate('settings.noCameraDetected') || '未检测到摄像头';
-                                cameraResolutionSelected.textContent = '-';
-                                settings_hide_camera();
-                            } else {
-                                videoDevices.forEach((device, index) => {
-                                    const option = document.createElement('div');
-                                    option.className = 'select-option';
-                                    option.dataset.value = device.deviceId;
-                                    
-                                    const cameraText = window.i18n?.format_translate('camera.camera') || '摄像头';
-                                    let label = device.label || `${cameraText} ${index + 1}`;
-                                    if (label.includes('back') || label.includes('后置') || label.includes('rear')) {
-                                        label = `${window.i18n?.format_translate('camera.rearCamera') || '后置'}: ${label}`;
-                                    } else if (label.includes('front') || label.includes('前置') || label.includes('user')) {
-                                        label = `${window.i18n?.format_translate('camera.frontCamera') || '前置'}: ${label}`;
-                                    }
-                                    
-                                    option.textContent = label;
-                                    cameraOptionsContainer.appendChild(option);
-                                });
-                                
-                                if (settings.defaultCamera) {
-                                    const cameraOptions = cameraOptionsContainer.querySelectorAll('.select-option');
-                                    let found = false;
-                                    cameraOptions.forEach(option => {
-                                        if (option.dataset.value === settings.defaultCamera) {
-                                            cameraSelected.textContent = option.textContent;
-                                            option.classList.add('selected');
-                                            found = true;
-                                        } else {
-                                            option.classList.remove('selected');
-                                        }
-                                    });
-                                    
-                                    if (!found && cameraOptions.length > 0) {
-                                        cameraSelected.textContent = cameraOptions[0].textContent;
-                                        cameraOptions[0].classList.add('selected');
-                                    }
-                                } else {
-                                    const cameraOptions = cameraOptionsContainer.querySelectorAll('.select-option');
-                                    if (cameraOptions.length > 0) {
-                                        cameraSelected.textContent = cameraOptions[0].textContent;
-                                        cameraOptions[0].classList.add('selected');
-                                    }
-                                }
+                        if (!hasCameraPermission) {
+                            cameraSelected.textContent = window.i18n?.format_translate('settings.noCameraPermission') || '无摄像头权限';
+                            cameraResolutionSelected.textContent = '-';
+                            settings_hide_camera();
+                        } else {
+                            settings_show_camera();
+                            await settings_populate_camera_devices(settings.defaultCamera);
                         }
                     } catch (error) {
                         console.error('获取摄像头列表失败:', error);
@@ -250,7 +276,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 const cameraResolutionOptionsContainer = document.getElementById('cameraResolutionOptions');
                 
-                if (cameraResolutionSelected && cameraResolutionOptionsContainer && hasCameraPermission && hasCamera) {
+                if (cameraResolutionSelected && cameraResolutionOptionsContainer && hasCameraPermission) {
                     const selectedCameraOption = cameraOptionsContainer.querySelector('.select-option.selected');
                     const selectedCameraId = selectedCameraOption ? selectedCameraOption.dataset.value : null;
                     try {
@@ -325,8 +351,31 @@ document.addEventListener('DOMContentLoaded', async () => {
                             } else {
                                 opt.classList.remove('selected');
                             }
-                        });
-                    }
+        });
+    }
+
+    // 摄像头权限请求按钮
+    const cameraPermissionBtn = document.getElementById('cameraPermissionBtn');
+    if (cameraPermissionBtn) {
+        cameraPermissionBtn.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                stream.getTracks().forEach(t => t.stop());
+                const cameraSelected = document.getElementById('cameraSelected');
+                const cameraResolutionSelected = document.getElementById('cameraResolutionSelected');
+                if (cameraSelected) cameraSelected.textContent = window.i18n?.format_translate('common.loading') || '加载中...';
+                if (cameraResolutionSelected) cameraResolutionSelected.textContent = '-';
+                settings_show_camera();
+                await settings_populate_camera_devices();
+                const selectedOption = document.querySelector('#cameraOptions .select-option.selected');
+                if (selectedOption) {
+                    await settings_update_camera_resolution_options(selectedOption.dataset.value);
+                }
+            } catch (e) {
+                console.warn('摄像头权限请求失败:', e.name);
+            }
+        });
+    }
                 }
                 settings_load_dpr_select('dprMinSelect', 'dprMin', 1);
                 settings_load_dpr_select('dprMaxSelect', 'dprMax', 4);
