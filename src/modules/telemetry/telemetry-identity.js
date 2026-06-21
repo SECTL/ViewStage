@@ -1,22 +1,31 @@
 /**
  * 设备身份管理：UUID 生成/读取、device_type 判定
+ * UUID 由 Rust 后端持久化到 identity.json（%APPDATA%/SECTL/ViewStage/identity.json），
+ * 设备重置后保持不变。
  */
-
-import { STORAGE_KEY_INSTALL_ID } from './telemetry-config.js';
 
 /**
- * 读取或生成安装 UUID，持久化到 localStorage
+ * 读取或生成本机设备 UUID，由 Rust 后端持久化
  */
-export function getInstallUUID() {
+export async function getInstallUUID() {
     try {
-        let id = localStorage.getItem(STORAGE_KEY_INSTALL_ID);
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (invoke) {
+            const uuid = await invoke('get_device_uuid');
+            if (uuid) return uuid;
+        }
+    } catch (e) {
+        console.warn('[telemetry] failed to get device UUID from backend, using fallback:', e);
+    }
+    // fallback: localStorage
+    try {
+        let id = localStorage.getItem('viewstage_install_id');
         if (!id) {
             id = crypto.randomUUID();
-            localStorage.setItem(STORAGE_KEY_INSTALL_ID, id);
+            localStorage.setItem('viewstage_install_id', id);
         }
         return id;
     } catch (e) {
-        // localStorage 不可用时，返回临时 UUID
         console.warn('[telemetry] localStorage unavailable, using temp UUID');
         return crypto.randomUUID();
     }

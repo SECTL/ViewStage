@@ -119,7 +119,7 @@ export async function reportFieldValue(fieldKey, value, reportedBy = 'viewstage-
  */
 export async function reportOnline() {
     try {
-        const installId = getInstallUUID();
+        const installId = await getInstallUUID();
         const deviceType = getDeviceType();
         const geo = await getGeo();
         const cameraDevice = await getCameraDevices();
