@@ -124,7 +124,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // ==================== 摄像头设置禁用 ====================
-    function settings_hide_camera() {
+    /**
+     * @param {boolean} showPermissionBtn - 是否显示权限请求按钮（无权限时 true，无设备时 false）
+     */
+    function settings_hide_camera(showPermissionBtn = true) {
         const cameraSettingItems = [
             document.querySelector('#cameraSelect')?.closest('.setting-item'),
             document.querySelector('#cameraResolutionSelect')?.closest('.setting-item'),
@@ -139,7 +142,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const permissionItem = document.getElementById('cameraPermissionItem');
         if (permissionItem) {
-            permissionItem.style.display = '';
+            permissionItem.style.display = showPermissionBtn ? '' : 'none';
         }
     }
 
@@ -176,7 +179,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (videoDevices.length === 0) {
             cameraSelected.textContent = window.i18n?.format_translate('settings.noCameraDetected') || '未检测到摄像头';
             cameraResolutionSelected.textContent = '-';
-            settings_hide_camera();
+            settings_hide_camera(false);
             return;
         }
 
@@ -353,30 +356,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                             }
         });
     }
+}
 
-    // 摄像头权限请求按钮
-    const cameraPermissionBtn = document.getElementById('cameraPermissionBtn');
-    if (cameraPermissionBtn) {
-        cameraPermissionBtn.addEventListener('click', async () => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                stream.getTracks().forEach(t => t.stop());
-                const cameraSelected = document.getElementById('cameraSelected');
-                const cameraResolutionSelected = document.getElementById('cameraResolutionSelected');
-                if (cameraSelected) cameraSelected.textContent = window.i18n?.format_translate('common.loading') || '加载中...';
-                if (cameraResolutionSelected) cameraResolutionSelected.textContent = '-';
-                settings_show_camera();
-                await settings_populate_camera_devices();
-                const selectedOption = document.querySelector('#cameraOptions .select-option.selected');
-                if (selectedOption) {
-                    await settings_update_camera_resolution_options(selectedOption.dataset.value);
-                }
-            } catch (e) {
-                console.warn('摄像头权限请求失败:', e.name);
+// 摄像头权限请求按钮
+const cameraPermissionBtn = document.getElementById('cameraPermissionBtn');
+if (cameraPermissionBtn) {
+    cameraPermissionBtn.addEventListener('click', async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            stream.getTracks().forEach(t => t.stop());
+            const cameraSelected = document.getElementById('cameraSelected');
+            const cameraResolutionSelected = document.getElementById('cameraResolutionSelected');
+            if (cameraSelected) cameraSelected.textContent = window.i18n?.format_translate('common.loading') || '加载中...';
+            if (cameraResolutionSelected) cameraResolutionSelected.textContent = '-';
+            settings_show_camera();
+            await settings_populate_camera_devices();
+            const selectedOption = document.querySelector('#cameraOptions .select-option.selected');
+            if (selectedOption) {
+                await settings_update_camera_resolution_options(selectedOption.dataset.value);
             }
-        });
-    }
-                }
+        } catch (e) {
+            console.warn('摄像头权限请求失败:', e.name);
+        }
+    });
+}
                 settings_load_dpr_select('dprMinSelect', 'dprMin', 1);
                 settings_load_dpr_select('dprMaxSelect', 'dprMax', 4);
 
