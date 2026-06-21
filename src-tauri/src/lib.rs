@@ -73,7 +73,6 @@ struct AppPaths {
     updates_dir: std::path::PathBuf,
     config_path: std::path::PathBuf,
     device_path: std::path::PathBuf,
-    identity_path: std::path::PathBuf,
 }
 
 impl AppPaths {
@@ -92,7 +91,6 @@ impl AppPaths {
             updates_dir: data_dir.join("updates"),
             config_path: config_dir.join("config.json"),
             device_path: config_dir.join("device.json"),
-            identity_path: config_dir.join("identity.json"),
             config_dir,
             cache_dir,
         })
@@ -2183,14 +2181,19 @@ async fn device_detect_all(app: tauri::AppHandle) -> Result<DeviceInfo, String> 
     Ok(device_info)
 }
 
-/// Tauri IPC 命令：读取或生成本机设备 UUID，持久化到 identity.json
+/// Tauri IPC 命令：读取或生成本机设备 UUID，持久化到主程序目录 identity.json
 /// 确保设备重置（清空 localStorage / 重装）后 UUID 不变
 #[tauri::command]
-fn get_device_uuid(app: tauri::AppHandle) -> Result<String, String> {
-    let paths = AppPaths::new(&app)?;
+fn get_device_uuid() -> Result<String, String> {
+    let exe_dir = std::env::current_exe()
+        .map_err(|e| format!("获取程序路径失败: {}", e))?
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    let identity_path = exe_dir.join("identity.json");
 
-    if paths.identity_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&paths.identity_path) {
+    if identity_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&identity_path) {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                 if let Some(uuid) = val.get("device_uuid").and_then(|v| v.as_str()) {
                     if !uuid.is_empty() {
@@ -2204,10 +2207,10 @@ fn get_device_uuid(app: tauri::AppHandle) -> Result<String, String> {
     let uuid = uuid::Uuid::new_v4().to_string();
     let data = serde_json::json!({ "device_uuid": uuid });
 
-    if let Some(parent) = paths.identity_path.parent() {
+    if let Some(parent) = identity_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    std::fs::write(&paths.identity_path, serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?)
+    std::fs::write(&identity_path, serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?)
         .map_err(|e| format!("保存设备身份失败: {}", e))?;
 
     log::info!("设备 UUID 已生成/读取: {}", uuid);

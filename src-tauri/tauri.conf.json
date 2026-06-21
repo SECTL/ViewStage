@@ -47,7 +47,8 @@
     "windows": {
       "nsis": {
         "installerHooks": "./installer-hooks.nsh",
-        "languages": ["SimpChinese", "English"]
+        "languages": ["SimpChinese", "English"],
+        "installMode": "perMachine"
       }
     },
     "icon": [
