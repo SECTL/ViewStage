@@ -3916,7 +3916,7 @@ async fn camera_light_detect_and_save(app: tauri::AppHandle) -> bool {
                     }
                 }
             }
-            return false;
+            // seewoDetected 非 true（设备曾未检测到），重新检测以应对热插拔
         }
 
         let detected = camera_light::camera_light_detect();

@@ -429,8 +429,12 @@ async function main_init_all() {
         // 展台灯可用性检测（非阻塞，检测结果写入 device.json 后不再重复 HID 枚举）
         window.__TAURI__?.core?.invoke('camera_light_detect_and_save').then(detected => {
             window.__lightAvailable = detected;
-            if (!detected && dom.btnLight) {
-                dom.btnLight.classList.add('no-seewo');
+            if (dom.btnLight) {
+                if (detected) {
+                    dom.btnLight.classList.remove('no-seewo');
+                } else {
+                    dom.btnLight.classList.add('no-seewo');
+                }
             }
         }).catch(() => {});
 

@@ -705,6 +705,8 @@ class BlackboardManager {
             this._cancel_momentum();
             this.bb_state.cached_inv_scale = 1 / this._fetch_safe_scale();
 
+            if (this.drawing_engine.isPalmErasing) return;
+
             // 多指触摸时跳过首指以外的输入（留给 PinchZoomSource 处理）
             if (input.activeCount > 1) return;
 

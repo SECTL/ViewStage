@@ -1739,6 +1739,8 @@ function main_setup_gesture_system() {
         if (window.tileRenderer) window.tileRenderer.cancel_idle_shrink();
         main_cancel_smooth_transform();
 
+        if (state.isPalmErasing) return;
+
         state.drawCanvasRect = dom.canvasWrapper.getBoundingClientRect();
         state.currentPressure = ev.originEvent?.pressure || 0.5;
 
@@ -2817,10 +2819,11 @@ function main_get_palm_session() {
             defaultEraserSize: DRAW_CONFIG.palmEraserSize,
             getCanvasRect: () => dom.canvasWrapper.getBoundingClientRect(),
             getScale: main_fetch_safe_scale,
-            batchDrawManager,
             showHint: main_show_palm_eraser_hint,
             updateHint: main_update_palm_eraser_hint,
             hideHint: main_hide_palm_eraser_hint,
+            saveStrokePoint: (fromX, fromY, toX, toY, pressure) => main_save_stroke_point(fromX, fromY, toX, toY, pressure),
+            submitStroke: () => main_submit_stroke(),
             onSessionStart(stroke, session) {
                 state.isPalmErasing = true;
                 state.savedDrawMode = state.drawMode;
@@ -2832,6 +2835,8 @@ function main_get_palm_session() {
                 state.cachedDrawType = 'erase';
                 state.cachedDrawColor = '#000000';
                 state.cachedDrawLineWidth = session.palmEraserSize / main_fetch_safe_scale();
+                batchDrawManager.eraserShape = 'square';
+                batchDrawManager.batch_draw_init_start();
             },
             onSessionEnd() {
                 state.isPalmErasing = false;
@@ -2874,9 +2879,7 @@ function main_handle_pointer_down(e) {
 
     const palmResult = main_is_palm_pointer(e);
     if (palmResult.isPalm && DRAW_CONFIG.palmEraserEnabled) {
-        // 刚接触时根据接触面积计算大小，之后保持不变
-        const contactSize = Math.max(palmResult.width, palmResult.height) * window.__palmEraser.PALM_CONFIG.palmSizeMultiplier * window.__palmEraser.PALM_CONFIG.eraserSizeK;
-        const size = Math.max(40, Math.min(150, contactSize));
+        const size = window.__palmEraser.compute_palm_eraser_size_from_pointer(palmResult.width, palmResult.height);
         main_start_palm_erase(e.clientX, e.clientY, size);
         return;
     }

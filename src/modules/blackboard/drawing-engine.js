@@ -631,10 +631,10 @@ export class DrawingEngine {
         this._palmSession = new window.__palmEraser.PalmEraserSession({
             getCanvasRect: () => self.draw_canvas_rect,
             getScale: () => self._fetch_safe_scale(),
-            batchDrawManager: self.batch_draw,
             showHint: () => self._show_palm_eraser_hint(),
             updateHint: (cx, cy, size) => self._update_palm_eraser_hint(cx, cy, size),
             hideHint: () => self._hide_palm_eraser_hint(),
+            saveStrokePoint: (fromX, fromY, toX, toY, pressure) => self._save_stroke_point(fromX, fromY, toX, toY, pressure),
             submitStroke: () => self._submit_stroke(),
             onSessionStart(stroke, session) {
                 self.isPalmErasing = true;
@@ -645,7 +645,11 @@ export class DrawingEngine {
                 self.current_stroke = stroke;
                 self.cached_draw_type = 'erase';
                 self.cached_draw_color = '#000000';
-                self.cached_draw_line_width = session.palmEraserSize * session.cachedInvScale;
+                self.cached_draw_line_width = session.palmEraserSize / Math.max(0.001, self._fetch_safe_scale());
+                if (self.batch_draw) {
+                    self.batch_draw.batch_draw_init_start();
+                    self.batch_draw.eraserShape = 'square';
+                }
             },
             onSessionEnd() {
                 self.isPalmErasing = false;

@@ -2113,6 +2113,8 @@ class DocumentReaderManager {
             if (!this.is_open) return;
             this._dr_cancel_momentum();
 
+            if (this.isPalmErasing) return;
+
             // 手掌擦除 — PointerEvent 路径（触点宽高检测）
             if (window.PointerEvent && ev.originEvent?.pointerType) {
                 const palmEraser = window.__palmEraser;
@@ -2588,9 +2590,7 @@ class DocumentReaderManager {
         const palmEraser = window.__palmEraser;
         const palmResult = palmEraser ? palmEraser.is_palm_by_pointer(e) : { isPalm: false, width: 0, height: 0 };
         if (palmResult.isPalm && (window.DRAW_CONFIG?.palmEraserEnabled !== false)) {
-            // 刚接触时根据接触面积计算大小，之后保持不变
-            const contactSize = Math.max(palmResult.width, palmResult.height) * palmEraser.PALM_CONFIG.palmSizeMultiplier * palmEraser.PALM_CONFIG.eraserSizeK;
-            const size = Math.max(40, Math.min(150, contactSize));
+            const size = palmEraser.compute_palm_eraser_size_from_pointer(palmResult.width, palmResult.height);
             this._start_palm_erase(e.clientX, e.clientY, size);
             return;
         }
@@ -3326,10 +3326,10 @@ class DocumentReaderManager {
         this._palmSession = new window.__palmEraser.PalmEraserSession({
             getCanvasRect: () => self.draw_canvas_rect,
             getScale: () => Math.max(0.001, self.dr_scale || 1),
-            batchDrawManager: self.batch_draw,
             showHint: () => self._show_palm_eraser_hint(),
             updateHint: (cx, cy, size) => self._update_palm_eraser_hint(cx, cy, size),
             hideHint: () => self._hide_palm_eraser_hint(),
+            saveStrokePoint: (fromX, fromY, toX, toY, pressure) => self._save_stroke_point(fromX, fromY, toX, toY, pressure),
             submitStroke: () => self._submit_stroke(),
             onSessionStart(stroke, session) {
                 self.isPalmErasing = true;
@@ -3345,8 +3345,12 @@ class DocumentReaderManager {
                 if (page_data && !page_data.is_tiles_initialized) {
                     self._on_page_visible(self.active_page_index);
                 }
-                if (self.batch_draw && page_data?.tile_renderer) {
-                    self.batch_draw._tileRenderer = page_data.tile_renderer;
+                if (self.batch_draw) {
+                    self.batch_draw.batch_draw_init_start();
+                    self.batch_draw.eraserShape = 'square';
+                    if (page_data?.tile_renderer) {
+                        self.batch_draw._tileRenderer = page_data.tile_renderer;
+                    }
                 }
             },
             onSessionEnd() {
