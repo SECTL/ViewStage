@@ -2578,184 +2578,6 @@ class DocumentReaderManager {
         this._dr_apply_scale();
     }
 
-    _handle_pointer_down(e) {
-        if (!this.is_open) return;
-
-        // 多指触摸时只跟踪第一根手指（后续由 touch 事件处理）
-        if (e.pointerId !== undefined) {
-            if (this._active_pointer_id !== null && this._active_pointer_id !== e.pointerId) return;
-            this._active_pointer_id = e.pointerId;
-        }
-
-        const palmEraser = window.__palmEraser;
-        const palmResult = palmEraser ? palmEraser.is_palm_by_pointer(e) : { isPalm: false, width: 0, height: 0 };
-        if (palmResult.isPalm && (window.DRAW_CONFIG?.palmEraserEnabled !== false)) {
-            const size = palmEraser.compute_palm_eraser_size_from_pointer(palmResult.width, palmResult.height);
-            this._start_palm_erase(e.clientX, e.clientY, size);
-            return;
-        }
-
-        const target = e.target.closest('.doc-reader-page');
-        if (!target) return;
-
-        const page_index = parseInt(target.dataset.page);
-        if (isNaN(page_index)) return;
-
-        // 确保该页的 TileRenderer 已初始化
-        const page_data = this.page_manager.pages_list[page_index];
-        if (!page_data.is_tiles_initialized) {
-            this._on_page_visible(page_index);
-        }
-
-        this.active_page_index = page_index;
-        this.page_manager.switch_page(page_index);
-
-        // 切换 batch_draw 的 tileRenderer 引用
-        if (this.batch_draw) {
-            this.batch_draw._tileRenderer = page_data.tile_renderer;
-        }
-
-        // 同步翻页器显示（move 模式下拖拽结束后 _check_page_visibility 会再次修正）
-        this._update_page_indicator();
-        this._sync_page_buttons();
-
-        if (this.draw_mode === 'move') {
-            // 拖拽平移
-            e.preventDefault();
-            this._dr_cancel_momentum();
-            this.dr_is_dragging = true;
-            this.dr_start_drag_x = e.clientX - this.dr_canvas_x;
-            this.dr_start_drag_y = e.clientY - this.dr_canvas_y;
-            this._dr_last_canvas_x = this.dr_canvas_x;
-            this._dr_last_canvas_y = this.dr_canvas_y;
-            this._dr_gesture_vx = 0;
-            this._dr_gesture_vy = 0;
-
-            // will-change: 按需启用 GPU 合成层
-            this._dr_enable_smooth_transform();
-        } else if (this.draw_mode === 'comment' || this.draw_mode === 'eraser') {
-            e.preventDefault();
-            this.is_drawing = true;
-            // 批注时屏蔽浏览器原生滚动
-            if (this._scroll_container) {
-                this._scroll_container.style.touchAction = 'none';
-            }
-
-            const rect = target.getBoundingClientRect();
-            this.draw_canvas_rect = rect;
-            const inv = this.dr_cached_inv_scale;
-            this.last_x = (e.clientX - rect.left) * inv;
-            this.last_y = (e.clientY - rect.top) * inv;
-
-            // 首次绘制前确保 tile 已初始化（无批注页延迟创建）
-            this._ensure_page_tiles(this.active_page_index);
-
-            this._start_stroke(this.draw_mode === 'comment' ? 'draw' : 'erase');
-            if (this.draw_mode === 'eraser') {
-                this._show_eraser_hint();
-                this._update_eraser_hint_position(e.clientX, e.clientY);
-            }
-        }
-    }
-
-    _handle_pointer_move(e) {
-        if (this.isPalmErasing) {
-            this._update_palm_erase(e.clientX, e.clientY);
-            return;
-        }
-
-        // 拖拽平移
-        if (this.dr_is_dragging) {
-            e.preventDefault();
-
-            this.dr_canvas_x = e.clientX - this.dr_start_drag_x;
-            this.dr_canvas_y = e.clientY - this.dr_start_drag_y;
-            this._dr_update_canvas_position();
-            this._dr_update_gesture_velocity();
-            this._dr_sync_transform();
-            return;
-        }
-
-        if (!this.is_drawing || this.active_page_index < 0) return;
-
-        e.preventDefault();
-
-        this.current_pressure = e.pressure || 0.5;
-
-        if (this.draw_mode === 'eraser') {
-            this._update_eraser_hint_position(e.clientX, e.clientY);
-        }
-
-        const page_data = this.page_manager.pages_list[this.active_page_index];
-        if (!page_data?.page_element) return;
-
-        const rect = this.draw_canvas_rect || page_data.page_element.getBoundingClientRect();
-        const inv = this.dr_cached_inv_scale;
-        const x = (e.clientX - rect.left) * inv;
-        const y = (e.clientY - rect.top) * inv;
-
-        const dx = x - this.last_x;
-        const dy = y - this.last_y;
-        const dist_sq = dx * dx + dy * dy;
-
-        if (dist_sq > 1) {
-            this._save_stroke_point(this.last_x, this.last_y, x, y, this.current_pressure);
-
-            if (this.batch_draw && page_data.tile_renderer) {
-                this.batch_draw.batch_draw_create_command(
-                    this.cached_draw_type,
-                    this.last_x,
-                    this.last_y,
-                    x,
-                    y,
-                    this.cached_draw_color,
-                    this.cached_draw_line_width
-                );
-            }
-
-            this.last_x = x;
-            this.last_y = y;
-        }
-    }
-
-    async _handle_pointer_up(e) {
-        // 只处理活跃指针的释放（两指→一指过渡时忽略非活跃指针的 pointerup）
-        if (e.pointerId !== undefined && this._active_pointer_id !== null && e.pointerId !== this._active_pointer_id) {
-            return;
-        }
-        this._active_pointer_id = null;
-
-        if (this.isPalmErasing) {
-            await this._end_palm_erase();
-            return;
-        }
-        // 停止拖拽
-        if (this.dr_is_dragging) {
-            this.dr_is_dragging = false;
-
-            if (this.draw_mode === 'move' && (Math.abs(this._dr_gesture_vx) > 2 || Math.abs(this._dr_gesture_vy) > 2)) {
-                this._dr_update_move_bound();
-                this._dr_update_canvas_position();
-                this._dr_start_momentum();
-            } else {
-                // will-change: 延迟释放 GPU 合成层
-                this._dr_schedule_disable_smooth_transform();
-                this._check_page_visibility();
-            }
-            return;
-        }
-
-        if (!this.is_drawing) return;
-        this.is_drawing = false;
-        this.draw_canvas_rect = null;
-        if (this.draw_mode === 'eraser') this._hide_eraser_hint();
-        await this._submit_stroke();
-    }
-
-    _handle_mouse_down(e) { this._handle_pointer_down(e); }
-    _handle_mouse_move(e) { this._handle_pointer_move(e); }
-    async _handle_mouse_up(e) { await this._handle_pointer_up(e); }
-
     // ====== 笔画生命周期 — 复制自 main.js ======
 
     _start_stroke(type) {
@@ -2768,6 +2590,7 @@ class DocumentReaderManager {
             lineWidth: type === 'draw' ? DRAW_CONFIG.penWidth : baseEraserSize,
             eraserSize: baseEraserSize,
             eraserSizeRaw: DRAW_CONFIG.eraserSize,
+            eraserShape: 'square',
             ...(window.__eraserSpeed ? window.__eraserSpeed.eraser_speed_build_config(DRAW_CONFIG, 1) : { eraserSpeedEnabled: false }),
             scale: 1,
             bounds: { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
@@ -3183,7 +3006,20 @@ class DocumentReaderManager {
         }
     }
 
-    _set_draw_mode(mode) {
+    async _set_draw_mode(mode) {
+        if (this.is_drawing) {
+            this.is_drawing = false;
+            if (this.current_stroke) {
+                await this._submit_stroke();
+            }
+            if (this.batch_draw) {
+                this.batch_draw.batch_draw_delete_all();
+            }
+        }
+        if (this.isPalmErasing) {
+            await this._end_palm_erase();
+        }
+
         this.draw_mode = mode;
 
         const move_btn = document.getElementById('drBtnMove');

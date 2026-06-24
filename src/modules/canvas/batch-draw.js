@@ -43,6 +43,8 @@ class RealtimeBatchDrawManager {
         this._lastToY = null;
         this._speedBuffer = [];
         this._storedWidths = [];
+        this._segmentTimes = [];
+        this._penEffectMode = 'off';
         this._dirtyBoundsCanvas = null;
         this._limitedTailWidth = null;
 

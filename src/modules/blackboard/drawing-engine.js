@@ -223,6 +223,7 @@ export class DrawingEngine {
     _save_stroke_point(from_x, from_y, to_x, to_y, pressure) {
         const stroke = this.current_stroke;
         if (!stroke) return;
+        const DRAW_CONFIG = window.DRAW_CONFIG || {};
 
         const bounds = stroke.bounds;
         if (from_x < bounds.minX) bounds.minX = from_x;
@@ -397,6 +398,7 @@ export class DrawingEngine {
 
     handle_pointer_move(e) {
         e.preventDefault();
+        if (!this._painting_allowed) return;
 
         if (this.isPalmErasing) {
             this._update_palm_erase(e.clientX, e.clientY);
@@ -465,6 +467,7 @@ export class DrawingEngine {
 
     handle_mouse_move(e) {
         e.preventDefault();
+        if (!this._painting_allowed) return;
         if (this.draw_mode === 'eraser' && this.is_drawing) {
             this._update_eraser_hint_position(e.clientX, e.clientY);
         }
