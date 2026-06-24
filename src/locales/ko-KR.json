@@ -114,6 +114,8 @@
     "backgroundColor": "배경색",
     "dprLimit": "표시 품질",
     "dprAuto": "자동",
+    "overlayDpr": "그리기 DPR",
+    "overlayDprAuto": "자동",
     "frameRateMode": "프레임 속도",
     "frameRateLow": "낮음",
     "frameRateAdaptive": "자동",

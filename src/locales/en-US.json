@@ -119,6 +119,8 @@
     "backgroundColor": "Background",
     "dprLimit": "Display Quality",
     "dprAuto": "Auto",
+    "overlayDpr": "Drawing DPR",
+    "overlayDprAuto": "Auto",
     "frameRateMode": "Frame Rate",
     "frameRateLow": "Low",
     "frameRateAdaptive": "Auto",

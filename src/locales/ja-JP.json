@@ -114,6 +114,8 @@
     "backgroundColor": "背景色",
     "dprLimit": "表示品質",
     "dprAuto": "自動",
+    "overlayDpr": "描画時 DPR",
+    "overlayDprAuto": "自動",
     "frameRateMode": "フレームレート",
     "frameRateLow": "低",
     "frameRateAdaptive": "自動",

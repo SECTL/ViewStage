@@ -3182,8 +3182,6 @@ window.main_render_strokes_to_context = main_render_strokes_to_context;
 
 function main_init_compact() { historyCompactor.initCompaction(); }
 
-async function main_handle_compact_strokes() { await historyCompactor.handleCompactStrokes(); }
-
 async function main_handle_undo() {
     historyCompactor.cancelCompaction();
     state.baseImageLoadId++;
@@ -4267,8 +4265,6 @@ function main_update_camera_video_style() { cameraManager.updateVideoStyle(); }
 function main_apply_camera_filters() { cameraManager.applyFilters(); }
 async function main_save_camera_image() { await cameraManager.saveImage(); }
 function main_update_camera_frame_rate(idealFps) { cameraManager.updateFrameRate(idealFps); }
-function main_create_camera_video() { cameraManager._createVideo(); }
-function main_create_camera_controls() { cameraManager.updatePhotoButtonState(); }
 
 function main_delete_sidebar_selection() {
     document.querySelectorAll('.sidebar:not(.file-sidebar) .sidebar-image-item').forEach(item => {
@@ -4280,8 +4276,6 @@ function main_delete_sidebar_selection() {
     state.currentImageIndex = -1;
     state.currentFolderPageIndex = -1;
 }
-
-async function main_format_blob_to_data_url(blob) { return camera_format_blob_to_data_url(blob); }
 
 function main_show_sidebar_if_hidden() {
     const sidebar = document.querySelector('.sidebar');

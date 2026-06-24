@@ -42,26 +42,6 @@ pub struct ImageSaveResult {
     pub enhanced_data: Option<String>,
 }
 
-/// 笔画中的单条线段
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StrokePoint {
-    pub from_x: f32,
-    pub from_y: f32,
-    pub to_x: f32,
-    pub to_y: f32,
-}
-
-/// 单笔笔画（绘制或擦除），由多线段组成
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Stroke {
-    #[serde(rename = "type")]
-    pub stroke_type: String,
-    pub points: Vec<StrokePoint>,
-    pub color: Option<String>,
-    pub line_width: Option<u32>,
-    pub eraser_size: Option<f32>,
-}
-
 // ==================== 系统目录 ====================
 
 /// 集中管理应用所有存储路径
@@ -924,6 +904,42 @@ fn image_save_file(image_data: String, prefix: Option<String>) -> Result<ImageSa
     })
 }
 
+// ==================== WebView2 摄像头/麦克风权限 ====================
+
+/// 为 WebView2 注册 PermissionRequested 事件处理，自动允许摄像头和麦克风权限
+#[cfg(target_os = "windows")]
+fn register_webview_permission_handler(webview: &tauri::Webview) {
+    use webview2_com::{Microsoft::Web::WebView2::Win32::*, PermissionRequestedEventHandler};
+    let _ = webview.with_webview(|pwv| unsafe {
+        let controller = pwv.controller();
+        let core_webview = match controller.CoreWebView2() {
+            Ok(w) => w,
+            Err(_) => return,
+        };
+        let mut token: i64 = 0;
+        let _ = core_webview.add_PermissionRequested(
+            &PermissionRequestedEventHandler::create(Box::new(|_webview, args| {
+                if let Some(args) = args {
+                    let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
+                    let _ = args.PermissionKind(&mut kind);
+                    match kind {
+                        COREWEBVIEW2_PERMISSION_KIND_CAMERA
+                        | COREWEBVIEW2_PERMISSION_KIND_MICROPHONE => {
+                            let _ = args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW);
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(())
+            })),
+            &mut token,
+        );
+    });
+}
+
+#[cfg(not(target_os = "windows"))]
+fn register_webview_permission_handler(_webview: &tauri::Webview) {}
+
 // ==================== 全局状态 ====================
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -958,6 +974,8 @@ async fn window_show_settings(app: tauri::AppHandle) -> Result<(), String> {
     .center()
     .build()
     .map_err(|e| format!("Failed to create settings window: {}", e))?;
+
+    register_webview_permission_handler(window.as_ref());
     
     window.set_focus().map_err(|e| format!("Failed to focus new settings window: {}", e))?;
 
@@ -3987,6 +4005,7 @@ pub fn app_init_run() {
             };
             
             let _ = window.set_decorations(false);
+            register_webview_permission_handler(window.as_ref());
             
             let config_dir = match app.path().app_config_dir() {
                 Ok(d) => d,
@@ -4025,6 +4044,7 @@ pub fn app_init_run() {
                 };
                 
                 let _ = oobe_window.set_focus();
+                register_webview_permission_handler(oobe_window.as_ref());
                 
                 if let Some(splashscreen) = app.get_webview_window("splashscreen") {
                     let _ = splashscreen.close();

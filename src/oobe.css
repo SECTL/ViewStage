@@ -608,7 +608,7 @@ body {
   min-width: 160px;
 }
 
-.custom-select .selected {
+.custom-select .select-selected {
   padding: 7px 12px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -623,11 +623,11 @@ body {
   transition: border-color 0.15s ease;
 }
 
-.custom-select .selected:hover {
+.custom-select .select-selected:hover {
   border-color: var(--color-border-hover);
 }
 
-.custom-select .selected::after {
+.custom-select .select-selected::after {
   content: '';
   border: solid var(--color-text-muted);
   border-width: 0 2px 2px 0;
@@ -637,12 +637,12 @@ body {
   margin-top: -2px;
 }
 
-.custom-select.open .selected::after {
+.custom-select.open .select-selected::after {
   transform: rotate(-135deg);
   margin-top: 2px;
 }
 
-.custom-select .options {
+.custom-select .select-options {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
@@ -660,19 +660,19 @@ body {
   z-index: 50;
 }
 
-.custom-select .options.up {
+.custom-select .select-options.up {
   top: auto;
   bottom: calc(100% + 4px);
   transform: translateY(4px);
 }
 
-.custom-select.open .options {
+.custom-select.open .select-options {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
 }
 
-.custom-select .option {
+.custom-select .select-option {
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 500;
@@ -681,12 +681,12 @@ body {
   transition: background 0.1s ease;
 }
 
-.custom-select .option:hover {
+.custom-select .select-option:hover {
   background: var(--color-bg);
   color: var(--color-text);
 }
 
-.custom-select .option.selected {
+.custom-select .select-option.selected {
   background: var(--color-primary-light);
   color: var(--color-primary);
 }

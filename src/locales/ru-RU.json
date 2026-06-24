@@ -114,6 +114,8 @@
     "backgroundColor": "Фон",
     "dprLimit": "Качество отображения",
     "dprAuto": "Авто",
+    "overlayDpr": "DPR рисования",
+    "overlayDprAuto": "Авто",
     "frameRateMode": "Частота кадров",
     "frameRateLow": "Низкая",
     "frameRateAdaptive": "Авто",

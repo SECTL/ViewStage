@@ -114,6 +114,8 @@
     "backgroundColor": "Arrière-plan",
     "dprLimit": "Qualité d'affichage",
     "dprAuto": "Auto",
+    "overlayDpr": "DPR de dessin",
+    "overlayDprAuto": "Auto",
     "frameRateMode": "Taux de rafraîchissement",
     "frameRateLow": "Bas",
     "frameRateAdaptive": "Auto",

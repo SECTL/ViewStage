@@ -114,6 +114,8 @@
     "backgroundColor": "Fondo",
     "dprLimit": "Calidad de visualización",
     "dprAuto": "Auto",
+    "overlayDpr": "DPR de dibujo",
+    "overlayDprAuto": "Auto",
     "frameRateMode": "Tasa de fotogramas",
     "frameRateLow": "Baja",
     "frameRateAdaptive": "Auto",

@@ -220,6 +220,20 @@
                             </div>
                         </div>
 
+                        <div class="setting-item" id="overlayDprItem">
+                            <span class="setting-label" data-i18n="settings.overlayDpr">叠加层 DPR</span>
+                            <div class="custom-select" id="overlayDprSelect">
+                                <div class="select-selected" id="overlayDprSelected">2x</div>
+                                <div class="select-options" id="overlayDprOptions">
+                                    <div class="select-option" data-value="0"><span data-i18n="settings.overlayDprAuto">自动</span></div>
+                                    <div class="select-option" data-value="0.5">0.5x</div>
+                                    <div class="select-option" data-value="1">1x</div>
+                                    <div class="select-option" data-value="1.5">1.5x</div>
+                                    <div class="select-option" data-value="2">2x</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="setting-item flex-start">
                             <span class="setting-label" data-i18n="settings.penColors">画笔颜色</span>
                             <div class="color-editor" id="colorEditor">
@@ -381,10 +395,6 @@
                 
                 <div class="page" id="pageSource">
                     <h2 class="page-title" data-i18n="settings.sourceAdjust">信号源调节</h2>
-                    <div class="setting-item" id="cameraPermissionItem" style="display:none">
-                        <span class="setting-label"></span>
-                        <button class="btn btn-primary" id="cameraPermissionBtn" data-i18n="camera.requestPermission">请求摄像头权限</button>
-                    </div>
                     <div class="setting-item">
                         <span class="setting-label" data-i18n="settings.defaultCamera">默认摄像头</span>
                         <div class="custom-select" id="cameraSelect">

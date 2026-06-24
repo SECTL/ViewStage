@@ -13,7 +13,6 @@ async function developer_options_init() {
     let savedDevMode = true;
     let savedFrameDelta = 60;
     let savedTailDuration = 50;
-let savedOverlayDpr = 0;
 
     if (invoke) {
         try {
@@ -35,9 +34,6 @@ let savedOverlayDpr = 0;
             savedTailDuration = window.DRAW_CONFIG?.penTailDuration
                 ?? s.penTailDuration
                 ?? 30;
-            savedOverlayDpr = window.DRAW_CONFIG?.overlayDpr
-                ?? s.overlayDpr
-                ?? 0;
         } catch (_) {
             savedWidthRatio = window.DRAW_CONFIG?.penMinWidthRatio ?? 0.4;
             savedMaxScale = window.DRAW_CONFIG?.maxScaleImage ?? 4;
@@ -47,7 +43,7 @@ let savedOverlayDpr = 0;
         savedMaxScale = window.DRAW_CONFIG?.maxScaleImage ?? 4;
     }
 
-    developer_options_show_main(savedWidthRatio, savedMaxScale, savedPerfMonitor, savedPerfInterval, savedDevMode, savedFrameDelta, savedTailDuration, savedOverlayDpr);
+    developer_options_show_main(savedWidthRatio, savedMaxScale, savedPerfMonitor, savedPerfInterval, savedDevMode, savedFrameDelta, savedTailDuration);
 }
 
 const PERF_INTERVAL_OPTIONS = [
@@ -62,7 +58,7 @@ function _perf_interval_label(ms) {
     return opt ? `${_tk(opt.i18nKey)}（${ms}ms）` : `${ms}ms`;
 }
 
-function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMonitorEnabled, perfMonitorInterval, devModeEnabled, currentFrameDelta, currentTailDuration, currentOverlayDpr) {
+function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMonitorEnabled, perfMonitorInterval, devModeEnabled, currentFrameDelta, currentTailDuration) {
     const page = document.getElementById('pageDevOptions');
     if (!page) return;
     const devModeOn = devModeEnabled !== false;
@@ -109,16 +105,6 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
         || `${currentFrameDelta}px`;
 
     const currentTailDurationVal = currentTailDuration ?? 30;
-
-    const overlayDprPresets = [
-        { value: '0', label: _displayDefault },
-        { value: '0.5', label: '0.5x' },
-        { value: '1', label: '1x' },
-        { value: '1.5', label: '1.5x' },
-        { value: '2', label: '2x' },
-    ];
-    const currentOverlayDprLabel = overlayDprPresets.find(p => parseFloat(p.value) === currentOverlayDpr)?.label
-        || `${currentOverlayDpr}x`;
 
     page.innerHTML = `
         <h2 class="page-title">${_tk('developer.title')}</h2>
@@ -181,17 +167,6 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
             </div>
         </div>
         <div class="setting-item">
-            <span class="setting-label">${_tk('developer.overlayDpr')}</span>
-            <div class="custom-select" id="devOverlayDprSelect" data-select-up="always">
-                <div class="select-selected" id="devOverlayDprSelected">${currentOverlayDprLabel}</div>
-                <div class="select-options" id="devOverlayDprOptions">
-                    ${overlayDprPresets.map(p => `
-                        <div class="select-option${parseFloat(p.value) === currentOverlayDpr ? ' selected' : ''}" data-value="${p.value}">${p.label}</div>
-                    `).join('')}
-                </div>
-            </div>
-        </div>
-        <div class="setting-item">
             <span class="setting-label">${_tk('developer.tailDuration')}</span>
             <div style="display:flex;align-items:center;gap:6px;">
                 <input type="number" id="devTailDurationInput" class="dev-number-input" value="${currentTailDurationVal}" min="0" max="500" step="1">
@@ -211,65 +186,10 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
     document.getElementById('devGoDetection')?.addEventListener('click', developer_options_show_detection);
     document.getElementById('devGoMemclean')?.addEventListener('click', developer_options_show_memclean);
 
-    // 统一接管所有自定义下拉框的展开/关闭（使用 fixed 定位避免 CSS 类冲突）
-    function devClearSelectOpts(sel) {
-        const o = sel.querySelector('.select-options');
-        if (!o) return;
-        o.style.position = '';
-        o.style.left = '';
-        o.style.top = '';
-        o.style.bottom = '';
-        o.style.minWidth = '';
-        o.style.transform = '';
-        o.style.opacity = '';
-        o.style.visibility = '';
+    // 初始化下拉框（复用 settings.js 的统一逻辑）
+    if (typeof window.settings_init_all_selects === 'function') {
+        window.settings_init_all_selects();
     }
-    function devCloseAllSelects() {
-        document.querySelectorAll('#pageDevOptions .custom-select.open').forEach(s => {
-            s.classList.remove('open');
-            devClearSelectOpts(s);
-        });
-    }
-    document.addEventListener('click', devCloseAllSelects);
-    page.querySelectorAll('.custom-select').forEach(select => {
-        const selected = select.querySelector('.select-selected');
-        if (!selected) return;
-        const opts = select.querySelector('.select-options');
-        if (!opts) return;
-        selected.addEventListener('click', (e) => {
-            e.stopPropagation();
-            page.querySelectorAll('.custom-select.open').forEach(s => {
-                if (s !== select) {
-                    s.classList.remove('open');
-                    devClearSelectOpts(s);
-                }
-            });
-            const isOpen = select.classList.toggle('open');
-            if (isOpen) {
-                const rect = selected.getBoundingClientRect();
-                void opts.offsetHeight;
-                const spaceBelow = window.innerHeight - rect.bottom;
-                const spaceAbove = rect.top;
-                const needed = opts.scrollHeight || 180;
-                const showUp = select.dataset.selectUp === 'always' || (spaceBelow < needed && spaceAbove > spaceBelow);
-                opts.style.position = 'fixed';
-                opts.style.left = rect.left + 'px';
-                opts.style.minWidth = rect.width + 'px';
-                opts.style.opacity = '1';
-                opts.style.visibility = 'visible';
-                opts.style.transform = 'translateY(0)';
-                if (showUp) {
-                    opts.style.top = '';
-                    opts.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
-                } else {
-                    opts.style.top = (rect.bottom + 4) + 'px';
-                    opts.style.bottom = '';
-                }
-            } else {
-                devClearSelectOpts(select);
-            }
-        });
-    });
 
     // 开发者模式开关
     (function setup_dev_mode_toggle() {
@@ -427,41 +347,6 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
                     invoke('settings_save_all', { settings: { penTailDuration: val, developerMode: true } });
                 }
             }, 300);
-        });
-    })();
-
-    // 叠加层 DPR 选择器
-    (function setup_overlay_dpr_select() {
-        const select = document.getElementById('devOverlayDprSelect');
-        const selected = document.getElementById('devOverlayDprSelected');
-        const options = document.querySelectorAll('#devOverlayDprOptions .select-option');
-
-        if (!select || !selected) return;
-
-        options.forEach(opt => {
-            opt.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const v = parseFloat(opt.dataset.value);
-                selected.textContent = opt.textContent;
-                options.forEach(o => o.classList.remove('selected'));
-                opt.classList.add('selected');
-                select.classList.remove('open');
-                devClearSelectOpts(select);
-
-                if (window.DRAW_CONFIG) {
-                    window.DRAW_CONFIG.overlayDpr = v;
-                }
-                if (invoke) {
-                    invoke('settings_save_all', { settings: { overlayDpr: v, developerMode: true } });
-                }
-                // 立即同步所有 overlay
-                window.sync_all_overlay_dpr?.();
-                // 提示重启
-                const restartModal = document.getElementById('restartModal');
-                if (restartModal) {
-                    restartModal.classList.add('active');
-                }
-            });
         });
     })();
 

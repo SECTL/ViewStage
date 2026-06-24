@@ -272,14 +272,14 @@ function gatherStepData(step) {
 }
 
 function saveCameraSettings() {
-  const devOpt = $('#cameraSelect .option.selected');
+  const devOpt = $('#cameraSelect .select-option.selected');
   if (devOpt) state.cameraDeviceId = devOpt.dataset.value;
-  const resOpt = $('#cameraResolutionSelect .option.selected');
+  const resOpt = $('#cameraResolutionSelect .select-option.selected');
   if (resOpt) {
     state.cameraWidth = parseInt(resOpt.dataset.width);
     state.cameraHeight = parseInt(resOpt.dataset.height);
   }
-  const rotOpt = $('#defaultRotationSelect .option.selected');
+  const rotOpt = $('#defaultRotationSelect .select-option.selected');
   if (rotOpt) state.defaultRotation = parseInt(rotOpt.dataset.value);
 }
 
@@ -424,22 +424,22 @@ const STEP_TPL = [
         <div class="select-row">
           <label>${_t('settings.defaultCamera')}</label>
           <div class="custom-select" id="cameraSelect">
-            <div class="selected" id="cameraSelected">${_t('common.loading')}</div>
-            <div class="options" id="cameraOptions"></div>
+            <div class="select-selected" id="cameraSelected">${_t('common.loading')}</div>
+            <div class="select-options" id="cameraOptions"></div>
           </div>
         </div>
         <div class="select-row">
           <label>${_t('settings.cameraResolution')}</label>
           <div class="custom-select" id="cameraResolutionSelect">
-            <div class="selected" id="cameraResolutionSelected">${_t('common.loading')}</div>
-            <div class="options" id="cameraResolutionOptions"></div>
+            <div class="select-selected" id="cameraResolutionSelected">${_t('common.loading')}</div>
+            <div class="select-options" id="cameraResolutionOptions"></div>
           </div>
         </div>
         <div class="select-row">
           <label>${_t('settings.defaultRotation')}</label>
           <div class="custom-select" id="defaultRotationSelect">
-            <div class="selected" id="defaultRotationSelected">0° ${_t('settings.rotationNone')}</div>
-            <div class="options" id="defaultRotationOptions"></div>
+            <div class="select-selected" id="defaultRotationSelected">0° ${_t('settings.rotationNone')}</div>
+            <div class="select-options" id="defaultRotationOptions"></div>
           </div>
         </div>
       </div>
@@ -904,7 +904,7 @@ async function initCamera() {
     camOptions.innerHTML = '';
     state.cameraDevices.forEach((d, i) => {
       const opt = document.createElement('div');
-      opt.className = 'option' + (i === 0 ? ' selected' : '');
+      opt.className = 'select-option' + (i === 0 ? ' selected' : '');
       opt.dataset.value = d.deviceId;
       opt.textContent = d.label || `${_t('camera.camera')} ${i + 1}`;
       camOptions.appendChild(opt);
@@ -965,7 +965,7 @@ async function initResolutionSelect(stream) {
   options.innerHTML = '';
   filtered.forEach((r, i) => {
     const opt = document.createElement('div');
-    opt.className = 'option' + (i === defIdx ? ' selected' : '');
+    opt.className = 'select-option' + (i === defIdx ? ' selected' : '');
     opt.dataset.width = r.w;
     opt.dataset.height = r.h;
     opt.dataset.value = `${r.w}×${r.h}`;
@@ -976,41 +976,105 @@ async function initResolutionSelect(stream) {
   selected.textContent = def.label;
 }
 
-function positionOptions(sel, options) {
-  const rect = sel.getBoundingClientRect();
-  const spaceBelow = window.innerHeight - rect.bottom;
-  const spaceAbove = rect.top;
-  const needed = options.scrollHeight || 180;
-  options.classList.toggle('up', spaceBelow < needed && spaceAbove > spaceBelow);
-}
-
 // ==================== Custom Selects ====================
 function setupCustomSelects() {
-  $$('.custom-select').forEach(sel => {
-    if (sel.dataset.oobeInit) return;
-    sel.dataset.oobeInit = 'true';
+  function closeOneSelect(s) {
+    s.classList.remove('open');
+    const opts = document.querySelector('body > .select-options[data-owner="' + s.dataset.selectId + '"]');
+    if (opts) {
+      opts.style.opacity = '0';
+      opts.style.visibility = 'hidden';
+      setTimeout(() => {
+        if (!s.classList.contains('open')) {
+          s.appendChild(opts);
+          opts.classList.remove('up');
+          opts.style.position = '';
+          opts.style.left = '';
+          opts.style.top = '';
+          opts.style.bottom = '';
+          opts.style.minWidth = '';
+          opts.style.transform = '';
+        }
+      }, 200);
+    }
+  }
 
-    const selected = sel.querySelector('.selected');
-    const options = sel.querySelector('.options');
+  function closeAllSelects() {
+    $$('.custom-select.open').forEach(s => closeOneSelect(s));
+  }
 
-    selected?.addEventListener('click', (e) => {
+  document.removeEventListener('click', closeAllSelects);
+  document.addEventListener('click', closeAllSelects);
+
+  let selectId = 0;
+  $$('.custom-select').forEach(select => {
+    const selected = select.querySelector('.select-selected');
+    if (!selected || select.dataset.selectInitialized) return;
+    select.dataset.selectInitialized = 'true';
+    const id = 'sel_' + (selectId++);
+    select.dataset.selectId = id;
+    const opts = select.querySelector('.select-options');
+    if (opts) opts.dataset.owner = id;
+
+    selected.addEventListener('click', (e) => {
       e.stopPropagation();
-      $$('.custom-select.open').forEach(s => { if (s !== sel) s.classList.remove('open'); });
-      sel.classList.toggle('open');
-      if (sel.classList.contains('open')) {
-        positionOptions(sel, options);
+      $$('.custom-select.open').forEach(s => {
+        if (s !== select) closeOneSelect(s);
+      });
+      const isOpen = select.classList.toggle('open');
+      if (opts) {
+        if (isOpen) {
+          const rect = selected.getBoundingClientRect();
+          if (opts.parentNode !== document.body) {
+            document.body.appendChild(opts);
+          }
+          opts.style.visibility = 'hidden';
+          opts.style.opacity = '1';
+          void opts.offsetHeight;
+          const spaceBelow = window.innerHeight - rect.bottom;
+          const spaceAbove = rect.top;
+          const needed = opts.scrollHeight || 180;
+          const showUp = select.dataset.selectUp === 'always' || (spaceBelow < needed && spaceAbove > spaceBelow);
+          opts.classList.toggle('up', showUp);
+          opts.style.position = 'fixed';
+          opts.style.left = rect.left + 'px';
+          if (showUp) {
+            opts.style.top = '';
+            opts.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+          } else {
+            opts.style.top = (rect.bottom + 4) + 'px';
+            opts.style.bottom = '';
+          }
+          opts.style.minWidth = rect.width + 'px';
+          opts.style.opacity = '1';
+          opts.style.visibility = 'visible';
+          opts.style.transform = 'translateY(0)';
+        } else {
+          if (opts.parentNode !== select) {
+            select.appendChild(opts);
+          }
+          opts.classList.remove('up');
+          opts.style.position = '';
+          opts.style.left = '';
+          opts.style.top = '';
+          opts.style.bottom = '';
+          opts.style.minWidth = '';
+          opts.style.opacity = '';
+          opts.style.visibility = '';
+          opts.style.transform = '';
+        }
       }
     });
 
-    options?.addEventListener('click', async (e) => {
-      const opt = e.target.closest('.option');
+    opts?.addEventListener('click', async (e) => {
+      const opt = e.target.closest('.select-option');
       if (!opt) return;
       selected.textContent = opt.textContent;
-      $$('.option', options).forEach(o => o.classList.remove('selected'));
+      $$('.select-option', opts).forEach(o => o.classList.remove('selected'));
       opt.classList.add('selected');
-      sel.classList.remove('open');
+      closeOneSelect(select);
 
-      if (sel.id === 'cameraSelect') {
+      if (select.id === 'cameraSelect') {
         try {
           const deviceId = opt.dataset.value;
           if (state.cameraStream) {
@@ -1026,11 +1090,11 @@ function setupCustomSelects() {
         }
       }
 
-      if (sel.id === 'cameraResolutionSelect') {
+      if (select.id === 'cameraResolutionSelect') {
         applyCameraResolution();
       }
 
-      if (sel.id === 'defaultRotationSelect') {
+      if (select.id === 'defaultRotationSelect') {
         applyCameraRotation();
       }
     });
@@ -1052,7 +1116,7 @@ function initDefaultRotationSelect() {
     { value: 270, label: _t('settings.rotationCounterClockwise') },
   ];
   options.innerHTML = rotations.map(r => `
-    <div class="option${state.defaultRotation === r.value ? ' selected' : ''}" data-value="${r.value}">
+    <div class="select-option${state.defaultRotation === r.value ? ' selected' : ''}" data-value="${r.value}">
       ${r.value}° (${r.label})
     </div>
   `).join('');
@@ -1061,7 +1125,7 @@ function initDefaultRotationSelect() {
 }
 
 function applyCameraResolution() {
-  const resOpt = $('#cameraResolutionSelect .option.selected');
+  const resOpt = $('#cameraResolutionSelect .select-option.selected');
   if (!resOpt || !state.cameraStream) return;
   const w = parseInt(resOpt.dataset.width);
   const h = parseInt(resOpt.dataset.height);
@@ -1072,7 +1136,7 @@ function applyCameraResolution() {
 }
 
 function applyCameraRotation() {
-  const rotOpt = $('#defaultRotationSelect .option.selected');
+  const rotOpt = $('#defaultRotationSelect .select-option.selected');
   if (!rotOpt) return;
   const deg = parseInt(rotOpt.dataset.value);
   state.defaultRotation = deg;

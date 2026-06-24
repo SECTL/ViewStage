@@ -5534,7 +5534,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "viewstage"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -5558,6 +5558,8 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
+ "webview2-com",
+ "windows 0.61.3",
  "windows-sys 0.59.0",
  "winreg 0.52.0",
  "zip",

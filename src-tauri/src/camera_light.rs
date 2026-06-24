@@ -113,16 +113,7 @@ pub fn camera_light_start() -> Result<(), String> {
     Ok(())
 }
 
-/// 停止后台监控
-#[allow(dead_code)]
-pub fn camera_light_stop() {
-    if let Ok(mut guard) = MONITOR.lock() {
-        if let Some(m) = guard.take() {
-            m.running.store(false, Ordering::Relaxed);
-            // 线程会在下次 read 出错或检查 running 后退出
-        }
-    }
-}
+
 
 /// 开灯
 pub fn camera_light_set_on() -> Result<(), String> {
