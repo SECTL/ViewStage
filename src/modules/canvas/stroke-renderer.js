@@ -4,6 +4,23 @@ export function getPenEffectMode() {
     return window.DRAW_CONFIG?.penEffectMode || 'off';
 }
 
+function _render_segment_ellipse(ctx, fromX, fromY, toX, toY, lineWidth, color) {
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const segLen = Math.sqrt(dx * dx + dy * dy);
+    const halfW = Math.max(0.5, lineWidth) / 2;
+    const cx = (fromX + toX) / 2;
+    const cy = (fromY + toY) / 2;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    if (segLen < 0.5) {
+        ctx.arc(cx, cy, halfW, 0, Math.PI * 2);
+    } else {
+        ctx.ellipse(cx, cy, segLen / 2, halfW, Math.atan2(dy, dx), 0, Math.PI * 2);
+    }
+    ctx.fill();
+}
+
 /**
  * 按原始顺序逐个绘制笔画：draw/comment 用 source-over，erase 用 destination-out
  * 优化：可变宽度段按线宽分组合并连续段到同一条路径，减少 stroke() 调用
@@ -73,10 +90,12 @@ export async function renderStrokesToContext(ctx, strokes, options = {}) {
 
             if (pen_effect !== 'off' && stroke.type === 'draw' && penManager) {
                 batch_flush();
-                const tessellated = penManager.build_tessellated_stroke(stroke, pen_effect);
-                if (tessellated) {
-                    penManager.render_tessellated_stroke(ctx, tessellated, 1);
-                    continue;
+                if (!window.batchDrawManager?.ellipseMode) {
+                    const tessellated = penManager.build_tessellated_stroke(stroke, pen_effect);
+                    if (tessellated) {
+                        penManager.render_tessellated_stroke(ctx, tessellated, 1);
+                        continue;
+                    }
                 }
             }
 
@@ -94,6 +113,23 @@ export async function renderStrokesToContext(ctx, strokes, options = {}) {
                 if (eraser) eraser.renderEraseStroke(ctx, stroke, baseLineWidth);
                 continue;
             }
+
+            if (window.batchDrawManager?.ellipseMode) {
+                for (let i = 0; i < stroke.points.length; i++) {
+                    const point = stroke.points[i];
+                    let lineWidth;
+                    if (hasStoredWidths && stroke.storedWidths[i] !== undefined) {
+                        lineWidth = stroke.storedWidths[i];
+                    } else if (hasVariableWidths && stroke.variableWidths[i] !== undefined) {
+                        lineWidth = stroke.variableWidths[i];
+                    } else {
+                        lineWidth = baseLineWidth;
+                    }
+                    _render_segment_ellipse(ctx, point.fromX, point.fromY, point.toX, point.toY, lineWidth, strokeColor);
+                }
+                continue;
+            }
+
             let varBatchActive = false;
             let varBatchWidth = 0;
             let varPrevMidX = 0, varPrevMidY = 0;
@@ -138,6 +174,17 @@ export async function renderStrokesToContext(ctx, strokes, options = {}) {
             batch_flush();
             const eraser = window.__eraser;
             if (eraser) eraser.renderEraseStroke(ctx, stroke, baseLineWidth);
+            continue;
+        }
+
+        if (window.batchDrawManager?.ellipseMode) {
+            if (batchActive) batch_flush();
+            batchColor = strokeColor;
+            batchIsErase = (stroke.type === 'erase');
+            for (let i = 0; i < stroke.points.length; i++) {
+                const p = stroke.points[i];
+                _render_segment_ellipse(ctx, p.fromX, p.fromY, p.toX, p.toY, baseLineWidth, strokeColor);
+            }
             continue;
         }
 

@@ -59,6 +59,7 @@ class RealtimeBatchDrawManager {
 
         this._tileRenderer = null;
         this.eraserShape = 'square';
+        this.ellipseMode = false;
     }
 
     /**
@@ -403,6 +404,23 @@ class RealtimeBatchDrawManager {
     }
 
 
+    _draw_segment_ellipse(ctx, fromX, fromY, toX, toY, lineWidth, color) {
+        const dx = toX - fromX;
+        const dy = toY - fromY;
+        const segLen = Math.sqrt(dx * dx + dy * dy);
+        const halfW = Math.max(0.5, lineWidth) / 2;
+        const cx = (fromX + toX) / 2;
+        const cy = (fromY + toY) / 2;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        if (segLen < 0.5) {
+            ctx.arc(cx, cy, halfW, 0, Math.PI * 2);
+        } else {
+            ctx.ellipse(cx, cy, segLen / 2, halfW, Math.atan2(dy, dx), 0, Math.PI * 2);
+        }
+        ctx.fill();
+    }
+
     batch_draw_handle_flush() {
         const count = this.pendingCount;
         if (count === 0) return;
@@ -506,37 +524,41 @@ class RealtimeBatchDrawManager {
             } else if (this._overlayCtx) {
                 const ctx = this._overlayCtx;
 
-                const needsBreak = batchFirst ||
-                    (cmd.color && cmd.color !== batchColor) ||
-                    Math.abs(lineWidth - batchWidth) >= 0.5;
+                if (this.ellipseMode) {
+                    this._draw_segment_ellipse(ctx, fromX, fromY, toX, toY, lineWidth, cmd.color || currentColor);
+                } else {
+                    const needsBreak = batchFirst ||
+                        (cmd.color && cmd.color !== batchColor) ||
+                        Math.abs(lineWidth - batchWidth) >= 0.5;
 
-                if (needsBreak) {
-                    if (!batchFirst) ctx.stroke();
-                    if (cmd.color) ctx.strokeStyle = cmd.color;
-                    ctx.lineWidth = Math.max(0.5, lineWidth);
-                    batchColor = cmd.color;
-                    batchWidth = lineWidth;
-                    ctx.beginPath();
+                    if (needsBreak) {
+                        if (!batchFirst) ctx.stroke();
+                        if (cmd.color) ctx.strokeStyle = cmd.color;
+                        ctx.lineWidth = Math.max(0.5, lineWidth);
+                        batchColor = cmd.color;
+                        batchWidth = lineWidth;
+                        ctx.beginPath();
 
-                    const midX = (fromX + toX) / 2;
-                    const midY = (fromY + toY) / 2;
-                    const isFirstSeg = (i === 0 && (this._strokeStart || this._lastMidX === null));
-                    if (isFirstSeg) {
-                        ctx.moveTo(fromX, fromY);
-                        ctx.lineTo(midX, midY);
-                    } else if (batchFirst) {
-                        const prevMx = (i === 0 ? this._lastMidX : ((commands[i - 1].fromX + commands[i - 1].toX) / 2));
-                        const prevMy = (i === 0 ? this._lastMidY : ((commands[i - 1].fromY + commands[i - 1].toY) / 2));
-                        ctx.moveTo(prevMx, prevMy);
-                        ctx.quadraticCurveTo(fromX, fromY, midX, midY);
+                        const midX = (fromX + toX) / 2;
+                        const midY = (fromY + toY) / 2;
+                        const isFirstSeg = (i === 0 && (this._strokeStart || this._lastMidX === null));
+                        if (isFirstSeg) {
+                            ctx.moveTo(fromX, fromY);
+                            ctx.lineTo(midX, midY);
+                        } else if (batchFirst) {
+                            const prevMx = (i === 0 ? this._lastMidX : ((commands[i - 1].fromX + commands[i - 1].toX) / 2));
+                            const prevMy = (i === 0 ? this._lastMidY : ((commands[i - 1].fromY + commands[i - 1].toY) / 2));
+                            ctx.moveTo(prevMx, prevMy);
+                            ctx.quadraticCurveTo(fromX, fromY, midX, midY);
+                        } else {
+                            ctx.quadraticCurveTo(fromX, fromY, midX, midY);
+                        }
+                        batchFirst = false;
                     } else {
+                        const midX = (fromX + toX) / 2;
+                        const midY = (fromY + toY) / 2;
                         ctx.quadraticCurveTo(fromX, fromY, midX, midY);
                     }
-                    batchFirst = false;
-                } else {
-                    const midX = (fromX + toX) / 2;
-                    const midY = (fromY + toY) / 2;
-                    ctx.quadraticCurveTo(fromX, fromY, midX, midY);
                 }
             }
 
@@ -672,6 +694,7 @@ class RealtimeBatchDrawManager {
         this.lastDrawTime = performance.now();
         this._penEffectMode = 'off';
         this._strokeStart = true;
+        this.ellipseMode = window.DRAW_CONFIG?.ellipseStrokeEnabled === true;
         this._totalSegments = 0;
         this._lastMidX = null;
         this._lastMidY = null;
@@ -709,7 +732,6 @@ class RealtimeBatchDrawManager {
                 const ctx = this._overlayCtx;
                 const cfg = window.DRAW_CONFIG || {};
                 ctx.globalCompositeOperation = 'source-over';
-                ctx.strokeStyle = cfg.penColor || '#3498db';
                 this._limitedTailWidth = this.lastLineWidth || 5;
                 if (this._penEffectMode === 'limited') {
                     const baseW = cfg.penWidth || 5;
@@ -729,15 +751,21 @@ class RealtimeBatchDrawManager {
                         this._limitedTailWidth = Math.max(this._limitedTailWidth, baseW * minRatio);
                     }
                 }
-                ctx.lineWidth = Math.max(0.5, this._limitedTailWidth);
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.beginPath();
-                ctx.moveTo(this._lastMidX, this._lastMidY);
-                const endCpx = 2 * this._lastMidX - this._lastToX;
-                const endCpy = 2 * this._lastMidY - this._lastToY;
-                ctx.quadraticCurveTo(endCpx, endCpy, this._lastToX, this._lastToY);
-                ctx.stroke();
+                if (this.ellipseMode) {
+                    this._draw_segment_ellipse(ctx, this._lastMidX, this._lastMidY, this._lastToX, this._lastToY,
+                        this._limitedTailWidth, cfg.penColor || '#3498db');
+                } else {
+                    ctx.strokeStyle = cfg.penColor || '#3498db';
+                    ctx.lineWidth = Math.max(0.5, this._limitedTailWidth);
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(this._lastMidX, this._lastMidY);
+                    const endCpx = 2 * this._lastMidX - this._lastToX;
+                    const endCpy = 2 * this._lastMidY - this._lastToY;
+                    ctx.quadraticCurveTo(endCpx, endCpy, this._lastToX, this._lastToY);
+                    ctx.stroke();
+                }
             }
         }
 

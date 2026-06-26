@@ -347,6 +347,7 @@
     "maxScale": "允許縮放的最大大小",
     "frameDelta": "單幀手勢位移上限",
     "tailDuration": "筆跡收尾時長",
+    "ellipseStroke": "橢圓筆跡渲染",
     "overlayDpr": "疊加層 DPR（繪製預覽）",
     "detectionTitle": "文件載入檢測",
     "detectMsOffice": "Microsoft Office（COM）",

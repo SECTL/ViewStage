@@ -13,6 +13,7 @@ async function developer_options_init() {
     let savedDevMode = true;
     let savedFrameDelta = 60;
     let savedTailDuration = 50;
+    let savedEllipseStroke = false;
 
     if (invoke) {
         try {
@@ -34,6 +35,7 @@ async function developer_options_init() {
             savedTailDuration = window.DRAW_CONFIG?.penTailDuration
                 ?? s.penTailDuration
                 ?? 30;
+            savedEllipseStroke = s.ellipseStrokeEnabled === true;
         } catch (_) {
             savedWidthRatio = window.DRAW_CONFIG?.penMinWidthRatio ?? 0.4;
             savedMaxScale = window.DRAW_CONFIG?.maxScaleImage ?? 4;
@@ -43,7 +45,7 @@ async function developer_options_init() {
         savedMaxScale = window.DRAW_CONFIG?.maxScaleImage ?? 4;
     }
 
-    developer_options_show_main(savedWidthRatio, savedMaxScale, savedPerfMonitor, savedPerfInterval, savedDevMode, savedFrameDelta, savedTailDuration);
+    developer_options_show_main(savedWidthRatio, savedMaxScale, savedPerfMonitor, savedPerfInterval, savedDevMode, savedFrameDelta, savedTailDuration, savedEllipseStroke);
 }
 
 const PERF_INTERVAL_OPTIONS = [
@@ -58,7 +60,7 @@ function _perf_interval_label(ms) {
     return opt ? `${_tk(opt.i18nKey)}（${ms}ms）` : `${ms}ms`;
 }
 
-function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMonitorEnabled, perfMonitorInterval, devModeEnabled, currentFrameDelta, currentTailDuration) {
+function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMonitorEnabled, perfMonitorInterval, devModeEnabled, currentFrameDelta, currentTailDuration, ellipseStrokeEnabled) {
     const page = document.getElementById('pageDevOptions');
     if (!page) return;
     const devModeOn = devModeEnabled !== false;
@@ -176,6 +178,13 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
         <div class="setting-item">
             <span class="setting-label">${_tk('memclean.title')}</span>
             <span id="devGoMemclean" style="cursor:pointer;font-size:18px;color:var(--color-muted, #888);padding:4px;">→</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-label">${_tk('developer.ellipseStroke')}</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="devEllipseStrokeToggle"${ellipseStrokeEnabled ? ' checked' : ''}>
+                <span class="toggle-slider"></span>
+            </label>
         </div>
         <div class="setting-item">
             <span class="setting-label">${_tk('developer.docDetection')}</span>
@@ -347,6 +356,33 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
                     invoke('settings_save_all', { settings: { penTailDuration: val, developerMode: true } });
                 }
             }, 300);
+        });
+    })();
+
+    // 椭圆笔迹渲染开关
+    (function setup_ellipse_stroke_toggle() {
+        const toggle = document.getElementById('devEllipseStrokeToggle');
+        if (!toggle) return;
+        toggle.addEventListener('change', () => {
+            const enabled = toggle.checked;
+            if (window.DRAW_CONFIG) {
+                window.DRAW_CONFIG.ellipseStrokeEnabled = enabled;
+            }
+            if (window.batchDrawManager) {
+                window.batchDrawManager.ellipseMode = enabled;
+            }
+            // 同步到阅读器和黑板的独立 batch_draw 实例
+            const docReader = window.__documentReaderManager;
+            if (docReader?.batch_draw) {
+                docReader.batch_draw.ellipseMode = enabled;
+            }
+            const bb = window.blackboardManager;
+            if (bb?.drawing_engine?.batch_draw) {
+                bb.drawing_engine.batch_draw.ellipseMode = enabled;
+            }
+            if (invoke) {
+                invoke('settings_save_all', { settings: { ellipseStrokeEnabled: enabled } });
+            }
         });
     })();
 

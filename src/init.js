@@ -318,6 +318,12 @@ async function settings_load_camera_config() {
             if (settings.developerMode && settings.penTailDuration !== undefined) {
                 DRAW_CONFIG.penTailDuration = Number(settings.penTailDuration) || 0;
             }
+            if (settings.ellipseStrokeEnabled === true) {
+                DRAW_CONFIG.ellipseStrokeEnabled = true;
+                if (window.batchDrawManager) {
+                    window.batchDrawManager.ellipseMode = true;
+                }
+            }
             // 仅在开发者模式下才检查并加载性能监视器
             if (settings.developerMode && settings.perfMonitorEnabled) {
                 try {
