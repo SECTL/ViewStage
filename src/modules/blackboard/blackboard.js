@@ -707,21 +707,48 @@ class BlackboardManager {
 
             if (this.drawing_engine.isPalmErasing) return;
 
-            // 多指触摸时跳过首指以外的输入（留给 PinchZoomSource 处理）
-            if (input.activeCount > 1) return;
+            // 缩放中不处理任何状态切换，直到手势结束重置
+            if (this.bb_state.is_zooming) return;
 
-            // 手掌擦除 — TouchEvent 路径（非 PointerEvent，4+ 触点数）
-            if (!window.PointerEvent && (window.DRAW_CONFIG?.palmEraserEnabled !== false) && ev.originEvent?.touches?.length >= 4) {
-                if (is_palm_by_touch_count(ev.originEvent.touches)) {
-                    if (this.drawing_engine.is_drawing || this.drawing_engine.current_stroke) {
-                        this.drawing_engine.is_drawing = false;
-                        await this.drawing_engine._submit_stroke();
+            // 4+ 触点手掌检测（所有设备路径统一处理）
+            if ((window.DRAW_CONFIG?.palmEraserEnabled !== false) && input.activeCount >= 4) {
+                const palmEraser = window.__palmEraser;
+                if (palmEraser) {
+                    let isPalm = false;
+                    let centerX = 0, centerY = 0;
+
+                    if (ev.originEvent?.touches) {
+                        // TouchEvent 路径
+                        isPalm = palmEraser.is_palm_by_touch_count(ev.originEvent.touches);
+                        if (isPalm) {
+                            const c = palmEraser.get_palm_center(ev.originEvent.touches);
+                            centerX = c.x;
+                            centerY = c.y;
+                        }
+                    } else {
+                        // PointerEvent 路径
+                        const positions = input.getActivePositions();
+                        isPalm = palmEraser.is_palm_by_positions(positions);
+                        if (isPalm) {
+                            const c = palmEraser.get_palm_center_from_positions(positions);
+                            centerX = c.x;
+                            centerY = c.y;
+                        }
                     }
-                    const center = get_palm_center(ev.originEvent.touches);
-                    this.drawing_engine._start_palm_erase(center.x, center.y, window.DRAW_CONFIG?.palmEraserSize || 60);
-                    return;
+
+                    if (isPalm) {
+                        if (this.drawing_engine.is_drawing || this.drawing_engine.current_stroke) {
+                            this.drawing_engine.is_drawing = false;
+                            await this.drawing_engine._submit_stroke();
+                        }
+                        this.drawing_engine._start_palm_erase(centerX, centerY, window.DRAW_CONFIG?.palmEraserSize || 60);
+                        return;
+                    }
                 }
             }
+
+            // 多指触摸时跳过首指以外的输入（留给 PinchZoomSource 处理）
+            if (input.activeCount > 1) return;
 
             // 拖拽平移（move 模式）
             if (this.draw_mode === 'move') {

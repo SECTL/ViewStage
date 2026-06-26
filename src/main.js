@@ -1741,10 +1741,13 @@ function main_setup_gesture_system() {
 
         if (state.isPalmErasing) return;
 
+        // 缩放中不处理任何状态切换（手掌检测/绘制），直到手势结束重置
+        if (state.isScaling) return;
+
         state.drawCanvasRect = dom.canvasWrapper.getBoundingClientRect();
         state.currentPressure = ev.originEvent?.pressure || 0.5;
 
-        // PointerEvent 路径：通过触点宽高检测手掌
+        // PointerEvent 路径：通过触点宽高检测手掌（单个触点面积大 → 手掌）
         if (window.PointerEvent && DRAW_CONFIG.palmEraserEnabled && ev.originEvent?.pointerType) {
             const palmResult = main_is_palm_pointer(ev.originEvent);
             if (palmResult.isPalm) {
@@ -1758,18 +1761,41 @@ function main_setup_gesture_system() {
             }
         }
 
-        // 非 PointerEvent 路径：4+ 触点检测手掌
-        if (!window.PointerEvent && DRAW_CONFIG.palmEraserEnabled
-            && input.activeCount >= 4 && ev.originEvent?.touches) {
+        // 4+ 触点手掌检测（所有设备路径统一处理）
+        // 在 PointerEvent 设备上，4 指同时触摸也可能误触；需要与宽度/高度检测互补
+        if (DRAW_CONFIG.palmEraserEnabled && input.activeCount >= 4) {
             const palmEraser = window.__palmEraser;
-            if (palmEraser && palmEraser.is_palm_by_touch_count(ev.originEvent.touches)) {
-                if (state.isDrawing) {
-                    state.isDrawing = false;
-                    main_hide_drawing_mode();
+            if (palmEraser) {
+                let isPalm = false;
+                let centerX = 0, centerY = 0;
+
+                if (ev.originEvent?.touches) {
+                    // TouchEvent 路径
+                    isPalm = palmEraser.is_palm_by_touch_count(ev.originEvent.touches);
+                    if (isPalm) {
+                        const c = palmEraser.get_palm_center(ev.originEvent.touches);
+                        centerX = c.x;
+                        centerY = c.y;
+                    }
+                } else {
+                    // PointerEvent 路径：使用已注册的活跃触点位置
+                    const positions = input.getActivePositions();
+                    isPalm = palmEraser.is_palm_by_positions(positions);
+                    if (isPalm) {
+                        const c = palmEraser.get_palm_center_from_positions(positions);
+                        centerX = c.x;
+                        centerY = c.y;
+                    }
                 }
-                const center = palmEraser.get_palm_center(ev.originEvent.touches);
-                main_start_palm_erase(center.x, center.y, DRAW_CONFIG.palmEraserSize);
-                return;
+
+                if (isPalm) {
+                    if (state.isDrawing) {
+                        state.isDrawing = false;
+                        main_hide_drawing_mode();
+                    }
+                    main_start_palm_erase(centerX, centerY, DRAW_CONFIG.palmEraserSize);
+                    return;
+                }
             }
         }
 
@@ -1861,7 +1887,9 @@ function main_setup_gesture_system() {
             await main_submit_stroke();
             if (state.drawMode === 'eraser') main_hide_eraser_hint();
         }
-        dom.canvasWrapper.classList.remove('dragging');
+        if (!state.isScaling) {
+            dom.canvasWrapper.classList.remove('dragging');
+        }
     });
 
     // ------- 拖拽手势（用于 move 模式平移） -------
@@ -1921,10 +1949,11 @@ function main_setup_gesture_system() {
         if (state.isDrawing) {
             state.isDrawing = false;
             main_hide_drawing_mode();
-            state.currentStroke = null;
-            if (window.batchDrawManager) {
-                window.batchDrawManager.batch_draw_delete_all();
+            // flush 最后一段并提交到历史，保留已有批注内容不丢失
+            if (ev.finger0) {
+                main_flush_last_segment(ev.finger0.x, ev.finger0.y);
             }
+            main_submit_stroke();
         }
 
         state.isScaling = true;
@@ -2248,6 +2277,11 @@ async function main_update_mode(mode) {
     dom.canvasWrapper.classList.remove('drawing', 'dragging');
     
     state.drawMode = mode;
+    
+    // 批注模式下延迟缩放启动，防止绘画中误触
+    if (window._gesturePinch) {
+        window._gesturePinch.startDelayMs = (mode !== 'move') ? 200 : 0;
+    }
     
     switch (mode) {
         case 'move':

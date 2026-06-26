@@ -33,14 +33,7 @@ export function compute_palm_eraser_size_from_pointer(width, height) {
 
 export function is_palm_by_touch_count(touches) {
     if (touches.length < PALM_CONFIG.fallbackTouchCount) return false;
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const t of touches) {
-        if (t.clientX < minX) minX = t.clientX;
-        if (t.clientX > maxX) maxX = t.clientX;
-        if (t.clientY < minY) minY = t.clientY;
-        if (t.clientY > maxY) maxY = t.clientY;
-    }
-    return Math.max(maxX - minX, maxY - minY) < PALM_CONFIG.fallbackSpread;
+    return is_palm_by_positions(touches, 'clientX', 'clientY', PALM_CONFIG.fallbackSpread);
 }
 
 export function get_palm_center(touches) {
@@ -50,6 +43,29 @@ export function get_palm_center(touches) {
         cy += t.clientY;
     }
     return { x: cx / touches.length, y: cy / touches.length };
+}
+
+export function is_palm_by_positions(positions, keyX = 'x', keyY = 'y', spreadThreshold = PALM_CONFIG.fallbackSpread) {
+    if (positions.length < PALM_CONFIG.fallbackTouchCount) return false;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of positions) {
+        const px = typeof p[keyX] === 'number' ? p[keyX] : p.x;
+        const py = typeof p[keyY] === 'number' ? p[keyY] : p.y;
+        if (px < minX) minX = px;
+        if (px > maxX) maxX = px;
+        if (py < minY) minY = py;
+        if (py > maxY) maxY = py;
+    }
+    return Math.max(maxX - minX, maxY - minY) < spreadThreshold;
+}
+
+export function get_palm_center_from_positions(positions, keyX = 'x', keyY = 'y') {
+    let cx = 0, cy = 0;
+    for (const p of positions) {
+        cx += typeof p[keyX] === 'number' ? p[keyX] : p.x;
+        cy += typeof p[keyY] === 'number' ? p[keyY] : p.y;
+    }
+    return { x: cx / positions.length, y: cy / positions.length };
 }
 
 /**

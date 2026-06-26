@@ -2115,6 +2115,9 @@ class DocumentReaderManager {
 
             if (this.isPalmErasing) return;
 
+            // 缩放中不处理任何状态切换，直到手势结束重置
+            if (this.dr_is_scaling) return;
+
             // 手掌擦除 — PointerEvent 路径（触点宽高检测）
             if (window.PointerEvent && ev.originEvent?.pointerType) {
                 const palmEraser = window.__palmEraser;
@@ -2131,18 +2134,41 @@ class DocumentReaderManager {
                 }
             }
 
-            // 手掌擦除 — TouchEvent 路径（4+ 触点数）
-            if (!window.PointerEvent && (window.DRAW_CONFIG?.palmEraserEnabled !== false) && ev.originEvent?.touches?.length >= 4) {
+            // 4+ 触点手掌检测（所有设备路径统一处理）
+            if ((window.DRAW_CONFIG?.palmEraserEnabled !== false) && input.activeCount >= 4) {
                 const palmEraser = window.__palmEraser;
-                if (palmEraser && palmEraser.is_palm_by_touch_count(ev.originEvent.touches)) {
-                    if (this.is_drawing) {
-                        this.is_drawing = false;
-                        this.draw_canvas_rect = null;
-                        await this._submit_stroke();
+                if (palmEraser) {
+                    let isPalm = false;
+                    let centerX = 0, centerY = 0;
+
+                    if (ev.originEvent?.touches) {
+                        // TouchEvent 路径
+                        isPalm = palmEraser.is_palm_by_touch_count(ev.originEvent.touches);
+                        if (isPalm) {
+                            const c = palmEraser.get_palm_center(ev.originEvent.touches);
+                            centerX = c.x;
+                            centerY = c.y;
+                        }
+                    } else {
+                        // PointerEvent 路径
+                        const positions = input.getActivePositions();
+                        isPalm = palmEraser.is_palm_by_positions(positions);
+                        if (isPalm) {
+                            const c = palmEraser.get_palm_center_from_positions(positions);
+                            centerX = c.x;
+                            centerY = c.y;
+                        }
                     }
-                    const center = palmEraser.get_palm_center(ev.originEvent.touches);
-                    this._start_palm_erase(center.x, center.y, window.DRAW_CONFIG?.palmEraserSize || 60);
-                    return;
+
+                    if (isPalm) {
+                        if (this.is_drawing) {
+                            this.is_drawing = false;
+                            this.draw_canvas_rect = null;
+                            await this._submit_stroke();
+                        }
+                        this._start_palm_erase(centerX, centerY, window.DRAW_CONFIG?.palmEraserSize || 60);
+                        return;
+                    }
                 }
             }
 
@@ -2214,8 +2240,8 @@ class DocumentReaderManager {
 
             // 拖拽平移
             if (this.dr_is_dragging) {
-                // 缩放进行中且尚未收到缩放 delta：仅处理原始拖拽手指，忽略第二指
-                if (this.dr_is_scaling && ev.id !== this._dragFingerId) return;
+                // 缩放进行中：拖拽与缩放锚点冲突，完全交由 pinch 处理位置
+                if (this.dr_is_scaling) return;
 
                 this.dr_canvas_x = ev.position.x - this.dr_start_drag_x;
                 this.dr_canvas_y = ev.position.y - this.dr_start_drag_y;
@@ -2270,8 +2296,12 @@ class DocumentReaderManager {
             }
 
             if (this.dr_is_dragging) {
-                // 缩放进行中且尚未收到缩放 delta：仅响应原始拖拽手指抬起，忽略误触手指
-                if (this.dr_is_scaling && ev.id !== this._dragFingerId) return;
+                // 缩放进行中：拖拽位置已不准确，跳过 momentum 避免抖动
+                if (this.dr_is_scaling) {
+                    this.dr_is_dragging = false;
+                    this._dr_schedule_disable_smooth_transform();
+                    return;
+                }
                 this.dr_is_dragging = false;
                 if (this.draw_mode === 'move' && (Math.abs(this._dr_gesture_vx) > 2 || Math.abs(this._dr_gesture_vy) > 2)) {
                     this._dr_update_move_bound();
@@ -2294,6 +2324,7 @@ class DocumentReaderManager {
         // ====== 两指捏合缩放 ======
         const pinch = new PinchZoomSource(input);
         this._pinch_source = pinch;
+        pinch.startDelayMs = (this.draw_mode !== 'move') ? 200 : 0;
 
         pinch.onPinchStarted = () => {
             if (!this.is_open) return;
