@@ -50,7 +50,6 @@ export class CameraManager {
                 });
                 const track = probe.getVideoTracks()[0];
                 const caps = track.getCapabilities();
-                track.stop();
                 probe.getTracks().forEach(t => t.stop());
                 if (caps.width?.max) maxW = caps.width.max;
                 if (caps.height?.max) maxH = caps.height.max;

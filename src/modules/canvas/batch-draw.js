@@ -47,6 +47,7 @@ class RealtimeBatchDrawManager {
         this._penEffectMode = 'off';
         this._dirtyBoundsCanvas = null;
         this._limitedTailWidth = null;
+        this._strokeGroupId = 0;
 
         this._overlayCanvas = null;
         this._overlayCtx = null;
@@ -70,9 +71,9 @@ class RealtimeBatchDrawManager {
      * @returns {number} 覆盖层 DPR
      */
     _calc_overlay_dpr(scale) {
-        const cfg = window.DRAW_CONFIG;
+        const cfg = window.DRAW_CONFIG ?? {};
         if (cfg.overlayDpr != null && cfg.overlayDpr > 0) return cfg.overlayDpr;
-        if (cfg.dynamicDprEnabled === false) return Math.min(cfg.dpr, 2);
+        if (cfg.dynamicDprEnabled === false) return Math.min(cfg.dpr ?? 1, 2);
         return 1;
     }
 
@@ -547,10 +548,8 @@ class RealtimeBatchDrawManager {
         ctx.fill();
 
         /* 节点填充圆（所有节点都补圆消除缺口，防止锯齿） */
-        const patchIdx = new Set();
-        for (let i = 0; i < m; i++) patchIdx.add(i);
-        for (const idx of patchIdx) {
-            const n = nodes[idx];
+        for (let i = 0; i < m; i++) {
+            const n = nodes[i];
             const r = Math.max(0.5, n.w) / 2;
             ctx.beginPath();
             ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
@@ -902,7 +901,6 @@ class RealtimeBatchDrawManager {
         }
 
         this.batch_draw_handle_flush();
-        this._sync_overlay_transform();
 
         if (this._lastMidX !== null && this._lastToX !== null) {
             if (this._overlayCtx) {

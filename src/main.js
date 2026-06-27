@@ -314,17 +314,6 @@ class RealPenManager {
         return 0;
     }
     
-    calc_line_width(baseWidth, velocity, pressure = 0.5) {
-        const speedScale = Math.max(0.4, Math.min(2.5, baseWidth / 4));
-        const maxSpeed = 2.5 * speedScale;
-        const minSpeed = 0.2 * speedScale;
-        const clamped = Math.max(0, Math.min(1, (velocity - minSpeed) / (maxSpeed - minSpeed)));
-        const eased = clamped * clamped * (3 - 2 * clamped);
-        const speedFactor = 1 - eased * 0.75;
-        const pressureFactor = 1.5 * pressure + 0.25;
-        return baseWidth * speedFactor * pressureFactor;
-    }
-
     build_tessellated_stroke(stroke, mode = null) {
         this.init_tessellator();
         if (!this.tessellator) return null;
