@@ -73,12 +73,7 @@ class RealtimeBatchDrawManager {
         const cfg = window.DRAW_CONFIG;
         if (cfg.overlayDpr != null && cfg.overlayDpr > 0) return cfg.overlayDpr;
         if (cfg.dynamicDprEnabled === false) return Math.min(cfg.dpr, 2);
-        /* 匹配贴块每逻辑单位像素密度，使 overlay 与贴块渲染一致 */
-        const baseDpr = cfg.baseDpr || window.devicePixelRatio || 1;
-        const step = cfg.dprStep || 0.25;
-        const maxDpr = cfg.dprMax || 4;
-        const tileDpr = Math.max(1, Math.min(maxDpr, Math.ceil(baseDpr * scale / step) * step));
-        return Math.max(1, Math.min(tileDpr / scale, window.devicePixelRatio || 2));
+        return 1;
     }
 
     update_overlay_dpr(scale, force) {
@@ -848,6 +843,7 @@ class RealtimeBatchDrawManager {
         this._segmentTimes = [];
         this._dirtyBoundsCanvas = null;
         this._limitedTailWidth = null;
+        this.ellipseMode = window.DRAW_CONFIG?.ellipseStrokeEnabled === true;
         this.clear_overlay();
     }
 
