@@ -245,7 +245,6 @@ const DRAW_CONFIG = {
     momentumEnabled: false,
     minScale: 0.5,
     maxScale: 3,
-    maxScaleCamera: 2,
     maxScaleImage: 4,
     canvasW: 1000,
     canvasH: 600,
@@ -1977,7 +1976,7 @@ function main_setup_gesture_system() {
 
     pinch.onPinchDelta = (ev) => {
         if (!state.isScaling) return;
-        const maxScale = state.isCameraOpen ? DRAW_CONFIG.maxScaleCamera : DRAW_CONFIG.maxScaleImage;
+        const maxScale = DRAW_CONFIG.maxScaleImage;
         const unclampedScale = state.startScale * ev.scale;
         state.scale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, unclampedScale));
 
@@ -2924,7 +2923,7 @@ function main_flush_last_segment(clientX, clientY) {
 function main_handle_wheel(e) {
     if (window.tileRenderer) window.tileRenderer.cancel_idle_shrink();
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    const maxScale = state.isCameraOpen ? DRAW_CONFIG.maxScaleCamera : DRAW_CONFIG.maxScaleImage;
+    const maxScale = DRAW_CONFIG.maxScaleImage;
     const newScale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, state.scale + delta));
     
     if (newScale !== state.scale) {
