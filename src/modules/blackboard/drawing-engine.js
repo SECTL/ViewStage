@@ -52,8 +52,6 @@ export class DrawingEngine {
         this.cached_draw_color = null;
         this.cached_draw_line_width = null;
         this.current_pressure = 0.5;
-        this.current_line_width = 5;
-        this.last_line_width = 5;
 
         // 缓存鼠标/触摸位置的 rect（减少 getBoundingClientRect 调用）
         this.draw_canvas_rect = null;
@@ -199,8 +197,6 @@ export class DrawingEngine {
         };
 
         this.current_pressure = 0.5;
-        this.current_line_width = DRAW_CONFIG.penWidth * inv_scale;
-        this.last_line_width = DRAW_CONFIG.penWidth * inv_scale;
 
         this.cached_draw_type = type;
         this.cached_draw_color = type === 'draw' ? DRAW_CONFIG.penColor : '#000000';
@@ -239,10 +235,6 @@ export class DrawingEngine {
         const currentScale = this._fetch_safe_scale();
 
         if (stroke.type === 'draw') {
-            this.current_pressure = pressure;
-            this.last_line_width = this.current_line_width;
-            currentWidth = stroke.lineWidth * (1.5 * pressure + 0.25);
-            this.current_line_width = currentWidth;
             this.cached_draw_line_width = DRAW_CONFIG.penWidth / currentScale;
         } else if (stroke.type === 'erase' && stroke.eraserSpeedEnabled) {
             if (this._eraser_speed_state && window.__eraserSpeed) {

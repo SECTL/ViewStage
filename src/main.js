@@ -662,8 +662,6 @@ let state = {
     loadedPages: new Set(),
     currentPressure: 0.5,
     currentVelocity: 0,
-    currentLineWidth: 0,
-    lastLineWidth: 0,
     isPalmErasing: false,
     savedDrawMode: null,
     palmEraserSize: 60
@@ -3040,9 +3038,7 @@ function main_start_stroke(type, eraserShape) {
     };
     
     state.currentPressure = 0.5;
-    state.currentLineWidth = DRAW_CONFIG.penWidth * invScale;
-    state.lastLineWidth = DRAW_CONFIG.penWidth * invScale;
-    
+
     state.cachedDrawType = type;
     state.cachedDrawColor = type === 'draw' ? DRAW_CONFIG.penColor : '#000000';
     const startScale = main_fetch_safe_scale();
@@ -3072,10 +3068,6 @@ function main_save_stroke_point(fromX, fromY, toX, toY, pressure = 0.5) {
     const currentScale = main_fetch_safe_scale();
     
     if (stroke.type === 'draw') {
-        state.currentPressure = pressure;
-        state.lastLineWidth = state.currentLineWidth;
-        currentWidth = stroke.lineWidth * (1.5 * pressure + 0.25);
-        state.currentLineWidth = currentWidth;
         state.cachedDrawLineWidth = DRAW_CONFIG.penWidth / currentScale;
     } else if (stroke.type === 'erase' && stroke.eraserSpeedEnabled) {
         currentWidth = window.__eraserSpeed.eraser_speed_update(state.eraserSpeedState, stroke, toX, toY);
