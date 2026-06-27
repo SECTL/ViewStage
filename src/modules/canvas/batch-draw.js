@@ -47,6 +47,7 @@ class RealtimeBatchDrawManager {
         this._penEffectMode = 'off';
         this._dirtyBoundsCanvas = null;
         this._limitedTailWidth = null;
+        this._baseWidth = 5;
 
         this._overlayCanvas = null;
         this._overlayCtx = null;
@@ -607,6 +608,8 @@ class RealtimeBatchDrawManager {
             }
         }
 
+        this._baseWidth = commands[0].lineWidth || 5;
+
         for (let i = 0; i < count; i++) {
             const cmd = commands[i];
 
@@ -894,7 +897,7 @@ class RealtimeBatchDrawManager {
                 ctx.globalCompositeOperation = 'source-over';
                 this._limitedTailWidth = this.lastLineWidth || 5;
                 if (this._penEffectMode === 'limited') {
-                    const baseW = cfg.penWidth || 5;
+                    const baseW = this._baseWidth || cfg.penWidth || 5;
                     const minRatio = cfg.penMinWidthRatio ?? 0.4;
                     const fromX = 2 * this._lastMidX - this._lastToX;
                     const fromY = 2 * this._lastMidY - this._lastToY;
