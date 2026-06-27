@@ -2686,7 +2686,7 @@ class DocumentReaderManager {
                 this.batch_draw.batch_draw_handle_flush();
                 const penMode = window.get_pen_effect_mode ? window.get_pen_effect_mode() : 'off';
                 if (penMode === 'limited' && this.batch_draw._storedWidths.length > 0) {
-                    const baseW = this.batch_draw._baseWidth || this.current_stroke.lineWidth || 5;
+                    const baseW = this.current_stroke.lineWidth || 5;
                     this.batch_draw._apply_speed_taper(this.batch_draw._storedWidths, this.current_stroke.points, baseW);
                 }
                 const stored_widths = this.batch_draw._storedWidths;

@@ -47,7 +47,6 @@ class RealtimeBatchDrawManager {
         this._penEffectMode = 'off';
         this._dirtyBoundsCanvas = null;
         this._limitedTailWidth = null;
-        this._baseWidth = 5;
 
         this._overlayCanvas = null;
         this._overlayCtx = null;
@@ -564,6 +563,23 @@ class RealtimeBatchDrawManager {
         this._build_ellipse_outline(ctx, [{ fromX, fromY, toX, toY, lineWidth }]);
     }
 
+    _draw_tapered_tip(ctx, fromX, fromY, toX, toY, startWidth, color) {
+        const steps = 4;
+        const endRatio = 0.05;
+        ctx.fillStyle = color;
+        for (let i = 0; i < steps; i++) {
+            const t0 = i / steps;
+            const t1 = (i + 1) / steps;
+            const w = startWidth * (1 - (1 - endRatio) * t1);
+            if (w < 0.3) break;
+            const segFromX = fromX + (toX - fromX) * t0;
+            const segFromY = fromY + (toY - fromY) * t0;
+            const segToX = fromX + (toX - fromX) * t1;
+            const segToY = fromY + (toY - fromY) * t1;
+            this._build_ellipse_outline(ctx, [{ fromX: segFromX, fromY: segFromY, toX: segToX, toY: segToY, lineWidth: w }]);
+        }
+    }
+
     batch_draw_handle_flush() {
         const count = this.pendingCount;
         if (count === 0) return;
@@ -607,8 +623,6 @@ class RealtimeBatchDrawManager {
                 this._segmentTimes.push(prev + perSegTime * (i + 1));
             }
         }
-
-        this._baseWidth = commands[0].lineWidth || 5;
 
         for (let i = 0; i < count; i++) {
             const cmd = commands[i];
@@ -897,7 +911,7 @@ class RealtimeBatchDrawManager {
                 ctx.globalCompositeOperation = 'source-over';
                 this._limitedTailWidth = this.lastLineWidth || 5;
                 if (this._penEffectMode === 'limited') {
-                    const baseW = this._baseWidth || cfg.penWidth || 5;
+                    const baseW = this.lastLineWidth || cfg.penWidth || 5;
                     const minRatio = cfg.penMinWidthRatio ?? 0.4;
                     const fromX = 2 * this._lastMidX - this._lastToX;
                     const fromY = 2 * this._lastMidY - this._lastToY;
@@ -915,7 +929,7 @@ class RealtimeBatchDrawManager {
                     }
                 }
                 if (this.ellipseMode) {
-                    this._draw_capsule(ctx, this._lastMidX, this._lastMidY, this._lastToX, this._lastToY,
+                    this._draw_tapered_tip(ctx, this._lastMidX, this._lastMidY, this._lastToX, this._lastToY,
                         this._limitedTailWidth, cfg.penColor || '#3498db');
                 } else {
                     ctx.strokeStyle = cfg.penColor || '#3498db';
