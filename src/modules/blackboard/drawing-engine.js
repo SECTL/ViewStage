@@ -216,7 +216,7 @@ export class DrawingEngine {
         }
     }
 
-    _save_stroke_point(from_x, from_y, to_x, to_y, pressure) {
+    _save_stroke_point(from_x, from_y, to_x, to_y) {
         const stroke = this.current_stroke;
         if (!stroke) return;
         const DRAW_CONFIG = window.DRAW_CONFIG || {};
@@ -420,7 +420,7 @@ export class DrawingEngine {
         const dy = y - this.last_y;
 
         if (dx * dx + dy * dy > 1) {
-            this._save_stroke_point(this.last_x, this.last_y, x, y, e.pressure || 0.5);
+            this._save_stroke_point(this.last_x, this.last_y, x, y);
             if (this.batch_draw) {
                 this.batch_draw.batch_draw_create_command(
                     this.cached_draw_type,
@@ -479,7 +479,7 @@ export class DrawingEngine {
         const dx = x - this.last_x;
         const dy = y - this.last_y;
         if (dx * dx + dy * dy > 1) {
-            this._save_stroke_point(this.last_x, this.last_y, x, y, 0.5);
+            this._save_stroke_point(this.last_x, this.last_y, x, y);
             if (this.batch_draw) {
                 this.batch_draw.batch_draw_create_command(
                     this.cached_draw_type,
@@ -500,11 +500,10 @@ export class DrawingEngine {
         const inv = 1 / this._fetch_safe_scale();
         const x = (touch.clientX - this.draw_canvas_rect.left) * inv;
         const y = (touch.clientY - this.draw_canvas_rect.top) * inv;
-        const pressure = (touch.force > 0) ? touch.force : 0.5;
         const dx = x - this.last_x;
         const dy = y - this.last_y;
         if (dx * dx + dy * dy > 1) {
-            this._save_stroke_point(this.last_x, this.last_y, x, y, pressure);
+            this._save_stroke_point(this.last_x, this.last_y, x, y);
             if (this.batch_draw) {
                 this.batch_draw.batch_draw_create_command(
                     this.cached_draw_type,
@@ -629,7 +628,7 @@ export class DrawingEngine {
             showHint: () => self._show_palm_eraser_hint(),
             updateHint: (cx, cy, size) => self._update_palm_eraser_hint(cx, cy, size),
             hideHint: () => self._hide_palm_eraser_hint(),
-            saveStrokePoint: (fromX, fromY, toX, toY, pressure) => self._save_stroke_point(fromX, fromY, toX, toY, pressure),
+            saveStrokePoint: (fromX, fromY, toX, toY) => self._save_stroke_point(fromX, fromY, toX, toY),
             submitStroke: () => self._submit_stroke(),
             onSessionStart(stroke, session) {
                 self.isPalmErasing = true;

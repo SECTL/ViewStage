@@ -2273,7 +2273,7 @@ class DocumentReaderManager {
             const dy = y - this.last_y;
 
             if (dx * dx + dy * dy > 1) {
-                this._save_stroke_point(this.last_x, this.last_y, x, y, this.current_pressure);
+                this._save_stroke_point(this.last_x, this.last_y, x, y);
                 if (this.batch_draw && page_data.tile_renderer) {
                     this.batch_draw.batch_draw_create_command(
                         this.cached_draw_type, this.last_x, this.last_y, x, y,
@@ -2640,7 +2640,7 @@ class DocumentReaderManager {
         }
     }
 
-    _save_stroke_point(from_x, from_y, to_x, to_y, pressure) {
+    _save_stroke_point(from_x, from_y, to_x, to_y) {
         const stroke = this.current_stroke;
         if (!stroke) return;
 
@@ -3188,7 +3188,7 @@ class DocumentReaderManager {
             showHint: () => self._show_palm_eraser_hint(),
             updateHint: (cx, cy, size) => self._update_palm_eraser_hint(cx, cy, size),
             hideHint: () => self._hide_palm_eraser_hint(),
-            saveStrokePoint: (fromX, fromY, toX, toY, pressure) => self._save_stroke_point(fromX, fromY, toX, toY, pressure),
+            saveStrokePoint: (fromX, fromY, toX, toY) => self._save_stroke_point(fromX, fromY, toX, toY),
             submitStroke: () => self._submit_stroke(),
             onSessionStart(stroke, session) {
                 self.isPalmErasing = true;

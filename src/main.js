@@ -1832,7 +1832,7 @@ function main_setup_gesture_system() {
             const dx = x - state.lastX;
             const dy = y - state.lastY;
             if (dx * dx + dy * dy > 1) {
-                main_save_stroke_point(state.lastX, state.lastY, x, y, state.currentPressure);
+                main_save_stroke_point(state.lastX, state.lastY, x, y);
                 window.batchDrawManager.batch_draw_create_command(
                     state.cachedDrawType,
                     state.lastX, state.lastY,
@@ -2842,7 +2842,7 @@ function main_get_palm_session() {
             showHint: main_show_palm_eraser_hint,
             updateHint: main_update_palm_eraser_hint,
             hideHint: main_hide_palm_eraser_hint,
-            saveStrokePoint: (fromX, fromY, toX, toY, pressure) => main_save_stroke_point(fromX, fromY, toX, toY, pressure),
+            saveStrokePoint: (fromX, fromY, toX, toY) => main_save_stroke_point(fromX, fromY, toX, toY),
             submitStroke: () => main_submit_stroke(),
             onSessionStart(stroke, session) {
                 state.isPalmErasing = true;
@@ -2892,7 +2892,7 @@ function main_flush_last_segment(clientX, clientY) {
     const dx = x - state.lastX;
     const dy = y - state.lastY;
     if (dx !== 0 || dy !== 0) {
-        main_save_stroke_point(state.lastX, state.lastY, x, y, state.currentPressure);
+        main_save_stroke_point(state.lastX, state.lastY, x, y);
         batchDrawManager.batch_draw_create_command(
             state.cachedDrawType,
             state.lastX,
@@ -3050,7 +3050,7 @@ function main_start_stroke(type, eraserShape) {
     batchDrawManager.batch_draw_init_start();
 }
 
-function main_save_stroke_point(fromX, fromY, toX, toY, pressure = 0.5) {
+function main_save_stroke_point(fromX, fromY, toX, toY) {
     const stroke = state.currentStroke;
     if (!stroke) return;
     
