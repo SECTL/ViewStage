@@ -61,6 +61,7 @@ function _perf_interval_label(ms) {
 }
 
 function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMonitorEnabled, perfMonitorInterval, devModeEnabled, currentFrameDelta, currentTailDuration, ellipseStrokeEnabled) {
+    const invoke = window.__TAURI__?.core?.invoke;
     const page = document.getElementById('pageDevOptions');
     if (!page) return;
     const devModeOn = devModeEnabled !== false;

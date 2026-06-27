@@ -322,7 +322,7 @@ class RealPenManager {
         const clamped = Math.max(0, Math.min(1, (velocity - minSpeed) / (maxSpeed - minSpeed)));
         const eased = clamped * clamped * (3 - 2 * clamped);
         const speedFactor = 1 - eased * 0.75;
-        const pressureFactor = 0.85 + (pressure * 0.3);
+        const pressureFactor = 1.5 * pressure + 0.25;
         return baseWidth * speedFactor * pressureFactor;
     }
 
@@ -3086,7 +3086,7 @@ function main_save_stroke_point(fromX, fromY, toX, toY, pressure = 0.5) {
     if (stroke.type === 'draw') {
         state.currentPressure = pressure;
         state.lastLineWidth = state.currentLineWidth;
-        currentWidth = stroke.lineWidth * (0.9 + pressure * 0.2);
+        currentWidth = stroke.lineWidth * (1.5 * pressure + 0.25);
         state.currentLineWidth = currentWidth;
         state.cachedDrawLineWidth = DRAW_CONFIG.penWidth / currentScale;
     } else if (stroke.type === 'erase' && stroke.eraserSpeedEnabled) {

@@ -2665,7 +2665,7 @@ class DocumentReaderManager {
         if (stroke.type === 'draw') {
             this.current_pressure = pressure;
             this.last_line_width = this.current_line_width;
-            currentWidth = stroke.lineWidth * (0.9 + pressure * 0.2);
+            currentWidth = stroke.lineWidth * (1.5 * pressure + 0.25);
             this.current_line_width = currentWidth;
             this.cached_draw_line_width = DRAW_CONFIG.penWidth / currentScale;
         } else if (stroke.type === 'erase' && stroke.eraserSpeedEnabled) {
