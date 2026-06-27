@@ -181,7 +181,7 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
             <span id="devGoMemclean" style="cursor:pointer;font-size:18px;color:var(--color-muted, #888);padding:4px;">→</span>
         </div>
         <div class="setting-item">
-            <span class="setting-label">${_tk('developer.ellipseStroke')}</span>
+            <span class="setting-label">${_tk('developer.ellipseStroke')}<span class="experimental-badge">${_tk('developer.experimental')}</span></span>
             <label class="toggle-switch">
                 <input type="checkbox" id="devEllipseStrokeToggle"${ellipseStrokeEnabled ? ' checked' : ''}>
                 <span class="toggle-slider"></span>

@@ -380,6 +380,7 @@
     "frameDelta": "单帧手势位移上限",
     "tailDuration": "笔迹收尾时长",
     "ellipseStroke": "椭圆笔迹渲染",
+    "experimental": "实验性",
     "overlayDpr": "叠加层 DPR（绘制预览）",
     "detectionTitle": "文档加载检测",
     "detectMsOffice": "Microsoft Office（COM）",

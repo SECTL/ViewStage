@@ -380,6 +380,7 @@
     "frameDelta": "Max Gesture Delta Per Frame",
     "tailDuration": "Pen Tail Duration",
     "ellipseStroke": "Ellipse Stroke Rendering",
+    "experimental": "Experimental",
     "overlayDpr": "Overlay DPR (Draw Preview)",
     "detectionTitle": "Document Detection",
     "detectMsOffice": "Microsoft Office (COM)",
