@@ -96,8 +96,6 @@ CI 触发器：推送 `v*` 标签或手动触发。
 ### 前端库
 
 - [PDF.js](https://mozilla.github.io/pdf.js/) — Mozilla 的 PDF 渲染库
-- [mammoth.js](https://github.com/mwilliamson/mammoth.js) — Word 文档转为 HTML
-- [html2canvas](https://html2canvas.hertzen.com/) — HTML 元素渲染为 Canvas
 
 ### Rust 库
 
