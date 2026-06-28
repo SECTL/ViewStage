@@ -32,6 +32,10 @@ body {
     min-height: 100vh;
     overflow: hidden;
     user-select: none;
+    touch-action: none;
+    -ms-touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 button {

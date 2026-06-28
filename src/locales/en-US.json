@@ -381,6 +381,7 @@
     "tailDuration": "Pen Tail Duration",
     "ellipseStroke": "Ellipse Stroke Rendering",
     "experimental": "Experimental",
+    "phoneConnect": "Phone Connect",
     "overlayDpr": "Overlay DPR (Draw Preview)",
     "detectionTitle": "Document Detection",
     "detectMsOffice": "Microsoft Office (COM)",

@@ -363,7 +363,7 @@ export async function renderStrokesToContext(ctx, strokes, options = {}) {
             if (!batchActive) {
                 batchActive = true;
                 ctx.beginPath();
-                ctx.moveTo(batchPrevMidX, batchPrevMidY);
+                ctx.moveTo(pts[0].fromX, pts[0].fromY);
             }
             ctx.lineTo(pts[0].fromX, pts[0].fromY);
             let midX = (pts[0].fromX + pts[0].toX) / 2;

@@ -1,0 +1,243 @@
+/* phone-connect.css — 手机互联面板样式 */
+
+.phone-connect-panel {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 280px;
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--rounded-xl);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-family: var(--font-body);
+    color: var(--color-body);
+}
+
+.pc-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-hairline);
+}
+
+.pc-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-ink);
+}
+
+.pc-close-btn {
+    background: none;
+    border: none;
+    color: var(--color-muted);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    border-radius: var(--rounded-xs);
+    transition: color 0.15s, background 0.15s;
+}
+
+.pc-close-btn:hover {
+    color: var(--color-ink);
+    background: var(--color-surface-card);
+}
+
+.pc-body {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+/* 加载动画 */
+.pc-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 20px 0;
+}
+
+.pc-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--color-surface-strong);
+    border-top-color: var(--color-brand-accent);
+    border-radius: 50%;
+    animation: pc_spin 0.6s linear infinite;
+}
+
+@keyframes pc_spin {
+    to { transform: rotate(360deg); }
+}
+
+.pc-loading-text {
+    font-size: 12px;
+    color: var(--color-muted);
+}
+
+/* 未启动状态 */
+.pc-not-running {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 20px 0;
+}
+
+.pc-not-running-text {
+    font-size: 13px;
+    color: var(--color-muted);
+}
+
+.pc-start-btn {
+    padding: 8px 20px;
+    background: var(--color-brand-accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--rounded-md);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.pc-start-btn:hover {
+    opacity: 0.9;
+}
+
+.pc-start-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* URL 区域 */
+.pc-url-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.pc-ready-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 0;
+}
+
+.pc-ready-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    flex-shrink: 0;
+}
+
+.pc-ready-text {
+    font-size: 12px;
+    color: var(--color-body);
+}
+
+.pc-toggle-info-btn {
+    background: none;
+    border: 1px solid var(--color-hairline);
+    color: var(--color-muted);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: var(--rounded-sm);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.pc-toggle-info-btn:hover {
+    color: var(--color-ink);
+    border-color: var(--color-muted);
+}
+
+.pc-url-info {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.pc-url-label,
+.pc-token-label {
+    font-size: 10px;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
+}
+
+.pc-url-value {
+    font-size: 12px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    color: var(--color-brand-accent);
+    word-break: break-all;
+    user-select: all;
+    padding: 6px 8px;
+    background: var(--color-surface-card);
+    border-radius: var(--rounded-sm);
+}
+
+.pc-token-value {
+    font-size: 20px;
+    font-weight: 700;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    color: var(--color-ink);
+    letter-spacing: 4px;
+    text-align: center;
+    padding: 6px 8px;
+    background: var(--color-surface-card);
+    border-radius: var(--rounded-sm);
+}
+
+/* 设备列表 */
+.pc-devices-section {
+    border-top: 1px solid var(--color-hairline);
+    padding-top: 10px;
+}
+
+.pc-devices-title {
+    font-size: 10px;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+.pc-devices-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.pc-device-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--color-surface-card);
+    border-radius: var(--rounded-sm);
+}
+
+.pc-device-icon {
+    font-size: 14px;
+}
+
+.pc-device-name {
+    font-size: 12px;
+    color: var(--color-body);
+}

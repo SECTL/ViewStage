@@ -21,10 +21,18 @@ async function dir_init_cache_path() {
     if (window.__TAURI__) {
         try {
             window.cacheDir = await window.__TAURI__.core.invoke('dir_fetch_cache');
-            window.configDir = await window.__TAURI__.core.invoke('dir_fetch_config');
-            window.cdsDir = await window.__TAURI__.core.invoke('dir_fetch_pictures_viewstage');
         } catch (error) {
             console.error('获取缓存目录失败:', error);
+        }
+        try {
+            window.configDir = await window.__TAURI__.core.invoke('dir_fetch_config');
+        } catch (error) {
+            console.error('获取配置目录失败:', error);
+        }
+        try {
+            window.cdsDir = await window.__TAURI__.core.invoke('dir_fetch_pictures_viewstage');
+        } catch (error) {
+            console.error('获取图片保存目录失败:', error);
         }
     }
 }
@@ -570,6 +578,19 @@ async function main_init_all() {
             } catch (_) {}
         }, 3000);
 
+        // 手机互联服务由 Rust setup 根据 config.phoneServerEnabled 自动启动
+        // 此处仅记录日志，无需前端干预
+        setTimeout(async () => {
+            const invoke = window.__TAURI__?.core?.invoke;
+            if (!invoke) return;
+            try {
+                const status = await invoke('phone_server_status');
+                if (status) {
+                    console.log('[init] 手机互联服务已运行:', `http://${status.ip}:${status.port}`);
+                }
+            } catch (_) {}
+        }, 2000);
+
         // 恢复上次打开的文档（延迟执行，确保主窗口已完全加载）
         if (window.documentReaderManager) {
             setTimeout(() => {
@@ -672,8 +693,9 @@ document.addEventListener('beforeunload', () => {
     window.main_delete_image_blob_urls?.();
     window.main_delete_all_pdf_blob_urls?.();
     // 如果启用了恢复上次文档状态，保存状态但不清理缓存
+    // 默认安全策略：如果尚未加载设置（undefined），视为启用保存
     if (window.documentReaderManager) {
-        if (window.__restoreLastDocEnabled) {
+        if (window.__restoreLastDocEnabled !== false) {
             // 保存状态到缓存和 config
             window.documentReaderManager._save_annotations_to_cache?.();
             window.documentReaderManager._save_last_doc_state?.();

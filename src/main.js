@@ -651,6 +651,8 @@ let state = {
     defaultCameraId: null,
     cameraWidth: null,
     cameraHeight: null,
+    phoneCameraActive: false,
+    phoneCameraReady: false,
     wasCameraOpenBeforeMinimize: false,
     currentImage: null,
     imageList: [],
@@ -898,6 +900,7 @@ const cameraManager = new CameraManager({
     updateCanvasPosition: () => main_update_canvas_position(),
     updatePhotoButtonState: () => cameraManager.updatePhotoButtonState(),
 });
+window.cameraManager = cameraManager;
 
 const historyCompactor = createHistoryCompactor({
     state,
@@ -2858,6 +2861,12 @@ function main_get_palm_session() {
                 batchDrawManager.eraserShape = 'square';
                 batchDrawManager.batch_draw_init_start();
             },
+            createCommand: (fromX, fromY, toX, toY) => {
+                batchDrawManager.batch_draw_create_command(
+                    state.cachedDrawType, fromX, fromY, toX, toY,
+                    state.cachedDrawColor, state.cachedDrawLineWidth
+                );
+            },
             onSessionEnd() {
                 state.isPalmErasing = false;
                 state.isDrawing = false;
@@ -4535,6 +4544,9 @@ window.main_hide_settings_panel = main_hide_settings_panel;
 window.main_render_image_centered = main_render_image_centered;
 window.main_render_all_strokes = main_render_all_strokes;
 window.main_fetch_visible_rect = main_fetch_visible_rect;
+window.main_load_pdf_from_path = main_load_pdf_from_path;
+window.main_update_camera_video_style = main_update_camera_video_style;
+window.main_update_settings_controls_state = main_update_settings_controls_state;
 window.StrokeQuadTree = StrokeQuadTree;
 
 /** 同步所有 overlay DPR（主界面 + 阅读器 + 黑板） */

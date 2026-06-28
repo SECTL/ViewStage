@@ -505,6 +505,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     options.forEach(opt => {
                         if (parseInt(opt.dataset.value) === autoClearCacheDays) {
                             autoClearCacheSelected.textContent = opt.textContent;
+                            opt.classList.add('selected');
                         }
                     });
                 }

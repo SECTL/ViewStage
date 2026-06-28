@@ -58,6 +58,8 @@
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
@@ -81,6 +83,8 @@
 html, body {
     height: 100%;
     overflow: hidden;
+    touch-action: none;
+    -ms-touch-action: none;
 }
 
 body {

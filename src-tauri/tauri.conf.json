@@ -35,7 +35,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["$APPDATA/themes/**/*"],
+          "allow": ["$APPDATA/themes/**/*", "$APPCACHE/phone-uploads/**/*"],
           "deny": []
         }
       }
