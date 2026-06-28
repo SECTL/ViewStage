@@ -1,0 +1,94 @@
+name: 性能问题
+description: 报告性能相关问题（卡顿、高 CPU/内存占用、低帧率等）
+labels: ["performance"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 简要描述遇到的性能问题
+      placeholder: 例如：在使用摄像头展台时画面卡顿，批注延迟明显
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 如何触发这个性能问题
+      placeholder: |
+        1. 打开 ViewStage
+        2. 连接摄像头并开启展台模式
+        3. 连续批注 10 个笔画以上
+        4. 观察到画面明显卡顿
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+      description: 你期望的性能表现是什么
+      placeholder: 例如：批注时画面流畅，无明显延迟
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 实际的性能表现是什么
+      placeholder: 例如：批注时画面明显卡顿，延迟约 0.5-1 秒
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 选择你的运行环境
+      options:
+        - label: Windows 10
+        - label: Windows 11
+        - label: Linux (x86_64)
+        - label: 已安装 WebView2 运行时
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: ViewStage 版本
+      description: 你使用的 ViewStage 版本号
+      placeholder: 例如：0.22.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: hardware
+    attributes:
+      label: 硬件信息
+      description: 请提供你的电脑硬件配置
+      placeholder: |
+        CPU：Intel Core i5-12400 / AMD Ryzen 5 5600X
+        内存：16GB DDR4
+        显卡：Intel UHD Graphics 730 / NVIDIA GeForce GTX 1650
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志文件
+      description: 如果有相关日志，请粘贴或附上文件路径
+      placeholder: 日志文件位于 %APPDATA%/SECTL/ViewStage/log/
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图/录屏
+      description: 如果有性能监控截图或录屏，请在此粘贴或上传
+    validations:
+      required: false
