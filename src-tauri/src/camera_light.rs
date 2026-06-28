@@ -12,6 +12,7 @@ const SEEWO_PIDS: &[u16] = &[
 
 const CMD_LIGHT_ON: [u8; 9] = [0xAA, 0xBB, 0xCC, 0x02, 0x02, 0x02, 0x00, 0x01, 0x32];
 const CMD_LIGHT_OFF: [u8; 9] = [0xAA, 0xBB, 0xCC, 0x02, 0x02, 0x02, 0x00, 0x00, 0x00];
+const CMD_GET_LIGHT_STATE: [u8; 4] = [0xAA, 0xBB, 0xCC, 0x02];
 
 struct LightState {
     is_on: bool,
@@ -110,6 +111,11 @@ pub fn camera_light_start() -> Result<(), String> {
         pid,
         _thread: thread,
     });
+    drop(guard);
+
+    // 立即查询当前补光灯状态，监控线程的 read 循环会接收到响应并更新缓存
+    thread::sleep(std::time::Duration::from_millis(20));
+    let _ = send_raw_command(&CMD_GET_LIGHT_STATE);
     Ok(())
 }
 
