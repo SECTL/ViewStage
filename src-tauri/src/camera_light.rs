@@ -1,7 +1,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use once_cell::sync::Lazy;
+use tauri::Emitter;
 
 const SEEWO_VID: u16 = 0x1FF7;
 const SEEWO_PIDS: &[u16] = &[
@@ -13,6 +14,8 @@ const SEEWO_PIDS: &[u16] = &[
 const CMD_LIGHT_ON: [u8; 9] = [0xAA, 0xBB, 0xCC, 0x02, 0x02, 0x02, 0x00, 0x01, 0x32];
 const CMD_LIGHT_OFF: [u8; 9] = [0xAA, 0xBB, 0xCC, 0x02, 0x02, 0x02, 0x00, 0x00, 0x00];
 const CMD_GET_LIGHT_STATE: [u8; 4] = [0xAA, 0xBB, 0xCC, 0x02];
+
+static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 
 struct LightState {
     is_on: bool,
@@ -29,7 +32,7 @@ struct Monitor {
 
 static MONITOR: Lazy<Mutex<Option<Monitor>>> = Lazy::new(|| Mutex::new(None));
 
-/// 查找并打开第一个匹配的希沃展台 HID 设备，返回 (device, pid)
+/// 查找并打开第一个匹配的展台 HID 设备，返回 (device, pid)
 fn device_find_and_open() -> Result<(hidapi::HidDevice, u16), String> {
     let api = hidapi::HidApi::new().map_err(|e| format!("HID init failure: {}", e))?;
     for &pid in SEEWO_PIDS {
@@ -40,7 +43,13 @@ fn device_find_and_open() -> Result<(hidapi::HidDevice, u16), String> {
     Err("No supported camera found".to_string())
 }
 
-/// 后台监控线程：持续读取 HID 报告，解析灯状态并缓存
+fn emit_light_changed(is_on: bool) {
+    if let Some(app) = APP_HANDLE.get() {
+        let _ = app.emit("camera-light-changed", serde_json::json!({"isOn": is_on}));
+    }
+}
+
+/// 后台监控线程：持续读取 HID 报告，解析灯状态并缓存，状态变化时发射事件
 fn monitor_thread_loop(
     device: hidapi::HidDevice,
     running: Arc<AtomicBool>,
@@ -55,9 +64,16 @@ fn monitor_thread_loop(
                         2 | 5 => {
                             let is_on = buf[6] == 0x01;
                             let level = buf[7];
-                            if let Ok(mut s) = state.lock() {
+                            let changed = if let Ok(mut s) = state.lock() {
+                                let changed = s.is_on != is_on || s.level != level;
                                 s.is_on = is_on;
                                 s.level = level;
+                                changed
+                            } else {
+                                false
+                            };
+                            if changed {
+                                emit_light_changed(is_on);
                             }
                         }
                         _ => {}
@@ -87,7 +103,7 @@ fn send_raw_command(cmd: &[u8]) -> Result<(), String> {
 }
 
 /// 启动后台监控（自动检测设备）
-pub fn camera_light_start() -> Result<(), String> {
+fn camera_light_start() -> Result<(), String> {
     let mut guard = MONITOR.lock().map_err(|e| format!("Lock failure: {}", e))?;
     if guard.is_some() {
         return Ok(());
@@ -119,16 +135,21 @@ pub fn camera_light_start() -> Result<(), String> {
     Ok(())
 }
 
-
+/// 初始化 AppHandle（由 lib.rs setup 调用）
+pub fn camera_light_init_app(app: tauri::AppHandle) {
+    let _ = APP_HANDLE.set(app);
+}
 
 /// 开灯
-pub fn camera_light_set_on() -> Result<(), String> {
+pub fn camera_light_set_on(app: &tauri::AppHandle) -> Result<(), String> {
+    let _ = APP_HANDLE.set(app.clone());
     camera_light_start()?;
     send_raw_command(&CMD_LIGHT_ON)
 }
 
 /// 关灯
-pub fn camera_light_set_off() -> Result<(), String> {
+pub fn camera_light_set_off(app: &tauri::AppHandle) -> Result<(), String> {
+    let _ = APP_HANDLE.set(app.clone());
     camera_light_start()?;
     send_raw_command(&CMD_LIGHT_OFF)
 }

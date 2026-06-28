@@ -3871,8 +3871,7 @@ fn run_memreduct_raw(_args: &[&str]) -> Result<i32, String> {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 fn camera_light_on(app: tauri::AppHandle) -> Result<(), String> {
-    camera_light::camera_light_set_on()?;
-    let _ = app.emit("camera-light-changed", serde_json::json!({"isOn": true}));
+    camera_light::camera_light_set_on(&app)?;
     Ok(())
 }
 
@@ -3885,8 +3884,7 @@ fn camera_light_on(_app: tauri::AppHandle) -> Result<(), String> {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 fn camera_light_off(app: tauri::AppHandle) -> Result<(), String> {
-    camera_light::camera_light_set_off()?;
-    let _ = app.emit("camera-light-changed", serde_json::json!({"isOn": false}));
+    camera_light::camera_light_set_off(&app)?;
     Ok(())
 }
 
