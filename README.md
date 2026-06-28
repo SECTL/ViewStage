@@ -6,9 +6,9 @@
 </div>
 
 <p align="center">
-    <img src="https://img.shields.io/badge/version-0.20.0-blue.svg" alt="版本">
+    <img src="https://img.shields.io/github/v/release/SECTL/ViewStage" alt="版本">
     <img src="https://img.shields.io/badge/Tauri-2-ffc131.svg" alt="Tauri v2">
-    <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="许可证">
+    <img src="https://img.shields.io/github/license/SECTL/ViewStage" alt="许可证">
 </p>
 
 ## 功能概览
@@ -21,12 +21,16 @@
 | ✏️ **批注** | 移动/批注/橡皮擦三模式，压感笔锋，Catmull-Rom 平滑，自定义颜色粗细，笔画分割擦除 |
 | ↩️ **撤销** | Command 模式撤销重做，上限 50 步，超限自动压缩快照 |
 | 🎨 **主题** | 深色/浅色双内置主题，支持 .vst 自定义导入，实时切换 |
-| 🌐 **国际化** | 简体中文、繁体中文、英文 |
+| 🌐 **国际化** | 简体中文、繁体中文、英文、日语、韩语、法语、德语、西班牙语、俄语（9 种语言） |
 | ⚙️ **设置** | 画布/画笔/信号源/文件关联/缓存/日志管理，设置导入导出 JSON |
 | 🔄 **更新** | 检查 GitHub Release，多镜像下载，进度条，自动安装 |
 | 📸 **截图** | 画布合并导出 PNG，摄像头帧捕获，源切换自动保存批注快照 |
 | 🧩 **源管理** | 摄像头/图片/文档三源统一管理，缩放状态与批注自动保存恢复 |
 | 🖥 **渲染** | 双图层 + 平铺渲染 + 动态 DPR + 四叉树索引 + 自适应帧率 |
+| 📱 **手机互联** | LAN 局域网连接，UDP 自动发现，远程控制（翻页/批注/截图等 18 种操作），文件上传，手机摄像头推流（JPEG + H.264） |
+| 💡 **展台灯** | Seewo 文档摄像头灯光控制，USB HID 协议，支持 12 款型号，自动检测连接状态 |
+| 🖤 **黑板** | 全屏黑板模式，多页绘图，独立绘图引擎 |
+| ✋ **手掌擦除** | 多触点手掌识别，自动切换橡皮擦模式 |
 | 🚀 **其他** | OOBE 首次引导、Splashscreen 启动屏、无框全屏窗口 |
 
 ## 技术栈
@@ -106,12 +110,11 @@ CI 触发器：推送 `v*` 标签或手动触发。
 - [winreg](https://github.com/gentoo90/winreg-rs) — Windows 注册表操作（文件关联）
 - [simplelog](https://github.com/dermesser/simplelog) — 日志记录
 - [windows-sys](https://github.com/microsoft/windows-rs) — Windows API 绑定（内存清理 FFI）
-
-### 前端库
-
-- [PDF.js](https://mozilla.github.io/pdf.js/) — Mozilla 的 PDF 渲染库
-- [mammoth.js](https://github.com/mwilliamson/mammoth.js) — Word 文档转为 HTML
-- [html2canvas](https://html2canvas.hertzen.com/) — HTML 元素渲染为 Canvas
+- [axum](https://github.com/tokio-rs/axum) — HTTP 服务器框架（手机互联）
+- [hidapi](https://github.com/ruabmbua/hidapi-rs) — USB HID 设备通信（展台灯控制）
+- [tower-http](https://github.com/tower-rs/tower-http) — HTTP 中间件（CORS）
+- [local-ip-address](https://github.com/EstebanBorai/local-ip-address) — 本机 IP 地址检测
+- [sysinfo](https://github.com/GuillaumeGomez/sysinfo) — 系统信息获取
 
 ### Tauri 插件
 
@@ -121,3 +124,7 @@ CI 触发器：推送 `v*` 标签或手动触发。
 - [tauri-plugin-single-instance](https://github.com/tauri-apps/plugins-workspace) — 单实例
 
 感谢所有开源社区的贡献！
+
+## 更新日志
+
+完整更新日志请查看 [GitHub Releases](https://github.com/SECTL/ViewStage/releases)。
