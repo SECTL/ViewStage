@@ -12,7 +12,7 @@ async function developer_options_init() {
     let savedPerfInterval = 200;
     let savedDevMode = true;
     let savedFrameDelta = 60;
-    let savedTailDuration = 50;
+    let savedTailDuration = 30;
     let savedEllipseStroke = false;
 
     if (invoke) {
@@ -188,6 +188,16 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
             </label>
         </div>
         <div class="setting-item">
+            <span class="setting-label">${_tk('developer.phoneConnect')}<span class="experimental-badge">${_tk('developer.experimental')}</span></span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="devPhoneConnectToggle">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+        <div class="setting-item" style="margin-top:-8px;opacity:0.6">
+            <span class="setting-label" style="font-size:11px">切换后需重启应用生效</span>
+        </div>
+        <div class="setting-item">
             <span class="setting-label">${_tk('developer.docDetection')}</span>
             <span id="devGoDetection" style="cursor:pointer;font-size:18px;color:var(--color-muted, #888);padding:4px;">→</span>
         </div>
@@ -240,7 +250,7 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
             opt.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const v = parseInt(opt.dataset.value);
-                selected.textContent = perf_interval_label(v);
+                selected.textContent = _perf_interval_label(v);
                 options.forEach(o => o.classList.remove('selected'));
                 opt.classList.add('selected');
                 select.classList.remove('open');
@@ -383,6 +393,41 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
             }
             if (invoke) {
                 invoke('settings_save_all', { settings: { ellipseStrokeEnabled: enabled } });
+            }
+        });
+    })();
+
+    // 手机互联开关
+    (function setup_phone_connect_toggle() {
+        const toggle = document.getElementById('devPhoneConnectToggle');
+        if (!toggle) return;
+
+        // 从 config 读取持久化设置，同时检查运行状态
+        if (invoke) {
+            Promise.all([
+                invoke('settings_fetch_all'),
+                invoke('phone_server_status')
+            ]).then(([settingsResult, statusResult]) => {
+                const settings = settingsResult?.settings || {};
+                // 优先看运行状态，其次看 config
+                toggle.checked = !!statusResult || !!settings.phoneServerEnabled;
+            }).catch(() => {});
+        }
+
+        toggle.addEventListener('change', async () => {
+            const enabled = toggle.checked;
+            if (!invoke) return;
+            try {
+                if (enabled) {
+                    await invoke('phone_server_start');
+                } else {
+                    await invoke('phone_server_stop');
+                }
+                // 保存设置，下次启动时自动恢复
+                await invoke('settings_save_all', { settings: { phoneServerEnabled: enabled } });
+            } catch (e) {
+                console.error('[phone] 切换服务状态失败:', e);
+                toggle.checked = !enabled;
             }
         });
     })();

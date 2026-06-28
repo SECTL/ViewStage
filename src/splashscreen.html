@@ -6,7 +6,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>ViewStage</title>
     <script>document.addEventListener('contextmenu', e => e.preventDefault());</script>
     <style>
@@ -25,6 +25,12 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
             background: #e8eaed;
+            touch-action: none;
+            -ms-touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         .splash-card {
@@ -270,6 +276,22 @@
                 }
             }
         }, 5000);
+
+        // 控制台命令：跳过加载，直接显示主界面
+        window.skipSplash = async function() {
+            console.log('[splash] skipSplash: 跳过加载，显示主界面...');
+            if (invoke) {
+                try {
+                    await invoke('window_hide_splashscreen');
+                    console.log('[splash] skipSplash: 已切换到主界面');
+                } catch (e) {
+                    console.error('[splash] skipSplash 失败:', e);
+                }
+            } else {
+                console.error('[splash] skipSplash: Tauri invoke 不可用');
+            }
+        };
+        console.log('[splash] 提示：如加载卡住，可在控制台执行 skipSplash() 直接进入主界面');
     </script>
 </body>
 </html>

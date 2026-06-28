@@ -316,6 +316,7 @@ export class PinchZoomSource {
      * 防止边界处的缩放死区）
      */
     resetScaleReference(currentDistance) {
+        if (typeof currentDistance !== 'number' || currentDistance <= 0) return;
         this._startDistance = currentDistance;
         this._currentScale = 1;
     }

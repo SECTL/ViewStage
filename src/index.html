@@ -11,6 +11,7 @@
     <title>ViewStage</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="blackboard.css">
+    <link rel="stylesheet" href="modules/phone-connect/phone-connect.css">
     <script type="module" src="modules/pdf/pdf.min.mjs"></script>
     <script src="modules/i18n.js" defer></script>
     <script>
@@ -22,6 +23,19 @@
                 await import('./main.js');
                 await import('./modules/pdf/document_reader_page.js');
                 await import('./modules/pdf/document_reader.js');
+
+                // 手机互联：按配置条件加载
+                try {
+                    const cfg = await window.__TAURI__?.core.invoke('settings_fetch_all');
+                    if (cfg?.settings?.phoneServerEnabled) {
+                        // TODO: phone-camera.js 未完成，暂不加载
+                        // const { PhoneCameraManager } = await import('./modules/camera/phone-camera.js');
+                        // window.phoneCameraManager = new PhoneCameraManager({...});
+                        await import('./modules/phone-connect/phone-events.js');
+                        await import('./modules/phone-connect/phone-connect.js');
+                    }
+                } catch(e) { console.warn('[boot] 手机互联模块加载跳过:', e); }
+
                 await import('./init.js');
             } catch(e) {
                 console.error('[boot] module load error:', e);

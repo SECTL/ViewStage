@@ -1106,7 +1106,6 @@ class DocumentReaderManager {
         const img = page_data.page_element?.querySelector('img');
         const has_img_src = img?.hasAttribute('src') && img.getAttribute('src');
         if (img && !has_img_src && img.dataset.src) {
-            img.src = img.dataset.src;
             img.onload = () => {
                 // 图片加载后设置页面尺寸并初始化 tiles
                 page_data.page_width = img.naturalWidth || img.clientWidth;
@@ -1118,6 +1117,7 @@ class DocumentReaderManager {
                     this._update_overlay_size(page_index);
                 }
             };
+            img.src = img.dataset.src;
         } else if (img && has_img_src) {
             // 已有图片 → 立即初始化 tiles（无延迟，避免白屏）
             page_data.page_width = img.naturalWidth || img.clientWidth;
@@ -3210,6 +3210,14 @@ class DocumentReaderManager {
                     if (page_data?.tile_renderer) {
                         self.batch_draw._tileRenderer = page_data.tile_renderer;
                     }
+                }
+            },
+            createCommand: (fromX, fromY, toX, toY) => {
+                if (self.batch_draw) {
+                    self.batch_draw.batch_draw_create_command(
+                        self.cached_draw_type, fromX, fromY, toX, toY,
+                        self.cached_draw_color, self.cached_draw_line_width
+                    );
                 }
             },
             onSessionEnd() {

@@ -57,3 +57,6 @@ memreduct/ipch/
 memreduct/.vs/
 memreduct/*.user
 memreduct/*.suo
+
+# Documentation
+docs/

@@ -10,6 +10,7 @@ use std::io::{Read, Write};
 mod image_processing;
 #[cfg(target_os = "windows")]
 mod camera_light;
+mod connect;
 
 use image_processing::{
     image_fetch_base64_data,
@@ -4069,7 +4070,23 @@ pub fn app_init_run() {
                 }
                 
             }
-            
+
+            // 手机互联：根据配置决定是否启动服务（需重启生效）
+            let phone_server_enabled = std::fs::read_to_string(&config_path)
+                .ok()
+                .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+                .and_then(|v| v.get("phoneServerEnabled").and_then(|v| v.as_bool()))
+                .unwrap_or(false);
+
+            if phone_server_enabled {
+                println!("[setup] phoneServerEnabled=true，启动手机互联服务");
+                if let Err(e) = connect::init_server(app.handle()) {
+                    log::error!("[setup] 手机互联服务启动失败: {}", e);
+                }
+            } else {
+                println!("[setup] phoneServerEnabled=false，跳过手机互联服务");
+            }
+
             Ok(())
         })
         // 注册所有 Tauri IPC 命令
@@ -4129,7 +4146,13 @@ pub fn app_init_run() {
             camera_light_off,
             camera_light_get_state,
             camera_light_detect,
-            camera_light_detect_and_save
+            camera_light_detect_and_save,
+            connect::phone_server_status,
+            connect::phone_server_start,
+            connect::phone_server_stop,
+            connect::phone_camera_status,
+            connect::phone_camera_start,
+            connect::phone_camera_stop
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
