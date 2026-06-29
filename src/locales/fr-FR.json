@@ -383,6 +383,8 @@
     "presetDefault": " (défaut)",
     "presetDisabled": " (désactivé)",
     "displayDefault": "Afficher par défaut",
+    "pinchZoomV2": "Pinch Zoom Algorithm V2",
+    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)",
     "backToMain": "←"
   },
   "config": {
