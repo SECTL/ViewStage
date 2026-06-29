@@ -194,10 +194,13 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
         </div>
         <div class="setting-item">
             <span class="setting-label">${_tk('developer.ellipseStroke')}<span class="experimental-badge">${_tk('developer.experimental')}</span></span>
-            <label class="toggle-switch">
-                <input type="checkbox" id="devEllipseStrokeToggle"${ellipseStrokeEnabled ? ' checked' : ''}>
-                <span class="toggle-slider"></span>
-            </label>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="devEllipseStrokeToggle"${ellipseStrokeEnabled ? ' checked' : ''}>
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="setting-hint">${_tk('developer.pinchZoomV2Hint')}</span>
+            </div>
         </div>
         <div class="setting-item">
             <span class="setting-label">${_tk('developer.phoneConnect')}<span class="experimental-badge">${_tk('developer.experimental')}</span></span>
@@ -205,9 +208,6 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
                 <input type="checkbox" id="devPhoneConnectToggle">
                 <span class="toggle-slider"></span>
             </label>
-        </div>
-        <div class="setting-item" style="margin-top:-8px;opacity:0.6">
-            <span class="setting-label" style="font-size:11px">切换后需重启应用生效</span>
         </div>
         <div class="setting-item">
             <span class="setting-label">${_tk('developer.docDetection')}</span>
@@ -394,29 +394,14 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
         });
     })();
 
-    // 椭圆笔迹渲染开关
+    // 椭圆笔迹渲染开关（需重启生效）
     (function setup_ellipse_stroke_toggle() {
         const toggle = document.getElementById('devEllipseStrokeToggle');
         if (!toggle) return;
         toggle.addEventListener('change', () => {
             const enabled = toggle.checked;
-            if (window.DRAW_CONFIG) {
-                window.DRAW_CONFIG.ellipseStrokeEnabled = enabled;
-            }
-            if (window.batchDrawManager) {
-                window.batchDrawManager.ellipseMode = enabled;
-            }
-            // 同步到阅读器和黑板的独立 batch_draw 实例
-            const docReader = window.__documentReaderManager;
-            if (docReader?.batch_draw) {
-                docReader.batch_draw.ellipseMode = enabled;
-            }
-            const bb = window.blackboardManager;
-            if (bb?.drawing_engine?.batch_draw) {
-                bb.drawing_engine.batch_draw.ellipseMode = enabled;
-            }
             if (invoke) {
-                invoke('settings_save_all', { settings: { ellipseStrokeEnabled: enabled } });
+                invoke('settings_save_all', { settings: { ellipseStrokeEnabled: enabled, developerMode: true } });
             }
         });
     })();
