@@ -22,7 +22,6 @@ struct LightState {
     level: u8,
 }
 
-#[allow(dead_code)]
 struct Monitor {
     running: Arc<AtomicBool>,
     state: Arc<Mutex<LightState>>,
@@ -56,7 +55,10 @@ fn monitor_thread_loop(
     state: Arc<Mutex<LightState>>,
 ) {
     let mut buf = [0u8; 64];
-    while running.load(Ordering::Relaxed) {
+    let result = loop {
+        if !running.load(Ordering::Relaxed) {
+            break Ok(());
+        }
         match device.read(&mut buf) {
             Ok(n) if n >= 2 && buf[0] == 0xBB && buf[1] == 0xCC => {
                 if n >= 8 {
@@ -81,17 +83,27 @@ fn monitor_thread_loop(
                 }
             }
             Ok(_) => {}
-            Err(_) => {
-                break;
+            Err(e) => {
+                break Err(e);
             }
         }
+    };
+
+    // 标记线程已退出，使 camera_light_start() 能检测到并重建
+    running.store(false, Ordering::Relaxed);
+    if result.is_err() {
+        log::warn!("[camera-light] monitor thread exited due to read error");
     }
 }
 
 /// 发送 HID 命令（临时打开设备）
 fn send_raw_command(cmd: &[u8]) -> Result<(), String> {
     let guard = MONITOR.lock().map_err(|e| format!("Lock failure: {}", e))?;
-    let pid = guard.as_ref().ok_or("Monitor not started")?.pid;
+    let m = guard.as_ref().ok_or("Monitor not started")?;
+    if !m.running.load(Ordering::Relaxed) {
+        return Err("Monitor thread stopped".to_string());
+    }
+    let pid = m.pid;
     drop(guard);
 
     let api = hidapi::HidApi::new().map_err(|e| format!("HID init failure: {}", e))?;
@@ -105,9 +117,16 @@ fn send_raw_command(cmd: &[u8]) -> Result<(), String> {
 /// 启动后台监控（自动检测设备）
 fn camera_light_start() -> Result<(), String> {
     let mut guard = MONITOR.lock().map_err(|e| format!("Lock failure: {}", e))?;
-    if guard.is_some() {
-        return Ok(());
+
+    // 检查现有监控线程是否存活
+    if let Some(ref m) = *guard {
+        if m.running.load(Ordering::Relaxed) {
+            return Ok(()); // 监控线程存活，无需重建
+        }
+        // 线程已死，清理旧 Monitor
+        *guard = None;
     }
+
     let (device, pid) = device_find_and_open()?;
     let running = Arc::new(AtomicBool::new(true));
     let state = Arc::new(Mutex::new(LightState { is_on: false, level: 0 }));
@@ -168,8 +187,10 @@ pub fn camera_light_get_state() -> Result<(bool, u8), String> {
 /// 检测设备是否存在
 pub fn camera_light_detect() -> bool {
     if let Ok(guard) = MONITOR.lock() {
-        if guard.is_some() {
-            return true;
+        if let Some(ref m) = *guard {
+            if m.running.load(Ordering::Relaxed) {
+                return true;
+            }
         }
     }
     if let Ok(api) = hidapi::HidApi::new() {
