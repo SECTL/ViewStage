@@ -221,13 +221,15 @@ export class PinchZoomSourceV2 {
 
         // V2 核心：增量式缩放，每帧相对于上一帧
         const incrementalRatio = currentDist / this._prevDistance;
-        this._prevDistance = currentDist;
 
         if (this._movedThisBatch.indexOf(ev.id) === -1) {
             this._movedThisBatch.push(ev.id);
         }
         if (!this._pinchIds.every(id => this._movedThisBatch.indexOf(id) !== -1)) return;
         this._movedThisBatch = [];
+
+        // batch 检查通过后才更新 prevDistance，避免单指先更新时破坏参考值
+        this._prevDistance = currentDist;
 
         if (this.onPinchDelta) {
             this._finger0.x = f0Ev.position.x;
