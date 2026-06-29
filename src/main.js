@@ -21,7 +21,7 @@ import {
     MAX_HISTORY_STEPS
 } from './modules/history.js';
 import { DocLoader } from './modules/pdf/document_loader.js';
-import { InputSource, DragTapSource, PinchZoomSource, TOLERANCE } from './modules/gesture/index.js';
+import { InputSource, DragTapSource, PinchZoomSource, PinchZoomSourceV2, TOLERANCE } from './modules/gesture/index.js';
 import { CameraManager, camera_format_blob_to_data_url } from './modules/camera/camera.js';
 import { resetContextState, updateContextState } from './modules/canvas/context-state.js';
 import { renderStrokesToContext, getPenEffectMode } from './modules/canvas/stroke-renderer.js';
@@ -1923,7 +1923,8 @@ function main_setup_gesture_system() {
     };
 
     // ------- 两指捏合（缩放 + 平移） -------
-    const pinch = new PinchZoomSource(input);
+    const useV2 = DRAW_CONFIG.pinchZoomV2 === true;
+    const pinch = useV2 ? new PinchZoomSourceV2(input) : new PinchZoomSource(input);
     window._gesturePinch = pinch;
 
     pinch.onPinchStarted = (ev) => {
@@ -1948,11 +1949,17 @@ function main_setup_gesture_system() {
         state.isScaling = true;
         state.startScale = state.scale;
 
-        // 使用 PinchZoomSource 传入的 finger0，而非 getActivePositions()[0]，
-        // 确保锚点计算与追踪手指完全一致
-        if (ev.finger0) {
-            state.startFinger0CX = (ev.finger0.x - state.canvasX) / state.scale;
-            state.startFinger0CY = (ev.finger0.y - state.canvasY) / state.scale;
+        if (useV2) {
+            // V2: 以两指中点为缩放锚点
+            state.startMidCX = (ev.centerX - state.canvasX) / state.scale;
+            state.startMidCY = (ev.centerY - state.canvasY) / state.scale;
+        } else {
+            // V1: 使用 PinchZoomSource 传入的 finger0，而非 getActivePositions()[0]，
+            // 确保锚点计算与追踪手指完全一致
+            if (ev.finger0) {
+                state.startFinger0CX = (ev.finger0.x - state.canvasX) / state.scale;
+                state.startFinger0CY = (ev.finger0.y - state.canvasY) / state.scale;
+            }
         }
         state.startCanvasX = state.canvasX;
         state.startCanvasY = state.canvasY;
@@ -1967,23 +1974,34 @@ function main_setup_gesture_system() {
     pinch.onPinchDelta = (ev) => {
         if (!state.isScaling) return;
         const maxScale = DRAW_CONFIG.maxScaleImage;
-        const unclampedScale = state.startScale * ev.scale;
-        state.scale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, unclampedScale));
 
-        if (state.scale !== unclampedScale) {
-            // 缩放到达边界时同步重置 PinchZoomSource 内部参考距离，
-            // 使后续 ev.scale 相对于当前手指距离而非 pinch 起始距离，
-            // 消除边界处缩放死区（缩放回退时立即响应）
-            const fdx = ev.finger0.x - ev.finger1.x;
-            const fdy = ev.finger0.y - ev.finger1.y;
-            pinch.resetScaleReference(Math.sqrt(fdx * fdx + fdy * fdy));
-            state.startFinger0CX = (ev.finger0.x - state.canvasX) / state.scale;
-            state.startFinger0CY = (ev.finger0.y - state.canvasY) / state.scale;
-            state.startScale = state.scale;
+        if (useV2) {
+            // V2: 增量式缩放 + 中点锚点
+            const newScale = state.scale * ev.scale;
+            state.scale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, newScale));
+            // 中点锚点：保持画布上初始中点位置跟随当前中点
+            state.canvasX = ev.centerX - state.startMidCX * state.scale;
+            state.canvasY = ev.centerY - state.startMidCY * state.scale;
+        } else {
+            // V1: 累积式缩放 + finger0 锚点
+            const unclampedScale = state.startScale * ev.scale;
+            state.scale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, unclampedScale));
+
+            if (state.scale !== unclampedScale) {
+                // 缩放到达边界时同步重置 PinchZoomSource 内部参考距离，
+                // 使后续 ev.scale 相对于当前手指距离而非 pinch 起始距离，
+                // 消除边界处缩放死区（缩放回退时立即响应）
+                const fdx = ev.finger0.x - ev.finger1.x;
+                const fdy = ev.finger0.y - ev.finger1.y;
+                pinch.resetScaleReference(Math.sqrt(fdx * fdx + fdy * fdy));
+                state.startFinger0CX = (ev.finger0.x - state.canvasX) / state.scale;
+                state.startFinger0CY = (ev.finger0.y - state.canvasY) / state.scale;
+                state.startScale = state.scale;
+            }
+
+            state.canvasX = ev.finger0.x - state.startFinger0CX * state.scale;
+            state.canvasY = ev.finger0.y - state.startFinger0CY * state.scale;
         }
-
-        state.canvasX = ev.finger0.x - state.startFinger0CX * state.scale;
-        state.canvasY = ev.finger0.y - state.startFinger0CY * state.scale;
 
         main_update_move_bound();
         main_update_canvas_position();

@@ -332,6 +332,9 @@ async function settings_load_camera_config() {
                     window.batchDrawManager.ellipseMode = true;
                 }
             }
+            if (settings.pinchZoomV2 === true) {
+                DRAW_CONFIG.pinchZoomV2 = true;
+            }
             // 仅在开发者模式下才检查并加载性能监视器
             if (settings.developerMode && settings.perfMonitorEnabled) {
                 try {

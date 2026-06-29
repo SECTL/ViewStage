@@ -4,7 +4,7 @@
  * 工具栏全部在右侧，支持 IntersectionObserver 懒加载
  */
 
-import { InputSource, PinchZoomSource } from '../gesture/index.js';
+import { InputSource, PinchZoomSource, PinchZoomSourceV2 } from '../gesture/index.js';
 import { DocumentReaderPageManager } from './document_reader_page.js';
 import {
     history_execute_command,
@@ -2320,7 +2320,8 @@ class DocumentReaderManager {
         });
 
         // ====== 两指捏合缩放 ======
-        const pinch = new PinchZoomSource(input);
+        const drUseV2 = window.DRAW_CONFIG?.pinchZoomV2 === true;
+        const pinch = drUseV2 ? new PinchZoomSourceV2(input) : new PinchZoomSource(input);
         this._pinch_source = pinch;
         pinch.startDelayMs = (this.draw_mode !== 'move') ? 200 : 0;
 
@@ -2377,22 +2378,36 @@ class DocumentReaderManager {
                 this.dr_start_scale = this.dr_scale;
             }
 
-            const unclamped_s = this.dr_start_scale * ev.scale;
-            this.dr_scale = Math.max(this.dr_min_scale, Math.min(this.dr_max_scale, unclamped_s));
-            this.dr_cached_inv_scale = 1 / this.dr_scale;
-            if (this.batch_draw) {
-                this.batch_draw._overlay_cached_rect_left = null;
-                this.batch_draw._overlay_cached_rect_top = null;
-            }
+            if (drUseV2) {
+                // V2: 增量式缩放（已用中点锚点）
+                const newScale = this.dr_scale * ev.scale;
+                this.dr_scale = Math.max(this.dr_min_scale, Math.min(this.dr_max_scale, newScale));
+                this.dr_cached_inv_scale = 1 / this.dr_scale;
+                if (this.batch_draw) {
+                    this.batch_draw._overlay_cached_rect_left = null;
+                    this.batch_draw._overlay_cached_rect_top = null;
+                }
+                this.dr_canvas_x = ev.centerX - this.dr_start_finger0_cx * this.dr_scale;
+                this.dr_canvas_y = ev.centerY - this.dr_start_finger0_cy * this.dr_scale;
+            } else {
+                // V1: 累积式缩放（已用中点锚点）
+                const unclamped_s = this.dr_start_scale * ev.scale;
+                this.dr_scale = Math.max(this.dr_min_scale, Math.min(this.dr_max_scale, unclamped_s));
+                this.dr_cached_inv_scale = 1 / this.dr_scale;
+                if (this.batch_draw) {
+                    this.batch_draw._overlay_cached_rect_left = null;
+                    this.batch_draw._overlay_cached_rect_top = null;
+                }
 
-            if (this.dr_scale !== unclamped_s) {
-                this.dr_start_finger0_cx = (ev.centerX - this.dr_canvas_x) / this.dr_scale;
-                this.dr_start_finger0_cy = (ev.centerY - this.dr_canvas_y) / this.dr_scale;
-                this.dr_start_scale = this.dr_scale;
-            }
+                if (this.dr_scale !== unclamped_s) {
+                    this.dr_start_finger0_cx = (ev.centerX - this.dr_canvas_x) / this.dr_scale;
+                    this.dr_start_finger0_cy = (ev.centerY - this.dr_canvas_y) / this.dr_scale;
+                    this.dr_start_scale = this.dr_scale;
+                }
 
-            this.dr_canvas_x = ev.centerX - this.dr_start_finger0_cx * this.dr_scale;
-            this.dr_canvas_y = ev.centerY - this.dr_start_finger0_cy * this.dr_scale;
+                this.dr_canvas_x = ev.centerX - this.dr_start_finger0_cx * this.dr_scale;
+                this.dr_canvas_y = ev.centerY - this.dr_start_finger0_cy * this.dr_scale;
+            }
 
             this._dr_update_move_bound();
             this._dr_update_canvas_position();

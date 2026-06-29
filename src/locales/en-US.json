@@ -380,6 +380,8 @@
     "frameDelta": "Max Gesture Delta Per Frame",
     "tailDuration": "Pen Tail Duration",
     "ellipseStroke": "Ellipse Stroke Rendering",
+    "pinchZoomV2": "Pinch Zoom Algorithm V2",
+    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)",
     "experimental": "Experimental",
     "phoneConnect": "Phone Connect",
     "overlayDpr": "Overlay DPR (Draw Preview)",

@@ -1398,7 +1398,8 @@ fn config_fetch_default() -> serde_json::Value {
         "memclean": {
             "mask": 231
         },
-        "blurEnabled": false
+        "blurEnabled": false,
+        "pinchZoomV2": false
     })
 }
 
