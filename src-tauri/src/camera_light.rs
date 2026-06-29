@@ -154,11 +154,6 @@ fn camera_light_start() -> Result<(), String> {
     Ok(())
 }
 
-/// 初始化 AppHandle（由 lib.rs setup 调用）
-pub fn camera_light_init_app(app: tauri::AppHandle) {
-    let _ = APP_HANDLE.set(app);
-}
-
 /// 开灯
 pub fn camera_light_set_on(app: &tauri::AppHandle) -> Result<(), String> {
     let _ = APP_HANDLE.set(app.clone());
