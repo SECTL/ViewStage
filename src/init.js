@@ -20,19 +20,18 @@ if (document.readyState === 'loading') {
 async function dir_init_cache_path() {
     if (window.__TAURI__) {
         const t0 = performance.now();
-        try {
-            const [cache, config, pictures] = await Promise.all([
-                window.__TAURI__.core.invoke('dir_fetch_cache'),
-                window.__TAURI__.core.invoke('dir_fetch_config'),
-                window.__TAURI__.core.invoke('dir_fetch_pictures_viewstage')
-            ]);
-            window.cacheDir = cache;
-            window.configDir = config;
-            window.cdsDir = pictures;
-            console.log(`[init] dir_init_cache_path done in ${(performance.now() - t0).toFixed(0)}ms`);
-        } catch (error) {
-            console.error('[init] dir_init_cache_path error:', error);
-        }
+        const [cache, config, pictures] = await Promise.allSettled([
+            window.__TAURI__.core.invoke('dir_fetch_cache'),
+            window.__TAURI__.core.invoke('dir_fetch_config'),
+            window.__TAURI__.core.invoke('dir_fetch_pictures_viewstage')
+        ]);
+        if (cache.status === 'fulfilled') window.cacheDir = cache.value;
+        else console.error('[init] dir_fetch_cache error:', cache.reason);
+        if (config.status === 'fulfilled') window.configDir = config.value;
+        else console.error('[init] dir_fetch_config error:', config.reason);
+        if (pictures.status === 'fulfilled') window.cdsDir = pictures.value;
+        else console.error('[init] dir_fetch_pictures error:', pictures.reason);
+        console.log(`[init] dir_init_cache_path done in ${(performance.now() - t0).toFixed(0)}ms`);
     }
 }
 

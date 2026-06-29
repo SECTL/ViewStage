@@ -199,7 +199,7 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
                     <input type="checkbox" id="devEllipseStrokeToggle"${ellipseStrokeEnabled ? ' checked' : ''}>
                     <span class="toggle-slider"></span>
                 </label>
-                <span class="setting-hint">${_tk('developer.pinchZoomV2Hint')}</span>
+                <span class="setting-hint">${_tk('developer.restartRequired')}</span>
             </div>
         </div>
         <div class="setting-item">

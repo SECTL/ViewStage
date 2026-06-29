@@ -382,6 +382,7 @@
     "ellipseStroke": "椭圆笔迹渲染",
     "pinchZoomV2": "捏合缩放算法 V2",
     "pinchZoomV2Hint": "增量式缩放 + 中点锚点（需重启）",
+    "restartRequired": "需重启应用生效",
     "experimental": "实验性",
     "phoneConnect": "手机互联",
     "overlayDpr": "叠加层 DPR（绘制预览）",

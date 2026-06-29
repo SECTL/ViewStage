@@ -385,6 +385,7 @@
     "displayDefault": "Mostrar predeterminado",
     "pinchZoomV2": "Pinch Zoom Algorithm V2",
     "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)",
+    "restartRequired": "Restart required",
     "backToMain": "←"
   },
   "config": {
