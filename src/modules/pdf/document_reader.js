@@ -182,6 +182,11 @@ class DocumentReaderManager {
             this._was_camera_open_before = false;
         }
 
+        if (window.__lightAvailable && window.main_light_off) {
+            window.__savedLightState = window.__lightOn;
+            await window.main_light_off();
+        }
+
         if (window.main_submit_stroke) {
             await window.main_submit_stroke();
         }

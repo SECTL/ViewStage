@@ -114,6 +114,20 @@ export class CameraManager {
         this._createVideo();
         this.d.updatePhotoButtonState();
         this.d.deleteSidebarSelection();
+        if (window.__lightAvailable && this.d.dom.btnLight) {
+            this.d.dom.btnLight.style.display = '';
+            if (window.__savedLightState) {
+                try {
+                    window.__TAURI__.core.invoke('camera_light_on');
+                    window.__lightOn = true;
+                    this.d.dom.btnLight.classList.add('active');
+                    const img = this.d.dom.btnLight.querySelector('img');
+                    if (img) img.src = this.d.ThemeManager.theme_fetch_icon_path('light');
+                } catch (e) {
+                    console.error('展台灯自动开启失败:', e);
+                }
+            }
+        }
 
         console.log('摄像头已打开:', videoTrack.label || '未知设备', '分辨率:', settings.width, 'x', settings.height);
     }

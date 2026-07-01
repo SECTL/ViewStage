@@ -2333,6 +2333,7 @@ function main_setup_tool_events() {
                 const isOn = event.payload?.isOn;
                 if (isOn === undefined) return;
                 __lightOn = isOn;
+                __savedLightState = isOn;
                 const img = dom.btnLight?.querySelector('img');
                 if (isOn) {
                     dom.btnLight?.classList.add('active');
@@ -2426,6 +2427,7 @@ function main_handle_menu_outside_click(e) {
 
 // 展台灯开关
 let __lightOn = false;
+let __savedLightState = false;
 
 async function main_handle_light_toggle() {
     if (!window.__TAURI__ || !window.__lightAvailable) return;
@@ -2443,8 +2445,22 @@ async function main_handle_light_toggle() {
             dom.btnLight.classList.add('active');
             if (img) img.src = ThemeManager.theme_fetch_icon_path('light');
         }
+        __savedLightState = __lightOn;
     } catch (e) {
         console.error('展台灯控制失败:', e);
+    }
+}
+
+async function main_light_off() {
+    if (!window.__TAURI__ || !window.__lightAvailable || !__lightOn) return;
+    try {
+        await window.__TAURI__.core.invoke('camera_light_off');
+        __lightOn = false;
+        dom.btnLight.classList.remove('active');
+        const img = dom.btnLight.querySelector('img');
+        if (img) img.src = ThemeManager.theme_fetch_icon_path('light-off');
+    } catch (e) {
+        console.error('展台灯关闭失败:', e);
     }
 }
 
@@ -3714,6 +3730,11 @@ async function main_update_image_selection(index) {
         if (state.isCameraOpen) {
             await main_update_camera_state(false);
         }
+        if (window.__lightAvailable) {
+            __savedLightState = __lightOn;
+            main_light_off();
+            dom.btnLight.style.display = 'none';
+        }
         main_render_image_centered(img);
         
         // 恢复拍摄时的 CSS filter，保证与实际效果一致
@@ -4462,6 +4483,7 @@ async function main_save_image_to_list_no_highlight(img, name, captureFilter) {
 
 window.main_save_image_to_list_no_highlight = main_save_image_to_list_no_highlight;
 window.main_update_sidebar_content = main_update_sidebar_content;
+window.main_light_off = main_light_off;
 window.main_delete_all_drawings = main_delete_all_drawings;
 
 function main_render_image_centered(img) {
