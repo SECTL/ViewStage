@@ -164,6 +164,7 @@ export class CameraManager {
             this.d.historyDeleteAll();
             this.d.resetSourceId();
         }
+        if (dom.btnLight) dom.btnLight.style.display = 'none';
         console.log('摄像头已关闭');
     }
 
@@ -232,6 +233,7 @@ export class CameraManager {
             this.d.updateMoveBound();
             this.d.updateCanvasPosition();
             this.d.updatePhotoButtonState();
+            if (dom.btnLight) dom.btnLight.style.display = 'none';
             this.showNoCameraMessage(message);
             console.log('无摄像头模式初始化完成');
         } catch (error) {
