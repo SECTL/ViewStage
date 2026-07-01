@@ -505,6 +505,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     options.forEach(opt => {
                         if (parseInt(opt.dataset.value) === autoClearCacheDays) {
                             autoClearCacheSelected.textContent = opt.textContent;
+                            opt.classList.add('selected');
                         }
                     });
                 }
@@ -1638,15 +1639,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             card.classList.add('selected');
 
             const saved = await settings_save_all_local({ theme: value });
-            if (saved) {
-                const restartModal = document.getElementById('restartModal');
-                const modalMessage = restartModal?.querySelector('.modal-message');
-                if (modalMessage) {
-                    modalMessage.textContent = window.i18n?.format_translate('settings.themeChanged') || 'Theme changed, restart to apply.';
-                }
-                if (restartModal) {
-                    restartModal.classList.add('active');
-                }
+            if (!saved) {
+                settings_show_dialog(window.i18n?.format_translate('settings.saveFailed') || '保存失败', '', 'error');
             }
         });
     }

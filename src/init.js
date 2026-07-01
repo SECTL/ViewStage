@@ -19,13 +19,19 @@ if (document.readyState === 'loading') {
 // 通过 Tauri 后端初始化缓存、配置、图片保存等目录路径
 async function dir_init_cache_path() {
     if (window.__TAURI__) {
-        try {
-            window.cacheDir = await window.__TAURI__.core.invoke('dir_fetch_cache');
-            window.configDir = await window.__TAURI__.core.invoke('dir_fetch_config');
-            window.cdsDir = await window.__TAURI__.core.invoke('dir_fetch_pictures_viewstage');
-        } catch (error) {
-            console.error('获取缓存目录失败:', error);
-        }
+        const t0 = performance.now();
+        const [cache, config, pictures] = await Promise.allSettled([
+            window.__TAURI__.core.invoke('dir_fetch_cache'),
+            window.__TAURI__.core.invoke('dir_fetch_config'),
+            window.__TAURI__.core.invoke('dir_fetch_pictures_viewstage')
+        ]);
+        if (cache.status === 'fulfilled') window.cacheDir = cache.value;
+        else console.error('[init] dir_fetch_cache error:', cache.reason);
+        if (config.status === 'fulfilled') window.configDir = config.value;
+        else console.error('[init] dir_fetch_config error:', config.reason);
+        if (pictures.status === 'fulfilled') window.cdsDir = pictures.value;
+        else console.error('[init] dir_fetch_pictures error:', pictures.reason);
+        console.log(`[init] dir_init_cache_path done in ${(performance.now() - t0).toFixed(0)}ms`);
     }
 }
 
@@ -153,7 +159,9 @@ async function settings_load_camera_config() {
             const { invoke } = window.__TAURI__.core;
             const state = window.state;
             const DRAW_CONFIG = window.DRAW_CONFIG;
+            const t0 = performance.now();
             const result = await invoke('settings_fetch_all');
+            console.log(`[init] settings_fetch_all done in ${(performance.now() - t0).toFixed(0)}ms`);
 
             // 容错：后端返回异常时使用空对象，避免 settings 访问崩溃
             const settings = (result && typeof result === 'object' && result.settings)
@@ -257,7 +265,9 @@ async function settings_load_camera_config() {
 
             const themeName = settings.theme || 'com.viewstage.theme.simplify';
             if (typeof themeName === 'string' && themeName) {
+                const t_theme = performance.now();
                 await ThemeManager.theme_update_active(themeName);
+                console.log(`[init] theme_update_active done in ${(performance.now() - t_theme).toFixed(0)}ms`);
             }
 
             if (settings.blurEnabled === true) {
@@ -278,32 +288,18 @@ async function settings_load_camera_config() {
 
             const palmEraserEnabled = settings.palmEraserEnabled === true;
             DRAW_CONFIG.palmEraserEnabled = palmEraserEnabled;
-            if (palmEraserEnabled) {
-                try {
-                    const mod = await import('./modules/palm-eraser/palm-eraser.js');
-                    window.__palmEraser = mod;
-                } catch (e) {
-                    console.error('[init] palm eraser load error:', e);
-                }
-            } else {
-                window.__palmEraser = null;
-            }
 
-            try {
-                window.__eraser = await import('./modules/eraser/eraser.js');
-            } catch (e) {
-                console.error('[init] eraser load error:', e);
-            }
-
-            if (DRAW_CONFIG.eraserSpeedEnabled) {
-                try {
-                    window.__eraserSpeed = await import('./modules/eraser/eraser_speed.js');
-                } catch (e) {
-                    console.error('[init] eraser speed load error:', e);
-                }
-            } else {
-                window.__eraserSpeed = null;
-            }
+            // 并行加载橡皮擦相关模块
+            const t_mod = performance.now();
+            const [palmMod, eraserMod, eraserSpeedMod] = await Promise.all([
+                palmEraserEnabled ? import('./modules/palm-eraser/palm-eraser.js').catch(e => { console.error('[init] palm eraser load error:', e); return null; }) : Promise.resolve(null),
+                import('./modules/eraser/eraser.js').catch(e => { console.error('[init] eraser load error:', e); return null; }),
+                DRAW_CONFIG.eraserSpeedEnabled ? import('./modules/eraser/eraser_speed.js').catch(e => { console.error('[init] eraser speed load error:', e); return null; }) : Promise.resolve(null)
+            ]);
+            window.__palmEraser = palmMod;
+            window.__eraser = eraserMod;
+            window.__eraserSpeed = eraserSpeedMod;
+            console.log(`[init] eraser modules loaded in ${(performance.now() - t_mod).toFixed(0)}ms`);
 
             DRAW_CONFIG.developerMode = !!settings.developerMode;
             if (settings.developerMode && settings.penMinWidthRatio !== undefined) {
@@ -323,6 +319,9 @@ async function settings_load_camera_config() {
                 if (window.batchDrawManager) {
                     window.batchDrawManager.ellipseMode = true;
                 }
+            }
+            if (settings.pinchZoomV2 === true) {
+                DRAW_CONFIG.pinchZoomV2 = true;
             }
             // 仅在开发者模式下才检查并加载性能监视器
             if (settings.developerMode && settings.perfMonitorEnabled) {
@@ -355,29 +354,28 @@ function history_update_button_status() {
  * 历史管理器 → 事件绑定 → 快照保存 → 摄像头检测与初始化 → 关闭启动屏
  */
 async function main_init_all() {
+    const _initStart = performance.now();
     console.log('[init] main_init_all start');
     try {
         app_emit_splash_progress(0, '正在初始化...');
-        console.log('[init] progress 0 emitted');
 
         if (window.i18n) {
             app_emit_splash_progress(0, '正在初始化多语言...');
-            console.log('[init] init_start begin');
+            const t0 = performance.now();
             await window.i18n.init_start();
-            console.log('[init] init_start done');
+            console.log(`[init] i18n.init_start done in ${(performance.now() - t0).toFixed(0)}ms`);
         }
 
         if (window.__TAURI__) {
             app_emit_splash_progress(0, '正在检查运行环境...');
-            console.log('[init] checking oobe_active');
+            const t0 = performance.now();
             const isOobeActive = await window.__TAURI__.core.invoke('oobe_check_active');
-            console.log('[init] oobe_active:', isOobeActive);
+            console.log(`[init] oobe_check_active: ${isOobeActive} (${(performance.now() - t0).toFixed(0)}ms)`);
             if (isOobeActive) {
                 console.log('[init] OOBE active, returning');
                 return;
             }
             app_emit_splash_progress(0, '正在注册文件关联...');
-            console.log('[init] setup_pdf_file_open');
             window.main_setup_pdf_file_open();
         }
 
@@ -389,48 +387,49 @@ async function main_init_all() {
         console.log('[init] dom_init_all ok');
 
         app_emit_splash_progress(1, '正在加载设置...');
-        console.log('[init] progress 1 emitted');
-        app_emit_splash_progress(1, '正在初始化缓存路径...');
-        console.log('[init] dir_init_cache_path begin');
-        await dir_init_cache_path();
-        console.log('[init] dir_init_cache_path done');
-
-        app_emit_splash_progress(1, '正在加载摄像头配置...');
-        console.log('[init] settings_load_camera_config begin');
-        await settings_load_camera_config();
-        console.log('[init] settings_load_camera_config done');
+        // dir_init_cache_path 与 settings_load_camera_config 无依赖，并行执行
+        const t_parallel = performance.now();
+        await Promise.all([
+            dir_init_cache_path(),
+            settings_load_camera_config()
+        ]);
+        console.log(`[init] settings+dirs parallel done in ${(performance.now() - t_parallel).toFixed(0)}ms`);
 
         app_emit_splash_progress(2, '正在加载组件...');
-        console.log('[init] progress 2 emitted');
         app_emit_splash_progress(2, '正在初始化画布...');
-        console.log('[init] calling canvas_init_all');
+        const t_canvas = performance.now();
         canvas_init_all();
-        app_emit_splash_progress(2, '正在加载白板...');
-        console.log('[init] blackboard init');
-        if (window.__blackboardEnabled !== false) {
-            try {
-                await window.blackboard_ensure_loaded(dom.canvasContainer);
-            } catch (e) {
-                console.error('[init] blackboard lazy load error:', e);
-            }
-        }
-        app_emit_splash_progress(2, '正在加载文档阅读器...');
-        console.log('[init] document reader init');
-        if (window.documentReaderManager) {
-            window.documentReaderManager.init();
-        }
+        console.log(`[init] canvas_init_all done in ${(performance.now() - t_canvas).toFixed(0)}ms`);
+
+        // 黑板与文档阅读器并行初始化
+        app_emit_splash_progress(2, '正在加载白板和文档阅读器...');
+        const t_components = performance.now();
+        await Promise.all([
+            window.__blackboardEnabled !== false
+                ? window.blackboard_ensure_loaded(dom.canvasContainer).catch(e => { console.error('[init] blackboard lazy load error:', e); })
+                : Promise.resolve(),
+            window.documentReaderManager
+                ? Promise.resolve(window.documentReaderManager.init())
+                : Promise.resolve()
+        ]);
+        console.log(`[init] blackboard+docReader done in ${(performance.now() - t_components).toFixed(0)}ms`);
         app_emit_splash_progress(2, '正在加载历史记录...');
-        console.log('[init] history_init_manager');
+        const t_history = performance.now();
         history_init_manager({
             on_state_change: () => {
                 history_update_button_status();
             }
         });
+        console.log(`[init] history_init_manager done in ${(performance.now() - t_history).toFixed(0)}ms`);
+
         app_emit_splash_progress(2, '正在绑定事件...');
-        console.log('[init] setup_all_events');
+        const t_events = performance.now();
         window.main_setup_all_events();
-        console.log('[init] draw_save_snapshot');
+        console.log(`[init] setup_all_events done in ${(performance.now() - t_events).toFixed(0)}ms`);
+
+        const t_snapshot = performance.now();
         await draw_save_snapshot();
+        console.log(`[init] draw_save_snapshot done in ${(performance.now() - t_snapshot).toFixed(0)}ms`);
 
         // 展台灯可用性检测（非阻塞，检测结果写入 device.json 后不再重复 HID 枚举）
         window.__TAURI__?.core?.invoke('camera_light_detect_and_save').then(detected => {
@@ -469,7 +468,6 @@ async function main_init_all() {
         console.log('[init] progress 3 emitted');
 
         app_emit_splash_progress(4, '正在初始化摄像头...');
-        console.log('[init] progress 4 emitted');
 
         // 摄像头检测与初始化：先枚举设备，无摄像头则直接跳过
         let is_camera_handled = false;
@@ -478,13 +476,12 @@ async function main_init_all() {
         if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
             try {
                 app_emit_splash_progress(4, '正在检测摄像头设备...');
-                console.log('[init] enumerateDevices');
+                const t_enum = performance.now();
                 const devices = await navigator.mediaDevices.enumerateDevices();
-                console.log('[init] devices found:', devices.length);
+                console.log(`[init] enumerateDevices: ${devices.length} devices (${(performance.now() - t_enum).toFixed(0)}ms)`);
                 has_video_device = devices.some(d => d.kind === 'videoinput');
                 if (!has_video_device) {
                     app_emit_splash_progress(4, '未检测到摄像头，跳过');
-                    console.log('[init] no video devices, initWithoutCamera');
                     await window.main_init_without_camera(window.i18n?.format_translate('camera.notDetected') || '未检测到摄像头');
                     is_camera_handled = true;
                 }
@@ -497,10 +494,10 @@ async function main_init_all() {
         if (!is_camera_handled) {
             try {
                 app_emit_splash_progress(4, '正在连接摄像头...');
-                console.log('[init] init_camera');
+                const t_cam = performance.now();
                 await window.main_init_camera();
+                console.log(`[init] init_camera done in ${(performance.now() - t_cam).toFixed(0)}ms`);
                 app_emit_splash_progress(4, '摄像头已连接');
-                console.log('[init] init_camera done');
             } catch (error) {
                 const err_name = error?.name || '';
                 const handled_codes = ['NotFoundError', 'DevicesNotFoundError', 'NotAllowedError', 'PermissionDeniedError'];
@@ -529,21 +526,21 @@ async function main_init_all() {
         }
 
         app_emit_splash_progress(5, '正在完成...');
-        console.log('[init] progress 5 emitted');
 
         app_emit_splash_progress(6, '');
-        console.log('[init] progress 6 emitted');
 
         // 关闭启动屏
         if (window.__TAURI__) {
             try {
-                console.log('[init] invoking window_hide_splashscreen');
+                const t_splash = performance.now();
                 await window.__TAURI__.core.invoke('window_hide_splashscreen');
-                console.log('[init] window_hide_splashscreen done');
+                console.log(`[init] window_hide_splashscreen done in ${(performance.now() - t_splash).toFixed(0)}ms`);
             } catch (e) {
                 console.log('[init] 关闭启动界面失败:', e);
             }
         }
+
+        console.log(`[init] === main_init_all completed in ${(performance.now() - _initStart).toFixed(0)}ms ===`);
 
         // 遥测初始化（延迟执行，不阻塞启动）
         import('./modules/telemetry/telemetry.js').then(m => {
@@ -569,6 +566,19 @@ async function main_init_all() {
                 }
             } catch (_) {}
         }, 3000);
+
+        // 手机互联服务由 Rust setup 根据 config.phoneServerEnabled 自动启动
+        // 此处仅记录日志，无需前端干预
+        setTimeout(async () => {
+            const invoke = window.__TAURI__?.core?.invoke;
+            if (!invoke) return;
+            try {
+                const status = await invoke('phone_server_status');
+                if (status) {
+                    console.log('[init] 手机互联服务已运行:', `http://${status.ip}:${status.port}`);
+                }
+            } catch (_) {}
+        }, 2000);
 
         // 恢复上次打开的文档（延迟执行，确保主窗口已完全加载）
         if (window.documentReaderManager) {
@@ -672,8 +682,9 @@ document.addEventListener('beforeunload', () => {
     window.main_delete_image_blob_urls?.();
     window.main_delete_all_pdf_blob_urls?.();
     // 如果启用了恢复上次文档状态，保存状态但不清理缓存
+    // 默认安全策略：如果尚未加载设置（undefined），视为启用保存
     if (window.documentReaderManager) {
-        if (window.__restoreLastDocEnabled) {
+        if (window.__restoreLastDocEnabled !== false) {
             // 保存状态到缓存和 config
             window.documentReaderManager._save_annotations_to_cache?.();
             window.documentReaderManager._save_last_doc_state?.();

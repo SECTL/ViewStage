@@ -12,8 +12,9 @@ async function developer_options_init() {
     let savedPerfInterval = 200;
     let savedDevMode = true;
     let savedFrameDelta = 60;
-    let savedTailDuration = 50;
+    let savedTailDuration = 30;
     let savedEllipseStroke = false;
+    let savedPinchZoomV2 = false;
 
     if (invoke) {
         try {
@@ -36,6 +37,7 @@ async function developer_options_init() {
                 ?? s.penTailDuration
                 ?? 30;
             savedEllipseStroke = s.ellipseStrokeEnabled === true;
+            savedPinchZoomV2 = s.pinchZoomV2 === true;
         } catch (_) {
             savedWidthRatio = window.DRAW_CONFIG?.penMinWidthRatio ?? 0.4;
             savedMaxScale = window.DRAW_CONFIG?.maxScaleImage ?? 4;
@@ -45,7 +47,7 @@ async function developer_options_init() {
         savedMaxScale = window.DRAW_CONFIG?.maxScaleImage ?? 4;
     }
 
-    developer_options_show_main(savedWidthRatio, savedMaxScale, savedPerfMonitor, savedPerfInterval, savedDevMode, savedFrameDelta, savedTailDuration, savedEllipseStroke);
+    developer_options_show_main(savedWidthRatio, savedMaxScale, savedPerfMonitor, savedPerfInterval, savedDevMode, savedFrameDelta, savedTailDuration, savedEllipseStroke, savedPinchZoomV2);
 }
 
 const PERF_INTERVAL_OPTIONS = [
@@ -60,7 +62,8 @@ function _perf_interval_label(ms) {
     return opt ? `${_tk(opt.i18nKey)}（${ms}ms）` : `${ms}ms`;
 }
 
-function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMonitorEnabled, perfMonitorInterval, devModeEnabled, currentFrameDelta, currentTailDuration, ellipseStrokeEnabled) {
+function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMonitorEnabled, perfMonitorInterval, devModeEnabled, currentFrameDelta, currentTailDuration, ellipseStrokeEnabled, pinchZoomV2Enabled) {
+    const invoke = window.__TAURI__?.core?.invoke;
     const page = document.getElementById('pageDevOptions');
     if (!page) return;
     const devModeOn = devModeEnabled !== false;
@@ -180,9 +183,29 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
             <span id="devGoMemclean" style="cursor:pointer;font-size:18px;color:var(--color-muted, #888);padding:4px;">→</span>
         </div>
         <div class="setting-item">
-            <span class="setting-label">${_tk('developer.ellipseStroke')}</span>
+            <span class="setting-label">${_tk('developer.pinchZoomV2')}<span class="experimental-badge">${_tk('developer.experimental')}</span></span>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="devPinchZoomV2Toggle"${pinchZoomV2Enabled ? ' checked' : ''}>
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="setting-hint">${_tk('developer.pinchZoomV2Hint')}</span>
+            </div>
+        </div>
+        <div class="setting-item">
+            <span class="setting-label">${_tk('developer.ellipseStroke')}<span class="experimental-badge">${_tk('developer.experimental')}</span></span>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="devEllipseStrokeToggle"${ellipseStrokeEnabled ? ' checked' : ''}>
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="setting-hint">${_tk('developer.restartRequired')}</span>
+            </div>
+        </div>
+        <div class="setting-item">
+            <span class="setting-label">${_tk('developer.phoneConnect')}<span class="experimental-badge">${_tk('developer.experimental')}</span></span>
             <label class="toggle-switch">
-                <input type="checkbox" id="devEllipseStrokeToggle"${ellipseStrokeEnabled ? ' checked' : ''}>
+                <input type="checkbox" id="devPhoneConnectToggle">
                 <span class="toggle-slider"></span>
             </label>
         </div>
@@ -239,7 +262,7 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
             opt.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const v = parseInt(opt.dataset.value);
-                selected.textContent = perf_interval_label(v);
+                selected.textContent = _perf_interval_label(v);
                 options.forEach(o => o.classList.remove('selected'));
                 opt.classList.add('selected');
                 select.classList.remove('open');
@@ -359,29 +382,61 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
         });
     })();
 
-    // 椭圆笔迹渲染开关
+    // 捏合缩放算法 V2 开关
+    (function setup_pinch_zoom_v2_toggle() {
+        const toggle = document.getElementById('devPinchZoomV2Toggle');
+        if (!toggle) return;
+        toggle.addEventListener('change', () => {
+            const enabled = toggle.checked;
+            if (invoke) {
+                invoke('settings_save_all', { settings: { pinchZoomV2: enabled, developerMode: true } });
+            }
+        });
+    })();
+
+    // 椭圆笔迹渲染开关（需重启生效）
     (function setup_ellipse_stroke_toggle() {
         const toggle = document.getElementById('devEllipseStrokeToggle');
         if (!toggle) return;
         toggle.addEventListener('change', () => {
             const enabled = toggle.checked;
-            if (window.DRAW_CONFIG) {
-                window.DRAW_CONFIG.ellipseStrokeEnabled = enabled;
-            }
-            if (window.batchDrawManager) {
-                window.batchDrawManager.ellipseMode = enabled;
-            }
-            // 同步到阅读器和黑板的独立 batch_draw 实例
-            const docReader = window.__documentReaderManager;
-            if (docReader?.batch_draw) {
-                docReader.batch_draw.ellipseMode = enabled;
-            }
-            const bb = window.blackboardManager;
-            if (bb?.drawing_engine?.batch_draw) {
-                bb.drawing_engine.batch_draw.ellipseMode = enabled;
-            }
             if (invoke) {
-                invoke('settings_save_all', { settings: { ellipseStrokeEnabled: enabled } });
+                invoke('settings_save_all', { settings: { ellipseStrokeEnabled: enabled, developerMode: true } });
+            }
+        });
+    })();
+
+    // 手机互联开关
+    (function setup_phone_connect_toggle() {
+        const toggle = document.getElementById('devPhoneConnectToggle');
+        if (!toggle) return;
+
+        // 从 config 读取持久化设置，同时检查运行状态
+        if (invoke) {
+            Promise.all([
+                invoke('settings_fetch_all'),
+                invoke('phone_server_status')
+            ]).then(([settingsResult, statusResult]) => {
+                const settings = settingsResult?.settings || {};
+                // 优先看运行状态，其次看 config
+                toggle.checked = !!statusResult || !!settings.phoneServerEnabled;
+            }).catch(() => {});
+        }
+
+        toggle.addEventListener('change', async () => {
+            const enabled = toggle.checked;
+            if (!invoke) return;
+            try {
+                if (enabled) {
+                    await invoke('phone_server_start');
+                } else {
+                    await invoke('phone_server_stop');
+                }
+                // 保存设置，下次启动时自动恢复
+                await invoke('settings_save_all', { settings: { phoneServerEnabled: enabled } });
+            } catch (e) {
+                console.error('[phone] 切换服务状态失败:', e);
+                toggle.checked = !enabled;
             }
         });
     })();

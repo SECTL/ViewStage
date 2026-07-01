@@ -47,6 +47,7 @@ class RealtimeBatchDrawManager {
         this._penEffectMode = 'off';
         this._dirtyBoundsCanvas = null;
         this._limitedTailWidth = null;
+        this._strokeGroupId = 0;
 
         this._overlayCanvas = null;
         this._overlayCtx = null;
@@ -70,9 +71,9 @@ class RealtimeBatchDrawManager {
      * @returns {number} 覆盖层 DPR
      */
     _calc_overlay_dpr(scale) {
-        const cfg = window.DRAW_CONFIG;
+        const cfg = window.DRAW_CONFIG ?? {};
         if (cfg.overlayDpr != null && cfg.overlayDpr > 0) return cfg.overlayDpr;
-        if (cfg.dynamicDprEnabled === false) return Math.min(cfg.dpr, 2);
+        if (cfg.dynamicDprEnabled === false) return Math.min(cfg.dpr ?? 1, 2);
         return 1;
     }
 
@@ -404,21 +405,178 @@ class RealtimeBatchDrawManager {
     }
 
 
-    _draw_segment_ellipse(ctx, fromX, fromY, toX, toY, lineWidth, color) {
-        const dx = toX - fromX;
-        const dy = toY - fromY;
-        const segLen = Math.sqrt(dx * dx + dy * dy);
-        const halfW = Math.max(0.5, lineWidth) / 2;
-        const cx = (fromX + toX) / 2;
-        const cy = (fromY + toY) / 2;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        if (segLen < 0.5) {
-            ctx.arc(cx, cy, halfW, 0, Math.PI * 2);
-        } else {
-            ctx.ellipse(cx, cy, segLen / 2, halfW, Math.atan2(dy, dx), 0, Math.PI * 2);
+    /* FuzzyContains：两矩形间交面积 ≥ min(面积)×percent% 时认为重叠 */
+    _fuzzy_contains(r1, r2, percent) {
+        const ix = Math.max(r1.x, r2.x);
+        const iy = Math.max(r1.y, r2.y);
+        const ix2 = Math.min(r1.x + r1.w, r2.x + r2.w);
+        const iy2 = Math.min(r1.y + r1.h, r2.y + r2.h);
+        const iw = Math.max(0, ix2 - ix);
+        const ih = Math.max(0, iy2 - iy);
+        if (iw === 0 || ih === 0) return null;
+        const a1 = r1.w * r1.h;
+        const a2 = r2.w * r2.h;
+        const minA = Math.min(a1, a2);
+        if ((iw * ih) / minA * 100 < percent) return null;
+        return a1 >= a2 ? 'r1cr2' : 'r2cr1';
+    }
+
+    /* WPF StylusTip.Ellipse 连续轮廓算法 */
+    _build_ellipse_outline(ctx, segments) {
+        /* FuzzyContains 节点消除 */
+        const filtered = [];
+        let prevRect = null;
+        for (let i = 0; i < segments.length; i++) {
+            const s = segments[i];
+            const hw = Math.max(0.5, s.lineWidth) / 2;
+            const rect = { x: Math.min(s.fromX, s.toX) - hw, y: Math.min(s.fromY, s.toY) - hw,
+                w: Math.abs(s.toX - s.fromX) + hw * 2, h: Math.abs(s.toY - s.fromY) + hw * 2 };
+            const fc = prevRect ? this._fuzzy_contains(prevRect, rect, 95) : null;
+            if (fc === 'r1cr2') continue;
+            if (fc === 'r2cr1') filtered.pop();
+            filtered.push(s);
+            prevRect = rect;
         }
+
+        const n_seg = filtered.length;
+        if (n_seg === 0) return;
+
+        let nodes;
+        if (n_seg < 3) {
+            nodes = [];
+            for (let i = 0; i < n_seg; i++) {
+                if (i === 0) nodes.push({ x: filtered[i].fromX, y: filtered[i].fromY, w: filtered[i].lineWidth });
+                nodes.push({ x: filtered[i].toX, y: filtered[i].toY, w: filtered[i].lineWidth });
+            }
+        } else {
+            const raw = filtered.map(s => ({
+                x: (s.fromX + s.toX) / 2, y: (s.fromY + s.toY) / 2, w: s.lineWidth
+            }));
+            raw[0] = { x: filtered[0].fromX, y: filtered[0].fromY, w: filtered[0].lineWidth };
+            raw[raw.length - 1] = {
+                x: filtered[filtered.length - 1].toX,
+                y: filtered[filtered.length - 1].toY,
+                w: filtered[filtered.length - 1].lineWidth
+            };
+            const smoothPts = [];
+            for (let i = 0; i < raw.length - 1; i++) {
+                const p0 = raw[Math.max(0, i - 1)];
+                const p1 = raw[i];
+                const p2 = raw[i + 1];
+                const p3 = raw[Math.min(raw.length - 1, i + 2)];
+                const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
+                const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
+                const mx = (p1.x + 3 * c1.x + 3 * c2.x + p2.x) / 8;
+                const my = (p1.y + 3 * c1.y + 3 * c2.y + p2.y) / 8;
+                const mw = p1.w * 0.75 + p2.w * 0.25;
+                if (i === 0) {
+                    smoothPts.push({ x: p1.x, y: p1.y, w: p1.w });
+                    smoothPts.push({ x: mx, y: my, w: mw });
+                } else {
+                    smoothPts.push({ x: mx, y: my, w: mw });
+                }
+            }
+            smoothPts.push({ x: raw[raw.length - 1].x, y: raw[raw.length - 1].y, w: raw[raw.length - 1].w });
+            nodes = smoothPts;
+        }
+
+        const m = nodes.length;
+        if (m < 2) {
+            if (m === 1) {
+                const r = Math.max(0.5, nodes[0].w) / 2;
+                ctx.beginPath();
+                ctx.arc(nodes[0].x, nodes[0].y, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            return;
+        }
+
+        /* Outer Tangent 外切线法构建 quads */
+        const segs = [];
+        for (let i = 0; i < m - 1; i++) {
+            const n0 = nodes[i], n1 = nodes[i + 1];
+            const dx = n1.x - n0.x, dy = n1.y - n0.y;
+            const len = Math.hypot(dx, dy);
+            if (len < 0.5) continue;
+            const r0 = Math.max(0.5, n0.w) / 2;
+            const r1 = Math.max(0.5, n1.w) / 2;
+            const a = Math.atan2(dy, dx);
+
+            const Vx = dx / len, Vy = dy / len;
+            const Px = -Vy, Py = Vx;
+
+            const dr = r1 - r0;
+            const drSqOverL = (dr * dr) / (len * len);
+            let t1x, t1y, t2x, t2y;
+            if (drSqOverL < 1) {
+                const k = Math.sqrt(1 - drSqOverL);
+                const pComp = -(dr / len);
+                t1x = Vx * pComp + Px * k;
+                t1y = Vy * pComp + Py * k;
+                t2x = Vx * pComp - Px * k;
+                t2y = Vy * pComp - Py * k;
+            } else {
+                t1x = Px; t1y = Py;
+                t2x = -Px; t2y = -Py;
+            }
+
+            segs.push({
+                fx: n0.x, fy: n0.y, tx: n1.x, ty: n1.y,
+                hw0: r0, hw1: r1, angle: a,
+                A: { x: n0.x + t1x * r0, y: n0.y + t1y * r0 },
+                B: { x: n1.x + t1x * r1, y: n1.y + t1y * r1 },
+                C: { x: n1.x + t2x * r1, y: n1.y + t2y * r1 },
+                D: { x: n0.x + t2x * r0, y: n0.y + t2y * r0 }
+            });
+        }
+
+        const k = segs.length;
+        if (k === 0) return;
+
+        /* Polyline 轮廓（平端 cap + 节点填充圆补圆） */
+        ctx.beginPath();
+        ctx.moveTo(segs[0].D.x, segs[0].D.y);
+        for (let i = 0; i < k; i++) {
+            ctx.lineTo(segs[i].A.x, segs[i].A.y);
+            ctx.lineTo(segs[i].B.x, segs[i].B.y);
+        }
+        for (let i = k - 1; i >= 0; i--) {
+            ctx.lineTo(segs[i].C.x, segs[i].C.y);
+            ctx.lineTo(segs[i].D.x, segs[i].D.y);
+        }
+        ctx.closePath();
         ctx.fill();
+
+        /* 节点填充圆（所有节点都补圆消除缺口，防止锯齿） */
+        for (let i = 0; i < m; i++) {
+            const n = nodes[i];
+            const r = Math.max(0.5, n.w) / 2;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    _draw_capsule(ctx, fromX, fromY, toX, toY, lineWidth, color) {
+        ctx.fillStyle = color;
+        this._build_ellipse_outline(ctx, [{ fromX, fromY, toX, toY, lineWidth }]);
+    }
+
+    _draw_tapered_tip(ctx, fromX, fromY, toX, toY, startWidth, color) {
+        const steps = 4;
+        const endRatio = 0.05;
+        ctx.fillStyle = color;
+        for (let i = 0; i < steps; i++) {
+            const t0 = i / steps;
+            const t1 = (i + 1) / steps;
+            const w = startWidth * (1 - (1 - endRatio) * t1);
+            if (w < 0.3) break;
+            const segFromX = fromX + (toX - fromX) * t0;
+            const segFromY = fromY + (toY - fromY) * t0;
+            const segToX = fromX + (toX - fromX) * t1;
+            const segToY = fromY + (toY - fromY) * t1;
+            this._build_ellipse_outline(ctx, [{ fromX: segFromX, fromY: segFromY, toX: segToX, toY: segToY, lineWidth: w }]);
+        }
     }
 
     batch_draw_handle_flush() {
@@ -456,6 +614,7 @@ class RealtimeBatchDrawManager {
         let batchFirst = true;
         let batchWidth = 0;
         let batchColor = null;
+        const ellipseGroups = this.ellipseMode ? [] : null;
 
         if (this._penEffectMode === 'limited') {
             const prev = this._segmentTimes.length > 0 ? this._segmentTimes[this._segmentTimes.length - 1] : 0;
@@ -525,7 +684,12 @@ class RealtimeBatchDrawManager {
                 const ctx = this._overlayCtx;
 
                 if (this.ellipseMode) {
-                    this._draw_segment_ellipse(ctx, fromX, fromY, toX, toY, lineWidth, cmd.color || currentColor);
+                    const col = cmd.color || currentColor;
+                    const w = Math.max(0.5, lineWidth || cmd.lineWidth || 5);
+                    const gid = this._strokeGroupId;
+                    let g = ellipseGroups.find(g => g.color === col && g.gid === gid);
+                    if (!g) { g = { color: col, gid, segs: [] }; ellipseGroups.push(g); }
+                    g.segs.push({ fromX, fromY, toX, toY, lineWidth: w });
                 } else {
                     const needsBreak = batchFirst ||
                         (cmd.color && cmd.color !== batchColor) ||
@@ -584,8 +748,18 @@ class RealtimeBatchDrawManager {
             }
         }
 
+        /* 椭圆模式：对每组颜色画一条连续轮廓 */
+        if (this.ellipseMode && this._overlayCtx && ellipseGroups) {
+            const ctx = this._overlayCtx;
+            for (const g of ellipseGroups) {
+                if (g.segs.length === 0) continue;
+                ctx.fillStyle = g.color;
+                this._build_ellipse_outline(ctx, g.segs);
+            }
+        }
+
         /* 提交最后一个批处理路径 */
-        if (this._overlayCtx && !batchFirst) {
+        if (!this.ellipseMode && this._overlayCtx && !batchFirst) {
             this._overlayCtx.stroke();
         }
 
@@ -685,6 +859,7 @@ class RealtimeBatchDrawManager {
         this._segmentTimes = [];
         this._dirtyBoundsCanvas = null;
         this._limitedTailWidth = null;
+        this.ellipseMode = window.DRAW_CONFIG?.ellipseStrokeEnabled === true;
         this.clear_overlay();
     }
 
@@ -695,6 +870,7 @@ class RealtimeBatchDrawManager {
         this._penEffectMode = 'off';
         this._strokeStart = true;
         this.ellipseMode = window.DRAW_CONFIG?.ellipseStrokeEnabled === true;
+        this._strokeGroupId = (this._strokeGroupId || 0) + 1;
         this._totalSegments = 0;
         this._lastMidX = null;
         this._lastMidY = null;
@@ -727,7 +903,6 @@ class RealtimeBatchDrawManager {
         }
 
         this.batch_draw_handle_flush();
-        this._sync_overlay_transform();
 
         if (this._lastMidX !== null && this._lastToX !== null) {
             if (this._overlayCtx) {
@@ -736,7 +911,7 @@ class RealtimeBatchDrawManager {
                 ctx.globalCompositeOperation = 'source-over';
                 this._limitedTailWidth = this.lastLineWidth || 5;
                 if (this._penEffectMode === 'limited') {
-                    const baseW = cfg.penWidth || 5;
+                    const baseW = this.lastLineWidth || cfg.penWidth || 5;
                     const minRatio = cfg.penMinWidthRatio ?? 0.4;
                     const fromX = 2 * this._lastMidX - this._lastToX;
                     const fromY = 2 * this._lastMidY - this._lastToY;
@@ -754,7 +929,7 @@ class RealtimeBatchDrawManager {
                     }
                 }
                 if (this.ellipseMode) {
-                    this._draw_segment_ellipse(ctx, this._lastMidX, this._lastMidY, this._lastToX, this._lastToY,
+                    this._draw_tapered_tip(ctx, this._lastMidX, this._lastMidY, this._lastToX, this._lastToY,
                         this._limitedTailWidth, cfg.penColor || '#3498db');
                 } else {
                     ctx.strokeStyle = cfg.penColor || '#3498db';

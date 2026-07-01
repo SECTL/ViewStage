@@ -32,6 +32,10 @@ body {
     min-height: 100vh;
     overflow: hidden;
     user-select: none;
+    touch-action: none;
+    -ms-touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 button {
@@ -949,6 +953,19 @@ button, .btn-base, .btn-primary, .btn-secondary, .btn-action,
     font-size: 13px;
     color: var(--color-body, #ccc);
     flex-shrink: 0;
+}
+
+.experimental-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--color-badge-orange, #fb923c);
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+    line-height: 14px;
 }
 
 .setting-desc {

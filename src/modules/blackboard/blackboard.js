@@ -4,7 +4,7 @@
  * 使用 DrawingEngine 管理绘制管线
  */
 
-import { InputSource, PinchZoomSource, VirtualDeviceType } from '../gesture/index.js';
+import { InputSource, PinchZoomSource, PinchZoomSourceV2, VirtualDeviceType } from '../gesture/index.js';
 import { BlackboardPageManager } from './blackboard-page.js';
 import { DrawingEngine } from './drawing-engine.js';
 import { history_state, history_validate_undo, history_reset_executing } from '../history.js';
@@ -869,7 +869,8 @@ class BlackboardManager {
         });
 
         // ====== 两指捏合缩放 ======
-        const pinch = new PinchZoomSource(input);
+        const bbUseV2 = window.DRAW_CONFIG?.pinchZoomV2 === true;
+        const pinch = bbUseV2 ? new PinchZoomSourceV2(input) : new PinchZoomSource(input);
         this._pinch_source = pinch;
 
         pinch.onPinchStarted = (ev) => {
@@ -903,9 +904,16 @@ class BlackboardManager {
             s.is_scaling = true;
             s.start_scale = s.scale;
 
-            if (ev.finger0) {
-                s.start_finger0_cx = (ev.finger0.x - s.canvas_x) / s.scale;
-                s.start_finger0_cy = (ev.finger0.y - s.canvas_y) / s.scale;
+            if (bbUseV2) {
+                // V2: 以两指中点为缩放锚点
+                s.start_mid_cx = (ev.centerX - s.canvas_x) / s.scale;
+                s.start_mid_cy = (ev.centerY - s.canvas_y) / s.scale;
+            } else {
+                // V1: finger0 锚点
+                if (ev.finger0) {
+                    s.start_finger0_cx = (ev.finger0.x - s.canvas_x) / s.scale;
+                    s.start_finger0_cy = (ev.finger0.y - s.canvas_y) / s.scale;
+                }
             }
             s.start_canvas_x = s.canvas_x;
             s.start_canvas_y = s.canvas_y;
@@ -923,20 +931,30 @@ class BlackboardManager {
 
             const max_scale = window.DRAW_CONFIG ? window.DRAW_CONFIG.maxScaleImage : 3;
             const min_scale = window.DRAW_CONFIG?.minScale || 0.5;
-            const unclamped_s = s.start_scale * ev.scale;
-            s.scale = Math.max(min_scale, Math.min(max_scale, unclamped_s));
 
-            if (s.scale !== unclamped_s) {
-                const fdx = ev.finger0.x - ev.finger1.x;
-                const fdy = ev.finger0.y - ev.finger1.y;
-                this._pinch_source.resetScaleReference(Math.sqrt(fdx * fdx + fdy * fdy));
-                s.start_finger0_cx = (ev.finger0.x - s.canvas_x) / s.scale;
-                s.start_finger0_cy = (ev.finger0.y - s.canvas_y) / s.scale;
-                s.start_scale = s.scale;
+            if (bbUseV2) {
+                // V2: 增量式缩放 + 中点锚点
+                const newScale = s.scale * ev.scale;
+                s.scale = Math.max(min_scale, Math.min(max_scale, newScale));
+                s.canvas_x = ev.centerX - s.start_mid_cx * s.scale;
+                s.canvas_y = ev.centerY - s.start_mid_cy * s.scale;
+            } else {
+                // V1: 累积式缩放 + finger0 锚点
+                const unclamped_s = s.start_scale * ev.scale;
+                s.scale = Math.max(min_scale, Math.min(max_scale, unclamped_s));
+
+                if (s.scale !== unclamped_s) {
+                    const fdx = ev.finger0.x - ev.finger1.x;
+                    const fdy = ev.finger0.y - ev.finger1.y;
+                    this._pinch_source.resetScaleReference(Math.sqrt(fdx * fdx + fdy * fdy));
+                    s.start_finger0_cx = (ev.finger0.x - s.canvas_x) / s.scale;
+                    s.start_finger0_cy = (ev.finger0.y - s.canvas_y) / s.scale;
+                    s.start_scale = s.scale;
+                }
+
+                s.canvas_x = ev.finger0.x - s.start_finger0_cx * s.scale;
+                s.canvas_y = ev.finger0.y - s.start_finger0_cy * s.scale;
             }
-
-            s.canvas_x = ev.finger0.x - s.start_finger0_cx * s.scale;
-            s.canvas_y = ev.finger0.y - s.start_finger0_cy * s.scale;
 
             this._update_move_bound();
             this._update_canvas_position();

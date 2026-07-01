@@ -142,6 +142,7 @@ export class PalmEraserSession {
 
         if (dx !== 0 || dy !== 0) {
             h.saveStrokePoint(this.lastX, this.lastY, x, y, 0.5);
+            h.createCommand?.(this.lastX, this.lastY, x, y);
             this.lastX = x;
             this.lastY = y;
         }

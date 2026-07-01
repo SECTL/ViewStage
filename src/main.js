@@ -21,7 +21,7 @@ import {
     MAX_HISTORY_STEPS
 } from './modules/history.js';
 import { DocLoader } from './modules/pdf/document_loader.js';
-import { InputSource, DragTapSource, PinchZoomSource, TOLERANCE } from './modules/gesture/index.js';
+import { InputSource, DragTapSource, PinchZoomSource, PinchZoomSourceV2, TOLERANCE } from './modules/gesture/index.js';
 import { CameraManager, camera_format_blob_to_data_url } from './modules/camera/camera.js';
 import { resetContextState, updateContextState } from './modules/canvas/context-state.js';
 import { renderStrokesToContext, getPenEffectMode } from './modules/canvas/stroke-renderer.js';
@@ -245,7 +245,6 @@ const DRAW_CONFIG = {
     momentumEnabled: false,
     minScale: 0.5,
     maxScale: 3,
-    maxScaleCamera: 2,
     maxScaleImage: 4,
     canvasW: 1000,
     canvasH: 600,
@@ -315,17 +314,6 @@ class RealPenManager {
         return 0;
     }
     
-    calc_line_width(baseWidth, velocity, pressure = 0.5) {
-        const speedScale = Math.max(0.4, Math.min(2.5, baseWidth / 4));
-        const maxSpeed = 2.5 * speedScale;
-        const minSpeed = 0.2 * speedScale;
-        const clamped = Math.max(0, Math.min(1, (velocity - minSpeed) / (maxSpeed - minSpeed)));
-        const eased = clamped * clamped * (3 - 2 * clamped);
-        const speedFactor = 1 - eased * 0.75;
-        const pressureFactor = 0.85 + (pressure * 0.3);
-        return baseWidth * speedFactor * pressureFactor;
-    }
-
     build_tessellated_stroke(stroke, mode = null) {
         this.init_tessellator();
         if (!this.tessellator) return null;
@@ -663,6 +651,8 @@ let state = {
     defaultCameraId: null,
     cameraWidth: null,
     cameraHeight: null,
+    phoneCameraActive: false,
+    phoneCameraReady: false,
     wasCameraOpenBeforeMinimize: false,
     currentImage: null,
     imageList: [],
@@ -674,8 +664,6 @@ let state = {
     loadedPages: new Set(),
     currentPressure: 0.5,
     currentVelocity: 0,
-    currentLineWidth: 0,
-    lastLineWidth: 0,
     isPalmErasing: false,
     savedDrawMode: null,
     palmEraserSize: 60
@@ -912,6 +900,7 @@ const cameraManager = new CameraManager({
     updateCanvasPosition: () => main_update_canvas_position(),
     updatePhotoButtonState: () => cameraManager.updatePhotoButtonState(),
 });
+window.cameraManager = cameraManager;
 
 const historyCompactor = createHistoryCompactor({
     state,
@@ -1846,7 +1835,7 @@ function main_setup_gesture_system() {
             const dx = x - state.lastX;
             const dy = y - state.lastY;
             if (dx * dx + dy * dy > 1) {
-                main_save_stroke_point(state.lastX, state.lastY, x, y, state.currentPressure);
+                main_save_stroke_point(state.lastX, state.lastY, x, y);
                 window.batchDrawManager.batch_draw_create_command(
                     state.cachedDrawType,
                     state.lastX, state.lastY,
@@ -1934,7 +1923,8 @@ function main_setup_gesture_system() {
     };
 
     // ------- 两指捏合（缩放 + 平移） -------
-    const pinch = new PinchZoomSource(input);
+    const useV2 = DRAW_CONFIG.pinchZoomV2 === true;
+    const pinch = useV2 ? new PinchZoomSourceV2(input) : new PinchZoomSource(input);
     window._gesturePinch = pinch;
 
     pinch.onPinchStarted = (ev) => {
@@ -1959,11 +1949,17 @@ function main_setup_gesture_system() {
         state.isScaling = true;
         state.startScale = state.scale;
 
-        // 使用 PinchZoomSource 传入的 finger0，而非 getActivePositions()[0]，
-        // 确保锚点计算与追踪手指完全一致
-        if (ev.finger0) {
-            state.startFinger0CX = (ev.finger0.x - state.canvasX) / state.scale;
-            state.startFinger0CY = (ev.finger0.y - state.canvasY) / state.scale;
+        if (useV2) {
+            // V2: 以两指中点为缩放锚点
+            state.startMidCX = (ev.centerX - state.canvasX) / state.scale;
+            state.startMidCY = (ev.centerY - state.canvasY) / state.scale;
+        } else {
+            // V1: 使用 PinchZoomSource 传入的 finger0，而非 getActivePositions()[0]，
+            // 确保锚点计算与追踪手指完全一致
+            if (ev.finger0) {
+                state.startFinger0CX = (ev.finger0.x - state.canvasX) / state.scale;
+                state.startFinger0CY = (ev.finger0.y - state.canvasY) / state.scale;
+            }
         }
         state.startCanvasX = state.canvasX;
         state.startCanvasY = state.canvasY;
@@ -1977,24 +1973,35 @@ function main_setup_gesture_system() {
 
     pinch.onPinchDelta = (ev) => {
         if (!state.isScaling) return;
-        const maxScale = state.isCameraOpen ? DRAW_CONFIG.maxScaleCamera : DRAW_CONFIG.maxScaleImage;
-        const unclampedScale = state.startScale * ev.scale;
-        state.scale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, unclampedScale));
+        const maxScale = DRAW_CONFIG.maxScaleImage;
 
-        if (state.scale !== unclampedScale) {
-            // 缩放到达边界时同步重置 PinchZoomSource 内部参考距离，
-            // 使后续 ev.scale 相对于当前手指距离而非 pinch 起始距离，
-            // 消除边界处缩放死区（缩放回退时立即响应）
-            const fdx = ev.finger0.x - ev.finger1.x;
-            const fdy = ev.finger0.y - ev.finger1.y;
-            pinch.resetScaleReference(Math.sqrt(fdx * fdx + fdy * fdy));
-            state.startFinger0CX = (ev.finger0.x - state.canvasX) / state.scale;
-            state.startFinger0CY = (ev.finger0.y - state.canvasY) / state.scale;
-            state.startScale = state.scale;
+        if (useV2) {
+            // V2: 增量式缩放 + 中点锚点
+            const newScale = state.scale * ev.scale;
+            state.scale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, newScale));
+            // 中点锚点：保持画布上初始中点位置跟随当前中点
+            state.canvasX = ev.centerX - state.startMidCX * state.scale;
+            state.canvasY = ev.centerY - state.startMidCY * state.scale;
+        } else {
+            // V1: 累积式缩放 + finger0 锚点
+            const unclampedScale = state.startScale * ev.scale;
+            state.scale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, unclampedScale));
+
+            if (state.scale !== unclampedScale) {
+                // 缩放到达边界时同步重置 PinchZoomSource 内部参考距离，
+                // 使后续 ev.scale 相对于当前手指距离而非 pinch 起始距离，
+                // 消除边界处缩放死区（缩放回退时立即响应）
+                const fdx = ev.finger0.x - ev.finger1.x;
+                const fdy = ev.finger0.y - ev.finger1.y;
+                pinch.resetScaleReference(Math.sqrt(fdx * fdx + fdy * fdy));
+                state.startFinger0CX = (ev.finger0.x - state.canvasX) / state.scale;
+                state.startFinger0CY = (ev.finger0.y - state.canvasY) / state.scale;
+                state.startScale = state.scale;
+            }
+
+            state.canvasX = ev.finger0.x - state.startFinger0CX * state.scale;
+            state.canvasY = ev.finger0.y - state.startFinger0CY * state.scale;
         }
-
-        state.canvasX = ev.finger0.x - state.startFinger0CX * state.scale;
-        state.canvasY = ev.finger0.y - state.startFinger0CY * state.scale;
 
         main_update_move_bound();
         main_update_canvas_position();
@@ -2856,7 +2863,7 @@ function main_get_palm_session() {
             showHint: main_show_palm_eraser_hint,
             updateHint: main_update_palm_eraser_hint,
             hideHint: main_hide_palm_eraser_hint,
-            saveStrokePoint: (fromX, fromY, toX, toY, pressure) => main_save_stroke_point(fromX, fromY, toX, toY, pressure),
+            saveStrokePoint: (fromX, fromY, toX, toY) => main_save_stroke_point(fromX, fromY, toX, toY),
             submitStroke: () => main_submit_stroke(),
             onSessionStart(stroke, session) {
                 state.isPalmErasing = true;
@@ -2871,6 +2878,12 @@ function main_get_palm_session() {
                 state.cachedDrawLineWidth = session.palmEraserSize / main_fetch_safe_scale();
                 batchDrawManager.eraserShape = 'square';
                 batchDrawManager.batch_draw_init_start();
+            },
+            createCommand: (fromX, fromY, toX, toY) => {
+                batchDrawManager.batch_draw_create_command(
+                    state.cachedDrawType, fromX, fromY, toX, toY,
+                    state.cachedDrawColor, state.cachedDrawLineWidth
+                );
             },
             onSessionEnd() {
                 state.isPalmErasing = false;
@@ -2906,7 +2919,7 @@ function main_flush_last_segment(clientX, clientY) {
     const dx = x - state.lastX;
     const dy = y - state.lastY;
     if (dx !== 0 || dy !== 0) {
-        main_save_stroke_point(state.lastX, state.lastY, x, y, state.currentPressure);
+        main_save_stroke_point(state.lastX, state.lastY, x, y);
         batchDrawManager.batch_draw_create_command(
             state.cachedDrawType,
             state.lastX,
@@ -2924,7 +2937,7 @@ function main_flush_last_segment(clientX, clientY) {
 function main_handle_wheel(e) {
     if (window.tileRenderer) window.tileRenderer.cancel_idle_shrink();
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    const maxScale = state.isCameraOpen ? DRAW_CONFIG.maxScaleCamera : DRAW_CONFIG.maxScaleImage;
+    const maxScale = DRAW_CONFIG.maxScaleImage;
     const newScale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, state.scale + delta));
     
     if (newScale !== state.scale) {
@@ -3052,9 +3065,7 @@ function main_start_stroke(type, eraserShape) {
     };
     
     state.currentPressure = 0.5;
-    state.currentLineWidth = DRAW_CONFIG.penWidth * invScale;
-    state.lastLineWidth = DRAW_CONFIG.penWidth * invScale;
-    
+
     state.cachedDrawType = type;
     state.cachedDrawColor = type === 'draw' ? DRAW_CONFIG.penColor : '#000000';
     const startScale = main_fetch_safe_scale();
@@ -3066,7 +3077,7 @@ function main_start_stroke(type, eraserShape) {
     batchDrawManager.batch_draw_init_start();
 }
 
-function main_save_stroke_point(fromX, fromY, toX, toY, pressure = 0.5) {
+function main_save_stroke_point(fromX, fromY, toX, toY) {
     const stroke = state.currentStroke;
     if (!stroke) return;
     
@@ -3084,10 +3095,6 @@ function main_save_stroke_point(fromX, fromY, toX, toY, pressure = 0.5) {
     const currentScale = main_fetch_safe_scale();
     
     if (stroke.type === 'draw') {
-        state.currentPressure = pressure;
-        state.lastLineWidth = state.currentLineWidth;
-        currentWidth = stroke.lineWidth * (0.9 + pressure * 0.2);
-        state.currentLineWidth = currentWidth;
         state.cachedDrawLineWidth = DRAW_CONFIG.penWidth / currentScale;
     } else if (stroke.type === 'erase' && stroke.eraserSpeedEnabled) {
         currentWidth = window.__eraserSpeed.eraser_speed_update(state.eraserSpeedState, stroke, toX, toY);
@@ -4555,6 +4562,9 @@ window.main_hide_settings_panel = main_hide_settings_panel;
 window.main_render_image_centered = main_render_image_centered;
 window.main_render_all_strokes = main_render_all_strokes;
 window.main_fetch_visible_rect = main_fetch_visible_rect;
+window.main_load_pdf_from_path = main_load_pdf_from_path;
+window.main_update_camera_video_style = main_update_camera_video_style;
+window.main_update_settings_controls_state = main_update_settings_controls_state;
 window.StrokeQuadTree = StrokeQuadTree;
 
 /** 同步所有 overlay DPR（主界面 + 阅读器 + 黑板） */

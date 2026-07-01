@@ -383,6 +383,9 @@
     "presetDefault": " (기본값)",
     "presetDisabled": " (비활성화)",
     "displayDefault": "기본값 표시",
+    "pinchZoomV2": "Pinch Zoom Algorithm V2",
+    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)",
+    "restartRequired": "Restart required",
     "backToMain": "←"
   },
   "config": {

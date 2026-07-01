@@ -4,7 +4,7 @@
  * 工具栏全部在右侧，支持 IntersectionObserver 懒加载
  */
 
-import { InputSource, PinchZoomSource } from '../gesture/index.js';
+import { InputSource, PinchZoomSource, PinchZoomSourceV2 } from '../gesture/index.js';
 import { DocumentReaderPageManager } from './document_reader_page.js';
 import {
     history_execute_command,
@@ -38,8 +38,6 @@ class DocumentReaderManager {
         this.cached_draw_color = null;
         this.cached_draw_line_width = null;
         this.current_pressure = 0.5;
-        this.current_line_width = 5;
-        this.last_line_width = 5;
 
         this._scroll_container = null;
         this._dr_tool_group = null;
@@ -1108,7 +1106,6 @@ class DocumentReaderManager {
         const img = page_data.page_element?.querySelector('img');
         const has_img_src = img?.hasAttribute('src') && img.getAttribute('src');
         if (img && !has_img_src && img.dataset.src) {
-            img.src = img.dataset.src;
             img.onload = () => {
                 // 图片加载后设置页面尺寸并初始化 tiles
                 page_data.page_width = img.naturalWidth || img.clientWidth;
@@ -1120,6 +1117,7 @@ class DocumentReaderManager {
                     this._update_overlay_size(page_index);
                 }
             };
+            img.src = img.dataset.src;
         } else if (img && has_img_src) {
             // 已有图片 → 立即初始化 tiles（无延迟，避免白屏）
             page_data.page_width = img.naturalWidth || img.clientWidth;
@@ -2278,7 +2276,7 @@ class DocumentReaderManager {
             const dy = y - this.last_y;
 
             if (dx * dx + dy * dy > 1) {
-                this._save_stroke_point(this.last_x, this.last_y, x, y, this.current_pressure);
+                this._save_stroke_point(this.last_x, this.last_y, x, y);
                 if (this.batch_draw && page_data.tile_renderer) {
                     this.batch_draw.batch_draw_create_command(
                         this.cached_draw_type, this.last_x, this.last_y, x, y,
@@ -2325,7 +2323,8 @@ class DocumentReaderManager {
         });
 
         // ====== 两指捏合缩放 ======
-        const pinch = new PinchZoomSource(input);
+        const drUseV2 = window.DRAW_CONFIG?.pinchZoomV2 === true;
+        const pinch = drUseV2 ? new PinchZoomSourceV2(input) : new PinchZoomSource(input);
         this._pinch_source = pinch;
         pinch.startDelayMs = (this.draw_mode !== 'move') ? 200 : 0;
 
@@ -2382,22 +2381,36 @@ class DocumentReaderManager {
                 this.dr_start_scale = this.dr_scale;
             }
 
-            const unclamped_s = this.dr_start_scale * ev.scale;
-            this.dr_scale = Math.max(this.dr_min_scale, Math.min(this.dr_max_scale, unclamped_s));
-            this.dr_cached_inv_scale = 1 / this.dr_scale;
-            if (this.batch_draw) {
-                this.batch_draw._overlay_cached_rect_left = null;
-                this.batch_draw._overlay_cached_rect_top = null;
-            }
+            if (drUseV2) {
+                // V2: 增量式缩放（已用中点锚点）
+                const newScale = this.dr_scale * ev.scale;
+                this.dr_scale = Math.max(this.dr_min_scale, Math.min(this.dr_max_scale, newScale));
+                this.dr_cached_inv_scale = 1 / this.dr_scale;
+                if (this.batch_draw) {
+                    this.batch_draw._overlay_cached_rect_left = null;
+                    this.batch_draw._overlay_cached_rect_top = null;
+                }
+                this.dr_canvas_x = ev.centerX - this.dr_start_finger0_cx * this.dr_scale;
+                this.dr_canvas_y = ev.centerY - this.dr_start_finger0_cy * this.dr_scale;
+            } else {
+                // V1: 累积式缩放（已用中点锚点）
+                const unclamped_s = this.dr_start_scale * ev.scale;
+                this.dr_scale = Math.max(this.dr_min_scale, Math.min(this.dr_max_scale, unclamped_s));
+                this.dr_cached_inv_scale = 1 / this.dr_scale;
+                if (this.batch_draw) {
+                    this.batch_draw._overlay_cached_rect_left = null;
+                    this.batch_draw._overlay_cached_rect_top = null;
+                }
 
-            if (this.dr_scale !== unclamped_s) {
-                this.dr_start_finger0_cx = (ev.centerX - this.dr_canvas_x) / this.dr_scale;
-                this.dr_start_finger0_cy = (ev.centerY - this.dr_canvas_y) / this.dr_scale;
-                this.dr_start_scale = this.dr_scale;
-            }
+                if (this.dr_scale !== unclamped_s) {
+                    this.dr_start_finger0_cx = (ev.centerX - this.dr_canvas_x) / this.dr_scale;
+                    this.dr_start_finger0_cy = (ev.centerY - this.dr_canvas_y) / this.dr_scale;
+                    this.dr_start_scale = this.dr_scale;
+                }
 
-            this.dr_canvas_x = ev.centerX - this.dr_start_finger0_cx * this.dr_scale;
-            this.dr_canvas_y = ev.centerY - this.dr_start_finger0_cy * this.dr_scale;
+                this.dr_canvas_x = ev.centerX - this.dr_start_finger0_cx * this.dr_scale;
+                this.dr_canvas_y = ev.centerY - this.dr_start_finger0_cy * this.dr_scale;
+            }
 
             this._dr_update_move_bound();
             this._dr_update_canvas_position();
@@ -2633,8 +2646,6 @@ class DocumentReaderManager {
         };
 
         this.current_pressure = 0.5;
-        this.current_line_width = DRAW_CONFIG.penWidth;
-        this.last_line_width = DRAW_CONFIG.penWidth;
 
         this.cached_draw_type = type;
         this.cached_draw_color = type === 'draw' ? DRAW_CONFIG.penColor : '#000000';
@@ -2647,7 +2658,7 @@ class DocumentReaderManager {
         }
     }
 
-    _save_stroke_point(from_x, from_y, to_x, to_y, pressure) {
+    _save_stroke_point(from_x, from_y, to_x, to_y) {
         const stroke = this.current_stroke;
         if (!stroke) return;
 
@@ -2666,10 +2677,6 @@ class DocumentReaderManager {
         const currentScale = Math.max(0.001, this.dr_scale || 1);
 
         if (stroke.type === 'draw') {
-            this.current_pressure = pressure;
-            this.last_line_width = this.current_line_width;
-            currentWidth = stroke.lineWidth * (0.9 + pressure * 0.2);
-            this.current_line_width = currentWidth;
             this.cached_draw_line_width = DRAW_CONFIG.penWidth / currentScale;
         } else if (stroke.type === 'erase' && stroke.eraserSpeedEnabled) {
             currentWidth = window.__eraserSpeed.eraser_speed_update(this._eraser_speed_state, stroke, to_x, to_y);
@@ -3199,7 +3206,7 @@ class DocumentReaderManager {
             showHint: () => self._show_palm_eraser_hint(),
             updateHint: (cx, cy, size) => self._update_palm_eraser_hint(cx, cy, size),
             hideHint: () => self._hide_palm_eraser_hint(),
-            saveStrokePoint: (fromX, fromY, toX, toY, pressure) => self._save_stroke_point(fromX, fromY, toX, toY, pressure),
+            saveStrokePoint: (fromX, fromY, toX, toY) => self._save_stroke_point(fromX, fromY, toX, toY),
             submitStroke: () => self._submit_stroke(),
             onSessionStart(stroke, session) {
                 self.isPalmErasing = true;
@@ -3221,6 +3228,14 @@ class DocumentReaderManager {
                     if (page_data?.tile_renderer) {
                         self.batch_draw._tileRenderer = page_data.tile_renderer;
                     }
+                }
+            },
+            createCommand: (fromX, fromY, toX, toY) => {
+                if (self.batch_draw) {
+                    self.batch_draw.batch_draw_create_command(
+                        self.cached_draw_type, fromX, fromY, toX, toY,
+                        self.cached_draw_color, self.cached_draw_line_width
+                    );
                 }
             },
             onSessionEnd() {
