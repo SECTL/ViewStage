@@ -1887,6 +1887,7 @@ class DocumentReaderManager {
         overlay_canvas.style.left = '0';
         overlay_canvas.style.pointerEvents = 'none';
         overlay_canvas.style.zIndex = '100';
+        overlay_canvas.style.willChange = 'transform';
 
         // 先创建 batch_draw 实例，复用 DPR 计算逻辑
         this.batch_draw = new window.RealtimeBatchDrawManager();
@@ -2190,6 +2191,8 @@ class DocumentReaderManager {
             this.page_manager.switch_page(page_index);
 
             if (this.batch_draw) {
+                this.batch_draw._overlay_cached_rect_left = null;
+                this.batch_draw._overlay_cached_rect_top = null;
                 this.batch_draw._tileRenderer = page_data?.tile_renderer;
             }
 
@@ -3677,6 +3680,10 @@ class DocumentReaderManager {
     _dr_sync_transform() {
         if (!this._zoom_wrapper) return;
         this._zoom_wrapper.style.transform = 'translate3d(' + this.dr_canvas_x + 'px, ' + this.dr_canvas_y + 'px, 0) scale(' + this.dr_scale + ')';
+        if (this.batch_draw) {
+            this.batch_draw._overlay_cached_rect_left = null;
+            this.batch_draw._overlay_cached_rect_top = null;
+        }
     }
 
     /** rAF 节流版 sync_transform：合并多帧调用，每帧最多一次 DOM 写入 */
@@ -3692,6 +3699,10 @@ class DocumentReaderManager {
                     this._dr_last_transform.x = pt.x;
                     this._dr_last_transform.y = pt.y;
                     this._dr_last_transform.scale = pt.scale;
+                    if (this.batch_draw) {
+                        this.batch_draw._overlay_cached_rect_left = null;
+                        this.batch_draw._overlay_cached_rect_top = null;
+                    }
                 }
             });
         }
@@ -3765,6 +3776,9 @@ class DocumentReaderManager {
             this._zoom_complete_timer = null;
         }
         this._dr_is_zooming = false;
+        if (this.batch_draw) {
+            this.batch_draw.show_overlay();
+        }
     }
     _dr_enable_smooth_transform() {
         if (this._smooth_transform_timeout_id !== null) {

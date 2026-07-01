@@ -181,6 +181,7 @@ body {
     z-index: 4;
     pointer-events: none;
     background-color: transparent;
+    will-change: transform;
 }
 
 .camera-video {

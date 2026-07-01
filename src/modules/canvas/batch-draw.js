@@ -716,6 +716,8 @@ class RealtimeBatchDrawManager {
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
         });
+
+        this.show_overlay();
     }
 
     batch_draw_handle_end() {
