@@ -258,17 +258,17 @@ INT APIENTRY wWinMain(
 			shex.lpVerb = L"runas";
 			shex.lpFile = _r_sys_getimagepath();
 			shex.lpParameters = L"--skipuac";
-			shex.nShow = SW_SHOW;
+		shex.nShow = SW_HIDE;
 
-			if (ShellExecuteExW(&shex))
-				return 0;
+		if (ShellExecuteExW(&shex))
+			return 0;
 
-			return 1;
-		}
+		return 1;
+	}
 
-		CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+	CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 
-		_r_skipuac_enable(NULL, TRUE);
+	_r_skipuac_enable(NULL, TRUE);
 
 		CoUninitialize();
 
@@ -335,7 +335,7 @@ INT APIENTRY wWinMain(
 			shex.lpVerb = L"runas";
 			shex.lpFile = _r_sys_getimagepath();
 			shex.lpParameters = L"--uninstall";
-			shex.nShow = SW_SHOW;
+			shex.nShow = SW_HIDE;
 
 			if (ShellExecuteExW(&shex))
 				return 0;

@@ -3727,32 +3727,35 @@ fn find_memreduct_exe() -> Result<std::path::PathBuf, String> {
 /// 运行 memreduct 子进程并等待完成
 #[cfg(target_os = "windows")]
 fn run_memreduct(args: &[&str]) -> Result<(), String> {
-    use std::process::Command;
+    use std::process::{Command, Stdio};
 
     let exe = find_memreduct_exe()?;
 
     log::info!("memreduct: 执行 {:?} {:?}", exe.file_name().unwrap_or_default(), args);
 
-    let output = Command::new(&exe)
+    let status = Command::new(&exe)
         .args(args)
         .creation_flags(CREATE_NO_WINDOW)
-        .output()
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
         .map_err(|e| {
             log::error!("memreduct: 启动失败: {}", e);
             format!("启动 memreduct 失败: {}", e)
+        })?
+        .wait()
+        .map_err(|e| {
+            log::error!("memreduct: 等待失败: {}", e);
+            format!("等待 memreduct 失败: {}", e)
         })?;
 
-    if output.status.success() {
+    if status.success() {
         log::info!("memreduct: 执行成功 {:?}", args);
         Ok(())
     } else {
-        let code = output.status.code().unwrap_or(-1);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let code = status.code().unwrap_or(-1);
         log::error!("memreduct: 退出码 {} {:?}", code, args);
-        if !stderr.is_empty() {
-            log::error!("memreduct: stderr: {}", stderr.trim());
-        }
-        Err(format!("memreduct 退出码 {}: {}", code, stderr.trim()))
+        Err(format!("memreduct 退出码 {}", code))
     }
 }
 
@@ -3830,28 +3833,30 @@ async fn memreduct_check_skipuac() -> bool { false }
 /// 运行 memreduct 子进程并获取退出码（不映射为 Result）
 #[cfg(target_os = "windows")]
 fn run_memreduct_raw(args: &[&str]) -> Result<i32, String> {
-    use std::process::Command;
+    use std::process::{Command, Stdio};
 
     let exe = find_memreduct_exe()?;
 
     log::info!("memreduct: 执行 {:?} {:?}", exe.file_name().unwrap_or_default(), args);
 
-    let output = Command::new(&exe)
+    let status = Command::new(&exe)
         .args(args)
         .creation_flags(CREATE_NO_WINDOW)
-        .output()
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
         .map_err(|e| {
             log::error!("memreduct: 启动失败: {}", e);
             format!("启动 memreduct 失败: {}", e)
+        })?
+        .wait()
+        .map_err(|e| {
+            log::error!("memreduct: 等待失败: {}", e);
+            format!("等待 memreduct 失败: {}", e)
         })?;
 
-    let code = output.status.code().unwrap_or(-1);
+    let code = status.code().unwrap_or(-1);
     log::info!("memreduct: 退出码 {} {:?}", code, args);
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !stderr.is_empty() {
-        log::error!("memreduct: stderr: {}", stderr.trim());
-    }
 
     Ok(code)
 }

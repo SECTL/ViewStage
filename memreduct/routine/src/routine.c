@@ -11102,7 +11102,7 @@ NTSTATUS _r_sys_runasadmin (
 	shex.cbSize = sizeof (shex);
 	shex.fMask = SEE_MASK_UNICODE | SEE_MASK_NOZONECHECKS | SEE_MASK_FLAG_NO_UI;
 	shex.lpVerb = L"runas";
-	shex.nShow = SW_SHOW;
+	shex.nShow = SW_HIDE;
 	shex.lpFile = file_name;
 	shex.lpParameters = command_line;
 	shex.lpDirectory = directory;
