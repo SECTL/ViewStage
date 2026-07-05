@@ -2591,12 +2591,12 @@ class DocumentReaderManager {
         }
 
         // PageUp → 上一页，PageDown → 下一页
-        if (e.key === 'PageUp') {
+        if (e.key === 'PageUp' || e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
             e.preventDefault();
             this.handle_page_nav_prev();
             return;
         }
-        if (e.key === 'PageDown') {
+        if (e.key === 'PageDown' || e.key === 'ArrowDown' || e.key === 'ArrowRight') {
             e.preventDefault();
             this.handle_page_nav_next();
             return;
