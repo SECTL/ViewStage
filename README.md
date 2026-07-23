@@ -11,6 +11,8 @@
     <img src="https://img.shields.io/github/license/SECTL/ViewStage" alt="许可证">
 </p>
 
+>由于开发者高三了，所以开发计划暂停，后续仅进行功能修复，与2027年6月后继续
+
 ## 功能概览
 
 | 类别 | 功能 |
