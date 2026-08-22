@@ -1,5 +1,7 @@
 const TILE_COLS = 4;
 const TILE_ROWS = 4;
+/** 每帧最多预升级的不可见瓦片数量（分帧降低缩放结束后的单帧卡顿） */
+const TILE_UPGRADE_BATCH = 3;
 
 class TileRenderer {
     constructor(options) {
@@ -8,6 +10,10 @@ class TileRenderer {
         this._lastDprUpdateScale = 0;
         this._pendingDpr = null;
         this._rebuildRafId = null;
+        this._upgradeQueue = null;
+        this._upgradeTargetDpr = null;
+        this._upgradeRafId = null;
+        this._queuedUpgradeKeys = new Set();
         this._quadtree = null;
         this._baseCaches = new Map();
         this._baseCacheLoadId = 0;
@@ -95,7 +101,7 @@ class TileRenderer {
                     visibleChanged = true;
                     break;
                 }
-            } else if (info.dpr > 1 || info.dpr < targetDpr) {
+            } else if (info.dpr > 1 || (info.dpr < targetDpr && !this._queuedUpgradeKeys.has(info.key))) {
                 changed = true; break;
             }
         }
@@ -107,7 +113,7 @@ class TileRenderer {
         if (!force && !visibleChanged) {
             let needsUpgrade = false;
             for (const info of this.tileInfos) {
-                if (!keys.has(info.key) && info.dpr < targetDpr) {
+                if (!keys.has(info.key) && info.dpr < targetDpr && !this._queuedUpgradeKeys.has(info.key)) {
                     needsUpgrade = true;
                     break;
                 }
@@ -302,6 +308,42 @@ class TileRenderer {
             this._rebuildRafId = null;
         }
         this._pendingDpr = null;
+        this._cancel_upgrade_queue();
+    }
+
+    /** 取消未完成的不可见瓦片预升级队列 */
+    _cancel_upgrade_queue() {
+        if (this._upgradeRafId !== null) {
+            cancelAnimationFrame(this._upgradeRafId);
+            this._upgradeRafId = null;
+        }
+        this._upgradeQueue = null;
+        this._upgradeTargetDpr = null;
+        this._queuedUpgradeKeys.clear();
+    }
+
+    /** 分帧消费预升级队列，每帧最多 TILE_UPGRADE_BATCH 块 */
+    _pump_upgrade_queue() {
+        this._upgradeRafId = null;
+        const targetDpr = this._upgradeTargetDpr;
+        if (!this._upgradeQueue || this._upgradeQueue.length === 0 || targetDpr == null) {
+            this._cancel_upgrade_queue();
+            return;
+        }
+        let budget = TILE_UPGRADE_BATCH;
+        while (budget-- > 0 && this._upgradeQueue.length > 0) {
+            const info = this._upgradeQueue.shift();
+            this._queuedUpgradeKeys.delete(info.key);
+            // 目标期间可能被 idle-shrink 降低过；仅升级仍低于目标的瓦片
+            if (info.dpr < targetDpr) {
+                this._recreate_tile(info, targetDpr);
+            }
+        }
+        if (this._upgradeQueue.length > 0) {
+            this._upgradeRafId = requestAnimationFrame(() => this._pump_upgrade_queue());
+        } else {
+            this._cancel_upgrade_queue();
+        }
     }
 
     _cancel_idle_shrink() {
@@ -335,19 +377,33 @@ class TileRenderer {
         this._pendingDpr = null;
         if (targetDpr == null) return;
 
+        // 中断上一轮未完成的预升级队列（目标 DPR 可能已变化）
+        this._cancel_upgrade_queue();
+
         const keys = this.get_visible_keys();
+        const deferredUpgrades = [];
         for (const info of this.tileInfos) {
             if (keys.has(info.key)) {
                 if (info.dpr !== targetDpr) {
                     this._recreate_tile(info, targetDpr);
                 }
             } else if (info.dpr < targetDpr) {
-                // 预升级非可见瓦片，使其在进入视野时已有正确分辨率
-                this._recreate_tile(info, targetDpr);
+                // 预升级非可见瓦片，使其在进入视野时已有正确分辨率。
+                // 不可见块延后分帧处理：一次 realloc 大量画布会造成缩放收尾掉帧
+                deferredUpgrades.push(info);
             }
         }
         this.rebuild_visible(keys);
         this._schedule_idle_shrink();
+
+        if (deferredUpgrades.length > 0) {
+            this._upgradeQueue = deferredUpgrades;
+            this._upgradeTargetDpr = targetDpr;
+            for (const info of deferredUpgrades) {
+                this._queuedUpgradeKeys.add(info.key);
+            }
+            this._upgradeRafId = requestAnimationFrame(() => this._pump_upgrade_queue());
+        }
     }
 
     init_tiles(wrapper, initialScale) {
