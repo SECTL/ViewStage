@@ -1,5 +1,5 @@
 import { DeviceType, VirtualDeviceType, DeviceInputEvent, DeviceInputStartingEvent, DeviceInputStartedEvent, DeviceInputCompletedEvent } from './types.js';
-import { getTolerance, TOLERANCE, detectDeviceType } from './tolerance.js';
+import { getTolerance, TOLERANCE, detectDeviceType, PINCH_MIN_DISTANCE } from './tolerance.js';
 
 /**
  * 两指捏合识别器
@@ -197,10 +197,13 @@ export class PinchZoomSource {
             }
 
             const tol = getTolerance(this._toleranceSet, DeviceType.Touch);
-            if (Math.abs(f0.position.x - this._pendingStartPos0.x) > tol ||
-                Math.abs(f0.position.y - this._pendingStartPos0.y) > tol ||
-                Math.abs(f1.position.x - this._pendingStartPos1.x) > tol ||
-                Math.abs(f1.position.y - this._pendingStartPos1.y) > tol) {
+            // BOTH 语义：两指都超过容差才激活缩放。
+            // 防止批注模式下一指书写、另一指搭扶时，书写指的移动误触发缩放切断笔画
+            const f0Moved = Math.abs(f0.position.x - this._pendingStartPos0.x) > tol ||
+                Math.abs(f0.position.y - this._pendingStartPos0.y) > tol;
+            const f1Moved = Math.abs(f1.position.x - this._pendingStartPos1.x) > tol ||
+                Math.abs(f1.position.y - this._pendingStartPos1.y) > tol;
+            if (f0Moved && f1Moved) {
                 this._isPending = false;
                 this._pendingPinchIds = [];
                 this._pinchIds = [f0.id, f1.id];
@@ -235,9 +238,16 @@ export class PinchZoomSource {
         const midX = (f0Ev.position.x + f1Ev.position.x) / 2;
         const midY = (f0Ev.position.y + f1Ev.position.y) / 2;
 
-        if (this._startDistance === 0) return;
+        // 注：startDistance===0（起始即并拢）不在此特判——落入下方激活分支
+        // 以当前距离自愈重建；scaleRatio 分母的 Math.max 已保证无除零
 
-        const scaleRatio = currentDist / this._startDistance;
+        // 最小距离冻结：两指几乎并拢/交叉时距离不可信，
+        // 冻结期间不发射 delta、不更新参考距离，跨越该区间后自动恢复
+        if (currentDist < PINCH_MIN_DISTANCE) return;
+
+        // 基准距离钳制下限：起始即并拢时（startDistance < MIN）防止 scaleRatio 爆炸
+        const scaleBase = Math.max(this._startDistance, PINCH_MIN_DISTANCE);
+        const scaleRatio = currentDist / scaleBase;
         const targetScale = Math.min(this._maxScale, Math.max(this._minScale, scaleRatio));
         const deltaScale = targetScale - this._currentScale;
         this._currentScale = targetScale;
@@ -271,7 +281,7 @@ export class PinchZoomSource {
             p.scale = targetScale;
             p.centerX = midX;
             p.centerY = midY;
-            p.originScale = this._startDistance > 0 ? currentDist / this._startDistance : 1;
+            p.originScale = scaleBase > 0 ? currentDist / scaleBase : 1;
             p.deltaScale = deltaScale;
             p.startMidX = this._startMidX;
             p.startMidY = this._startMidY;
@@ -317,7 +327,7 @@ export class PinchZoomSource {
      */
     resetScaleReference(currentDistance) {
         if (typeof currentDistance !== 'number' || currentDistance <= 0) return;
-        this._startDistance = currentDistance;
+        this._startDistance = Math.max(currentDistance, PINCH_MIN_DISTANCE);
         this._currentScale = 1;
     }
 

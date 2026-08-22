@@ -14,6 +14,16 @@ export const TOLERANCE = Object.freeze({
 });
 
 /**
+ * 两指最小有效距离（px）：低于此值冻结缩放更新（不发射 delta、不更新参考距离），
+ * 防止两指并拢/交叉时增量比或缩放比爆炸导致画布瞬移
+ */
+export const PINCH_MIN_DISTANCE = 20;
+
+/** 单帧增量比上下限，防御指针事件丢失/跳变导致的异常大步长 */
+export const PINCH_FRAME_RATIO_MAX = 3;
+export const PINCH_FRAME_RATIO_MIN = 1 / 3;
+
+/**
  * 获取指定设备类型的容差值
  * @param {{ mouse: number, touch: number, stylus: number }} toleranceSet
  * @param {string} deviceType - DeviceType 的值

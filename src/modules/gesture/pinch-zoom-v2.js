@@ -1,13 +1,24 @@
 import { DeviceType, VirtualDeviceType, DeviceInputEvent, DeviceInputStartingEvent, DeviceInputStartedEvent, DeviceInputCompletedEvent } from './types.js';
-import { getTolerance, TOLERANCE, detectDeviceType } from './tolerance.js';
+import { getTolerance, TOLERANCE, detectDeviceType, PINCH_MIN_DISTANCE, PINCH_FRAME_RATIO_MAX, PINCH_FRAME_RATIO_MIN } from './tolerance.js';
+
+/** 微动死区：比值变化低于该阈值视为触控噪声 */
+const EMIT_DEAD_BAND_RATIO = 0.001;
+/** 微动死区：中点位移平方低于该阈值视为触控噪声（0.75px） */
+const EMIT_DEAD_BAND_MID_SQ = 0.75 * 0.75;
 
 /**
- * 两指捏合识别器 V2 — 增量式缩放 + 中点锚点
+ * 两指捏合识别器 V2 — 增量式缩放 + 中点锚点 + 帧对齐发射
  *
  * 与 V1 的区别：
  * - ev.scale 为增量比（每帧相对于上一帧的距离比），非累积比
  * - 无缩放死区：到达边界后反向操作立即生效，无需 resetScaleReference
  * - centerX/Y 始终为两指中点（V1 由消费者自行用 finger0 计算锚点）
+ *
+ * 发射模型：inputMove 仅做调度，实际计算在 requestAnimationFrame 回调中以
+ * 两指最新位置执行 —— 同一显示帧内的多个事件合并为一次 delta：
+ * - 配对始终为帧内最新值，消除逐事件发射的新旧配对交替抖动
+ * - 单指静止（锚指+滑动指手势）时直接复用其存储位置，不会冻结
+ * - 发射频率与屏幕刷新对齐，消费者 DOM 写入天然合并
  */
 export class PinchZoomSourceV2 {
     /**
@@ -40,7 +51,10 @@ export class PinchZoomSourceV2 {
         this._pendingStartPos0 = { x: 0, y: 0 };
         this._pendingStartPos1 = { x: 0, y: 0 };
 
-        this._movedThisBatch = [];
+        // 帧对齐发射状态
+        this._emitRafId = null;
+        this._lastEmitMidX = 0;
+        this._lastEmitMidY = 0;
 
         this._finger0 = { x: 0, y: 0 };
         this._finger1 = { x: 0, y: 0 };
@@ -85,6 +99,7 @@ export class PinchZoomSourceV2 {
         this._input.off('inputDown', this._onInputDown);
         this._input.off('inputMove', this._onInputMove);
         this._input.off('inputUp', this._onInputUp);
+        this._cancel_pinch_emit();
         this._isPinching = false;
         this._isPending = false;
         this._pendingPinchIds = [];
@@ -129,8 +144,9 @@ export class PinchZoomSourceV2 {
         this._prevDistance = this._initialDistance;
         this._startMidX = (pos0.x + pos1.x) / 2;
         this._startMidY = (pos0.y + pos1.y) / 2;
+        this._lastEmitMidX = this._startMidX;
+        this._lastEmitMidY = this._startMidY;
         this._beyondTolerance = false;
-        this._movedThisBatch = [];
 
         const tol = getTolerance(this._toleranceSet, DeviceType.Touch);
         this._toleranceSq = tol * tol;
@@ -166,10 +182,13 @@ export class PinchZoomSourceV2 {
             }
 
             const tol = getTolerance(this._toleranceSet, DeviceType.Touch);
-            if (Math.abs(f0.position.x - this._pendingStartPos0.x) > tol ||
-                Math.abs(f0.position.y - this._pendingStartPos0.y) > tol ||
-                Math.abs(f1.position.x - this._pendingStartPos1.x) > tol ||
-                Math.abs(f1.position.y - this._pendingStartPos1.y) > tol) {
+            // BOTH 语义：两指都超过容差才激活缩放。
+            // 防止批注模式下一指书写、另一指搭扶时，书写指的移动误触发缩放切断笔画
+            const f0Moved = Math.abs(f0.position.x - this._pendingStartPos0.x) > tol ||
+                Math.abs(f0.position.y - this._pendingStartPos0.y) > tol;
+            const f1Moved = Math.abs(f1.position.x - this._pendingStartPos1.x) > tol ||
+                Math.abs(f1.position.y - this._pendingStartPos1.y) > tol;
+            if (f0Moved && f1Moved) {
                 this._isPending = false;
                 this._pendingPinchIds = [];
                 this._pinchIds = [f0.id, f1.id];
@@ -184,12 +203,33 @@ export class PinchZoomSourceV2 {
             return;
         }
 
+        // 帧对齐发射：本帧稍后用两指最新位置统一计算
+        this._schedule_pinch_emit();
+    }
+
+    _cancel_pinch_emit() {
+        if (this._emitRafId !== null) {
+            cancelAnimationFrame(this._emitRafId);
+            this._emitRafId = null;
+        }
+    }
+
+    _schedule_pinch_emit() {
+        if (this._emitRafId !== null) return;
+        this._emitRafId = requestAnimationFrame(() => this._emit_pinch_frame());
+    }
+
+    _emit_pinch_frame() {
+        this._emitRafId = null;
+        if (!this._isPinching) return;
+        if (this._input.activeCount < 2) return;
+
         const events = this._input.activeEvents;
         let f0Ev = null, f1Ev = null;
         for (let i = 0; i < events.length; i++) {
             const e = events[i];
             if (e.id === this._pinchIds[0]) f0Ev = e;
-            if (e.id === this._pinchIds[1]) f1Ev = e;
+            else if (e.id === this._pinchIds[1]) f1Ev = e;
         }
         if (!f0Ev || !f1Ev) {
             this._finishPinch(VirtualDeviceType.Device);
@@ -202,7 +242,11 @@ export class PinchZoomSourceV2 {
         const midX = (f0Ev.position.x + f1Ev.position.x) / 2;
         const midY = (f0Ev.position.y + f1Ev.position.y) / 2;
 
-        if (this._prevDistance === 0) return;
+        // 最小距离冻结：两指几乎并拢/交叉时距离不可信（微小抖动即产生巨大增量比），
+        // 冻结期间不发射 delta、不更新参考距离，跨越该区间后自动恢复链式一致。
+        // 注：prevDistance===0（起始即并拢）无需特判——下方激活分支会以当前距离
+        // 重建参考值实现自愈；比值分母的 Math.max(prev, MIN) 已保证无除零
+        if (currentDist < PINCH_MIN_DISTANCE) return;
 
         if (!this._beyondTolerance) {
             // 用初始距离和初始中点判断是否超过容差
@@ -219,17 +263,26 @@ export class PinchZoomSourceV2 {
             this._prevDistance = currentDist;
         }
 
-        // V2 核心：增量式缩放，每帧相对于上一帧
-        const incrementalRatio = currentDist / this._prevDistance;
+        // V2 核心：增量式缩放，每帧相对于上一帧。
+        // 参考距离钳制下限：起始即并拢时（prevDistance < MIN）防止除以极小值；
+        // 单帧比值夹取上下限，防御指针事件丢失/跳变导致的异常大步长
+        let incrementalRatio = currentDist / Math.max(this._prevDistance, PINCH_MIN_DISTANCE);
+        if (incrementalRatio > PINCH_FRAME_RATIO_MAX) incrementalRatio = PINCH_FRAME_RATIO_MAX;
+        else if (incrementalRatio < PINCH_FRAME_RATIO_MIN) incrementalRatio = PINCH_FRAME_RATIO_MIN;
 
-        if (this._movedThisBatch.indexOf(ev.id) === -1) {
-            this._movedThisBatch.push(ev.id);
+        // 微动死区：比值变化与中点位移同时低于阈值视为触控噪声，跳过本次发射。
+        // 不更新 prevDistance —— 真实慢速缩放无损累积，往复噪声相互抵消
+        const emitMidDx = midX - this._lastEmitMidX;
+        const emitMidDy = midY - this._lastEmitMidY;
+        if (Math.abs(incrementalRatio - 1) < EMIT_DEAD_BAND_RATIO &&
+            emitMidDx * emitMidDx + emitMidDy * emitMidDy < EMIT_DEAD_BAND_MID_SQ) {
+            return;
         }
-        if (!this._pinchIds.every(id => this._movedThisBatch.indexOf(id) !== -1)) return;
-        this._movedThisBatch = [];
 
-        // batch 检查通过后才更新 prevDistance，避免单指先更新时破坏参考值
-        this._prevDistance = currentDist;
+        // 更新参考距离。同样钳制下限，保证下一帧分母不会是极小值
+        this._prevDistance = Math.max(currentDist, PINCH_MIN_DISTANCE);
+        this._lastEmitMidX = midX;
+        this._lastEmitMidY = midY;
 
         if (this.onPinchDelta) {
             this._finger0.x = f0Ev.position.x;
@@ -277,7 +330,7 @@ export class PinchZoomSourceV2 {
         if (!this._isPinching) return;
         this._isPinching = false;
         this._pinchIds = [];
-        this._movedThisBatch = [];
+        this._cancel_pinch_emit();
 
         if (this.onPinchCompleted) {
             this.onPinchCompleted({
