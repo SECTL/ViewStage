@@ -178,7 +178,6 @@
     "openLogDirFailed": "打开日志目录失败",
     "noCameraPermission": "无摄像头权限",
     "noCameraDetected": "未检测到摄像头",
-
     "getFailed": "获取失败",
     "cannotGet": "无法获取",
     "close": "关闭",
@@ -227,7 +226,9 @@
     "pdfDefaultRemoved": "已取消 PDF 默认打开方式设置",
     "wordDefaultSetSuccess": "Word 文档已设置为默认打开方式",
     "wordDefaultSetFailed": "设置 Word 默认打开方式失败",
-    "wordDefaultRemoved": "已取消 Word 文档默认打开方式设置"
+    "wordDefaultRemoved": "已取消 Word 文档默认打开方式设置",
+    "pinchZoomV2": "捏合缩放算法 V2",
+    "pinchZoomV2Hint": "增量式缩放 + 中点锚点（需重启）"
   },
   "oobe": {
     "welcome": "欢迎使用 ViewStage",
@@ -380,8 +381,6 @@
     "frameDelta": "单帧手势位移上限",
     "tailDuration": "笔迹收尾时长",
     "ellipseStroke": "椭圆笔迹渲染",
-    "pinchZoomV2": "捏合缩放算法 V2",
-    "pinchZoomV2Hint": "增量式缩放 + 中点锚点（需重启）",
     "restartRequired": "需重启应用生效",
     "experimental": "实验性",
     "phoneConnect": "手机互联",

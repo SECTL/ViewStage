@@ -178,7 +178,6 @@
     "openLogDirFailed": "Failed to open log directory",
     "noCameraPermission": "No Camera Permission",
     "noCameraDetected": "No Camera Detected",
-
     "getFailed": "Failed to Get",
     "cannotGet": "Cannot Get",
     "close": "Close",
@@ -227,7 +226,9 @@
     "pdfDefaultRemoved": "PDF default setting has been removed",
     "wordDefaultSetSuccess": "Word has been set as default",
     "wordDefaultSetFailed": "Failed to set Word as default",
-    "wordDefaultRemoved": "Word default setting has been removed"
+    "wordDefaultRemoved": "Word default setting has been removed",
+    "pinchZoomV2": "Pinch Zoom Algorithm V2",
+    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)"
   },
   "oobe": {
     "welcome": "Welcome to ViewStage",
@@ -380,8 +381,6 @@
     "frameDelta": "Max Gesture Delta Per Frame",
     "tailDuration": "Pen Tail Duration",
     "ellipseStroke": "Ellipse Stroke Rendering",
-    "pinchZoomV2": "Pinch Zoom Algorithm V2",
-    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)",
     "restartRequired": "Restart required",
     "experimental": "Experimental",
     "phoneConnect": "Phone Connect",

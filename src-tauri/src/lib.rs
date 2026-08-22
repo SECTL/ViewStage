@@ -1399,7 +1399,8 @@ fn config_fetch_default() -> serde_json::Value {
             "mask": 231
         },
         "blurEnabled": false,
-        "pinchZoomV2": false
+        "pinchZoomV2": true,
+        "pinchZoomV2Migrated": false
     })
 }
 
@@ -1412,6 +1413,18 @@ fn json_type_name(v: &serde_json::Value) -> &'static str {
         serde_json::Value::String(_) => "string",
         serde_json::Value::Array(_) => "array",
         serde_json::Value::Object(_) => "object",
+    }
+}
+
+/// 一次性迁移：捏合缩放 V2 从实验性开发者选项转为默认开启。
+/// 必须在读取路径（fetch）与写入路径（save 应用传入设置之前）都执行，
+/// 否则"首会话内显式关闭"会被下次启动的迁移覆盖
+fn config_migrate_pinch_zoom_v2(config: &mut serde_json::Value) {
+    if config.get("pinchZoomV2Migrated").and_then(|v| v.as_bool()) == Some(false) {
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert("pinchZoomV2".to_string(), serde_json::Value::Bool(true));
+            obj.insert("pinchZoomV2Migrated".to_string(), serde_json::Value::Bool(true));
+        }
     }
 }
 
@@ -1553,7 +1566,11 @@ async fn settings_fetch_all(app: tauri::AppHandle) -> Result<SettingsResult, Str
     };
     
     let mut recovered: Vec<String> = Vec::new();
-    let merged_config = config_validate_and_merge(&existing_config, &default_config, &mut recovered);
+    let mut merged_config = config_validate_and_merge(&existing_config, &default_config, &mut recovered);
+
+    // 一次性迁移：旧配置中已固化的 pinchZoomV2:false 强制翻转为 true，
+    // 用户之后仍可在 Canvas 设置页手动切回经典算法
+    config_migrate_pinch_zoom_v2(&mut merged_config);
     
     if merged_config != existing_config {
         let merged_str = serde_json::to_string_pretty(&merged_config)
@@ -1612,6 +1629,9 @@ async fn settings_save_all(app: tauri::AppHandle, settings: serde_json::Value) -
         Ok(content) => {
             match serde_json::from_str::<serde_json::Value>(&content) {
                 Ok(mut existing) => {
+                    // 先对存量配置执行一次性迁移，再叠加传入设置：
+                    // 保证"首会话内显式关闭 V2"不会被迁移覆盖
+                    config_migrate_pinch_zoom_v2(&mut existing);
                     if let Some(obj) = existing.as_object_mut() {
                         if let Some(new_obj) = settings.as_object() {
                             for (key, value) in new_obj {

@@ -320,9 +320,8 @@ async function settings_load_camera_config() {
                     window.batchDrawManager.ellipseMode = true;
                 }
             }
-            if (settings.pinchZoomV2 === true) {
-                DRAW_CONFIG.pinchZoomV2 = true;
-            }
+            // 捏合缩放算法：V2 为默认，仅在 Canvas 设置页显式关闭时使用经典算法
+            DRAW_CONFIG.pinchZoomV2 = settings.pinchZoomV2 !== false;
             // 仅在开发者模式下才检查并加载性能监视器
             if (settings.developerMode && settings.perfMonitorEnabled) {
                 try {

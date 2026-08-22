@@ -221,7 +221,9 @@
     "pdfDefaultRemoved": "Le paramètre par défaut du PDF a été supprimé",
     "wordDefaultSetSuccess": "Word a été défini comme valeur par défaut",
     "wordDefaultSetFailed": "Échec de la définition de Word par défaut",
-    "wordDefaultRemoved": "Le paramètre par défaut de Word a été supprimé"
+    "wordDefaultRemoved": "Le paramètre par défaut de Word a été supprimé",
+    "pinchZoomV2": "Pinch Zoom Algorithm V2",
+    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)"
   },
   "oobe": {
     "welcome": "Bienvenue sur ViewStage",
@@ -383,8 +385,6 @@
     "presetDefault": " (défaut)",
     "presetDisabled": " (désactivé)",
     "displayDefault": "Afficher par défaut",
-    "pinchZoomV2": "Pinch Zoom Algorithm V2",
-    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)",
     "restartRequired": "Restart required",
     "backToMain": "←"
   },

@@ -221,7 +221,9 @@
     "pdfDefaultRemoved": "PDF のデフォルト設定が解除されました",
     "wordDefaultSetSuccess": "Word がデフォルトに設定されました",
     "wordDefaultSetFailed": "Word をデフォルトに設定できませんでした",
-    "wordDefaultRemoved": "Word のデフォルト設定が解除されました"
+    "wordDefaultRemoved": "Word のデフォルト設定が解除されました",
+    "pinchZoomV2": "Pinch Zoom Algorithm V2",
+    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)"
   },
   "oobe": {
     "welcome": "ViewStage へようこそ",
@@ -383,8 +385,6 @@
     "presetDefault": "（デフォルト）",
     "presetDisabled": "（無効）",
     "displayDefault": "デフォルトを表示",
-    "pinchZoomV2": "Pinch Zoom Algorithm V2",
-    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)",
     "restartRequired": "Restart required",
     "backToMain": "←"
   },
