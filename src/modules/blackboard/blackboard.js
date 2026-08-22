@@ -4,7 +4,7 @@
  * 使用 DrawingEngine 管理绘制管线
  */
 
-import { InputSource, PinchZoomSource, PinchZoomSourceV2, VirtualDeviceType } from '../gesture/index.js';
+import { InputSource, PinchZoomSource, PinchZoomSourceV2, ZoomWallDamper, VirtualDeviceType } from '../gesture/index.js';
 import { BlackboardPageManager } from './blackboard-page.js';
 import { DrawingEngine } from './drawing-engine.js';
 import { history_state, history_validate_undo, history_reset_executing } from '../history.js';
@@ -75,11 +75,6 @@ class BlackboardManager {
         this.screen_w = 0;
         this.screen_h = 0;
         this._last_loaded_index = -1;
-
-        // 弹性 overscroll 状态
-        this._is_overscrolling = false;
-        this._overscroll_display_x = 0;
-        this._overscroll_display_y = 0;
 
         // gesture 模块实例
         this._input_source = null;
@@ -883,9 +878,6 @@ class BlackboardManager {
             }
             this._pending_bb_transform = null;
 
-            // 清除上一轮缩放残留状态
-            this._is_overscrolling = false;
-
             const s = this.bb_state;
             s.cached_inv_scale = 1 / this._fetch_safe_scale();
 
@@ -903,6 +895,14 @@ class BlackboardManager {
             s.is_dragging = false;
             s.is_scaling = true;
             s.start_scale = s.scale;
+
+            // 缩放边界阻尼器：消除贴墙时的触控噪声"呼吸"抖动
+            this._bb_zoom_damper ??= new ZoomWallDamper();
+            this._bb_zoom_damper.reset(
+                s.scale,
+                window.DRAW_CONFIG?.minScale || 0.5,
+                window.DRAW_CONFIG ? window.DRAW_CONFIG.maxScaleImage : 3
+            );
 
             if (bbUseV2) {
                 // V2: 以两指中点为缩放锚点
@@ -933,9 +933,8 @@ class BlackboardManager {
             const min_scale = window.DRAW_CONFIG?.minScale || 0.5;
 
             if (bbUseV2) {
-                // V2: 增量式缩放 + 中点锚点
-                const newScale = s.scale * ev.scale;
-                s.scale = Math.max(min_scale, Math.min(max_scale, newScale));
+                // V2: 增量式缩放 + 中点锚点 + 边界阻尼（贴墙吸收噪声，累计越界 2% 才脱离）
+                s.scale = this._bb_zoom_damper.update(ev.scale);
                 s.canvas_x = ev.centerX - s.start_mid_cx * s.scale;
                 s.canvas_y = ev.centerY - s.start_mid_cy * s.scale;
             } else {
@@ -959,45 +958,11 @@ class BlackboardManager {
             this._update_move_bound();
             this._update_canvas_position();
 
-            // 弹性 overscroll（仅显示层）
-            const mb = s.move_bound;
-            this._is_overscrolling = false;
-            let display_x = s.canvas_x;
-            let display_y = s.canvas_y;
-
-            if (s.canvas_x < mb.min_x) {
-                const excess = s.canvas_x - mb.min_x;
-                this._is_overscrolling = true;
-                display_x = mb.min_x + excess * 0.3;
-                this._overscroll_display_x = display_x;
-                this._overscroll_display_y = display_y;
-            } else if (s.canvas_x > mb.max_x) {
-                const excess = s.canvas_x - mb.max_x;
-                this._is_overscrolling = true;
-                display_x = mb.max_x + excess * 0.3;
-                this._overscroll_display_x = display_x;
-                this._overscroll_display_y = display_y;
-            }
-
-            if (s.canvas_y < mb.min_y) {
-                const excess = s.canvas_y - mb.min_y;
-                this._is_overscrolling = true;
-                display_y = mb.min_y + excess * 0.3;
-                this._overscroll_display_x = display_x;
-                this._overscroll_display_y = display_y;
-            } else if (s.canvas_y > mb.max_y) {
-                const excess = s.canvas_y - mb.max_y;
-                this._is_overscrolling = true;
-                display_y = mb.max_y + excess * 0.3;
-                this._overscroll_display_x = display_x;
-                this._overscroll_display_y = display_y;
-            }
-
             this._set_zooming();
             this._update_bb_gesture_velocity();
 
             // rAF 节流更新 transform
-            this._sync_bb_transform_schedule(display_x, display_y, s.scale);
+            this._sync_bb_transform_schedule(s.canvas_x, s.canvas_y, s.scale);
         };
 
         pinch.onPinchCompleted = () => {
@@ -1020,19 +985,11 @@ class BlackboardManager {
                     s.start_drag_y = ev.position.y - s.canvas_y;
                 }
             } else if (input.activeCount === 0) {
-                if (this._is_overscrolling) {
-                    this._is_overscrolling = false;
-                    const mb = this.bb_state.move_bound;
-                    const snap_x = Math.max(mb.min_x, Math.min(mb.max_x, this._overscroll_display_x));
-                    const snap_y = Math.max(mb.min_y, Math.min(mb.max_y, this._overscroll_display_y));
-                    this._sync_bb_transform_smooth(snap_x, snap_y, this.bb_state.scale, 250);
-                } else {
-                    this._update_move_bound();
-                    this._update_canvas_position();
-                    this._sync_bb_transform();
-                    if (this.draw_mode === 'move' && (Math.abs(this._gesture_vx) > 2 || Math.abs(this._gesture_vy) > 2)) {
-                        this._start_momentum();
-                    }
+                this._update_move_bound();
+                this._update_canvas_position();
+                this._sync_bb_transform();
+                if (this.draw_mode === 'move' && (Math.abs(this._gesture_vx) > 2 || Math.abs(this._gesture_vy) > 2)) {
+                    this._start_momentum();
                 }
                 this._touch_schedule_disable_gpu();
             }

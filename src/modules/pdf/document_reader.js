@@ -4,7 +4,7 @@
  * 工具栏全部在右侧，支持 IntersectionObserver 懒加载
  */
 
-import { InputSource, PinchZoomSource, PinchZoomSourceV2 } from '../gesture/index.js';
+import { InputSource, PinchZoomSource, PinchZoomSourceV2, ZoomWallDamper } from '../gesture/index.js';
 import { DocumentReaderPageManager } from './document_reader_page.js';
 import {
     history_execute_command,
@@ -103,10 +103,6 @@ class DocumentReaderManager {
         this._dr_mb_cache_vh = -1;
         this._dr_mb_cache_scale = -1;
 
-        // 弹性 overscroll 状态
-        this._dr_is_overscrolling = false;
-        this._dr_overscroll_display_x = 0;
-        this._dr_overscroll_display_y = 0;
         this._zoom_wrapper = null;
         this._dr_is_zooming = false;            // 缩放进行中标记，缩放结束后延迟批量重绘
         this._zoom_complete_timer = null;        // 缩放结束延迟触发重绘
@@ -2358,6 +2354,10 @@ class DocumentReaderManager {
             this.dr_start_scale = this.dr_scale;
             this._pinchProcessedFirstDelta = false;
 
+            // 缩放边界阻尼器：消除贴墙时的触控噪声"呼吸"抖动
+            this._dr_zoom_damper ??= new ZoomWallDamper();
+            this._dr_zoom_damper.reset(this.dr_scale, this.dr_min_scale, this.dr_max_scale);
+
             // 以两指中点为缩放中心（替代只用 finger0，两指操作更自然）
             const positions = input.getActivePositions();
             if (positions.length >= 2) {
@@ -2387,9 +2387,8 @@ class DocumentReaderManager {
             }
 
             if (drUseV2) {
-                // V2: 增量式缩放（已用中点锚点）
-                const newScale = this.dr_scale * ev.scale;
-                this.dr_scale = Math.max(this.dr_min_scale, Math.min(this.dr_max_scale, newScale));
+                // V2: 增量式缩放（已用中点锚点）+ 边界阻尼（贴墙吸收噪声，累计越界 2% 才脱离）
+                this.dr_scale = this._dr_zoom_damper.update(ev.scale);
                 this.dr_cached_inv_scale = 1 / this.dr_scale;
                 if (this.batch_draw) {
                     this.batch_draw._overlay_cached_rect_left = null;
@@ -2420,38 +2419,11 @@ class DocumentReaderManager {
             this._dr_update_move_bound();
             this._dr_update_canvas_position();
 
-            // 弹性 overscroll（仅显示层）
-            const mb = this.dr_move_bound;
-            this._dr_is_overscrolling = false;
-            let display_x = this.dr_canvas_x;
-            let display_y = this.dr_canvas_y;
-
-            if (this.dr_canvas_x < mb.min_x) {
-                display_x = mb.min_x + (this.dr_canvas_x - mb.min_x) * 0.3;
-                this._dr_is_overscrolling = true;
-            } else if (this.dr_canvas_x > mb.max_x) {
-                display_x = mb.max_x + (this.dr_canvas_x - mb.max_x) * 0.3;
-                this._dr_is_overscrolling = true;
-            }
-
-            if (this.dr_canvas_y < mb.min_y) {
-                display_y = mb.min_y + (this.dr_canvas_y - mb.min_y) * 0.3;
-                this._dr_is_overscrolling = true;
-            } else if (this.dr_canvas_y > mb.max_y) {
-                display_y = mb.max_y + (this.dr_canvas_y - mb.max_y) * 0.3;
-                this._dr_is_overscrolling = true;
-            }
-
-            if (this._dr_is_overscrolling) {
-                this._dr_overscroll_display_x = display_x;
-                this._dr_overscroll_display_y = display_y;
-            }
-
             this._dr_set_zooming();
             this._dr_update_gesture_velocity();
 
             // rAF 节流更新 transform（缩放中跳过 tile/overlay，仅写 DOM）
-            this._dr_sync_transform_schedule(display_x, display_y, this.dr_scale);
+            this._dr_sync_transform_schedule(this.dr_canvas_x, this.dr_canvas_y, this.dr_scale);
         };
 
         pinch.onPinchCompleted = () => {
@@ -2486,26 +2458,7 @@ class DocumentReaderManager {
                     this.dr_start_drag_y = ev.position.y - this.dr_canvas_y;
                 }
             } else if (input.activeCount === 0) {
-                if (this._dr_is_overscrolling) {
-                    this._dr_is_overscrolling = false;
-                    const mb = this.dr_move_bound;
-                    const snap_x = Math.max(mb.min_x, Math.min(mb.max_x, this._dr_overscroll_display_x));
-                    const snap_y = Math.max(mb.min_y, Math.min(mb.max_y, this._dr_overscroll_display_y));
-                    this.dr_canvas_x = snap_x;
-                    this.dr_canvas_y = snap_y;
-                    if (this._zoom_wrapper) {
-                        this._zoom_wrapper.style.transitionDuration = '250ms';
-                        this._zoom_wrapper.classList.add('smooth-transform');
-                    }
-                    this._dr_apply_scale();
-                    if (this._zoom_wrapper) {
-                        setTimeout(() => {
-                            this._zoom_wrapper.classList.remove('smooth-transform');
-                            this._zoom_wrapper.style.transitionDuration = '';
-                        }, 250);
-                    }
-                    this._dr_schedule_disable_smooth_transform();
-                } else if (Math.abs(this._dr_gesture_vx) > 2 || Math.abs(this._dr_gesture_vy) > 2) {
+                if (Math.abs(this._dr_gesture_vx) > 2 || Math.abs(this._dr_gesture_vy) > 2) {
                     this._dr_update_move_bound();
                     this._dr_update_canvas_position();
                     this._dr_start_momentum();
