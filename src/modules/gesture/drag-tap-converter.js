@@ -105,4 +105,13 @@ export class DragTapConverter {
     get isDragging() {
         return this._dragging;
     }
+
+    /**
+     * 强制清除拖拽状态（不触发任何回调）。
+     * 用于两指手势（pinch）开始时接管输入，防止残留的拖拽状态
+     * 在手势结束后用过期的起点坐标覆写位置
+     */
+    reset() {
+        this._dragging = false;
+    }
 }

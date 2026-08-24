@@ -14,7 +14,6 @@ async function developer_options_init() {
     let savedFrameDelta = 60;
     let savedTailDuration = 30;
     let savedEllipseStroke = false;
-    let savedPinchZoomV2 = false;
 
     if (invoke) {
         try {
@@ -37,7 +36,6 @@ async function developer_options_init() {
                 ?? s.penTailDuration
                 ?? 30;
             savedEllipseStroke = s.ellipseStrokeEnabled === true;
-            savedPinchZoomV2 = s.pinchZoomV2 === true;
         } catch (_) {
             savedWidthRatio = window.DRAW_CONFIG?.penMinWidthRatio ?? 0.4;
             savedMaxScale = window.DRAW_CONFIG?.maxScaleImage ?? 4;
@@ -47,7 +45,7 @@ async function developer_options_init() {
         savedMaxScale = window.DRAW_CONFIG?.maxScaleImage ?? 4;
     }
 
-    developer_options_show_main(savedWidthRatio, savedMaxScale, savedPerfMonitor, savedPerfInterval, savedDevMode, savedFrameDelta, savedTailDuration, savedEllipseStroke, savedPinchZoomV2);
+    developer_options_show_main(savedWidthRatio, savedMaxScale, savedPerfMonitor, savedPerfInterval, savedDevMode, savedFrameDelta, savedTailDuration, savedEllipseStroke);
 }
 
 const PERF_INTERVAL_OPTIONS = [
@@ -62,7 +60,7 @@ function _perf_interval_label(ms) {
     return opt ? `${_tk(opt.i18nKey)}（${ms}ms）` : `${ms}ms`;
 }
 
-function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMonitorEnabled, perfMonitorInterval, devModeEnabled, currentFrameDelta, currentTailDuration, ellipseStrokeEnabled, pinchZoomV2Enabled) {
+function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMonitorEnabled, perfMonitorInterval, devModeEnabled, currentFrameDelta, currentTailDuration, ellipseStrokeEnabled) {
     const invoke = window.__TAURI__?.core?.invoke;
     const page = document.getElementById('pageDevOptions');
     if (!page) return;
@@ -181,16 +179,6 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
         <div class="setting-item">
             <span class="setting-label">${_tk('memclean.title')}</span>
             <span id="devGoMemclean" style="cursor:pointer;font-size:18px;color:var(--color-muted, #888);padding:4px;">→</span>
-        </div>
-        <div class="setting-item">
-            <span class="setting-label">${_tk('developer.pinchZoomV2')}<span class="experimental-badge">${_tk('developer.experimental')}</span></span>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
-                <label class="toggle-switch">
-                    <input type="checkbox" id="devPinchZoomV2Toggle"${pinchZoomV2Enabled ? ' checked' : ''}>
-                    <span class="toggle-slider"></span>
-                </label>
-                <span class="setting-hint">${_tk('developer.pinchZoomV2Hint')}</span>
-            </div>
         </div>
         <div class="setting-item">
             <span class="setting-label">${_tk('developer.ellipseStroke')}<span class="experimental-badge">${_tk('developer.experimental')}</span></span>
@@ -379,18 +367,6 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
                     invoke('settings_save_all', { settings: { penTailDuration: val, developerMode: true } });
                 }
             }, 300);
-        });
-    })();
-
-    // 捏合缩放算法 V2 开关
-    (function setup_pinch_zoom_v2_toggle() {
-        const toggle = document.getElementById('devPinchZoomV2Toggle');
-        if (!toggle) return;
-        toggle.addEventListener('change', () => {
-            const enabled = toggle.checked;
-            if (invoke) {
-                invoke('settings_save_all', { settings: { pinchZoomV2: enabled, developerMode: true } });
-            }
         });
     })();
 

@@ -221,7 +221,9 @@
     "pdfDefaultRemoved": "PDF 기본 설정이 제거되었습니다",
     "wordDefaultSetSuccess": "Word가 기본값으로 설정되었습니다",
     "wordDefaultSetFailed": "Word를 기본값으로 설정할 수 없습니다",
-    "wordDefaultRemoved": "Word 기본 설정이 제거되었습니다"
+    "wordDefaultRemoved": "Word 기본 설정이 제거되었습니다",
+    "pinchZoomV2": "Pinch Zoom Algorithm V2",
+    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)"
   },
   "oobe": {
     "welcome": "ViewStage에 오신 것을 환영합니다",
@@ -383,8 +385,6 @@
     "presetDefault": " (기본값)",
     "presetDisabled": " (비활성화)",
     "displayDefault": "기본값 표시",
-    "pinchZoomV2": "Pinch Zoom Algorithm V2",
-    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)",
     "restartRequired": "Restart required",
     "backToMain": "←"
   },

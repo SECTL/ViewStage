@@ -170,4 +170,13 @@ export class DragTapSource {
     get isDragging() {
         return this._converter.isDragging;
     }
+
+    /**
+     * 取消当前拖拽跟踪（不触发 onDragCompleted/onTap）。
+     * 两指手势（pinch）开始时调用，清除首指残留的拖拽状态，
+     * 防止其后续 move 事件用 pinch 前的过期抓取偏移覆写画布位置
+     */
+    cancelDrag() {
+        this._converter.reset();
+    }
 }

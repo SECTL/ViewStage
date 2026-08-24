@@ -57,6 +57,14 @@ class RealtimeBatchDrawManager {
         this._overlayDpr = 1;
         this._overlayDprSettleTimerId = null;
         this._overlayDprSettleMs = 300;
+        // 笔画进行中标记：overlay resize 会清空内容（进行中的笔迹闪断），
+        // 期间的 DPR 调整请求顺延到笔画结束（batch_draw_handle_end）
+        this._strokeActive = false;
+        this._deferredOverlayDpr = null;
+        // 最近绘制耗时滚动样本与外部性能回调（如摄像头预览自适应帧率）
+        this._drawTimes = [];
+        this._perfHook = null;
+        this._perfLastEmit = 0;
 
         this._tileRenderer = null;
         this.eraserShape = 'square';
@@ -78,6 +86,16 @@ class RealtimeBatchDrawManager {
     }
 
     update_overlay_dpr(scale, force) {
+        if (this._strokeActive) {
+            // 笔画进行中：resize overlay 会清空已绘制内容导致笔迹闪断，
+            // 暂存请求，待 batch_draw_handle_end 时补执行
+            this._deferredOverlayDpr = { scale, force };
+            if (this._overlayDprSettleTimerId != null) {
+                clearTimeout(this._overlayDprSettleTimerId);
+                this._overlayDprSettleTimerId = null;
+            }
+            return;
+        }
         if (this._overlayDprSettleTimerId != null) {
             clearTimeout(this._overlayDprSettleTimerId);
             this._overlayDprSettleTimerId = null;
@@ -89,6 +107,11 @@ class RealtimeBatchDrawManager {
                 this._apply_overlay_dpr(targetDpr);
             }
         }, this._overlayDprSettleMs);
+    }
+
+    /** 注册绘制性能采样回调（参数为最近 20 次 flush 的平均耗时 ms），节流 500ms */
+    set_perf_hook(fn) {
+        this._perfHook = typeof fn === 'function' ? fn : null;
     }
 
     _apply_overlay_dpr(newDpr) {
@@ -778,7 +801,6 @@ class RealtimeBatchDrawManager {
                     
                     const eraser = window.__eraser;
                     if (eraser) {
-                        ctx.beginPath();
                         for (let j = 0; j < entry.paths.length; j++) {
                             const w = entry.lineWidths && entry.lineWidths.length > 0
                                 ? entry.lineWidths[j] || 20
@@ -786,7 +808,6 @@ class RealtimeBatchDrawManager {
                             const p = entry.paths[j];
                             eraser.renderEraseSegment(ctx, p.fromX, p.fromY, p.toX, p.toY, w);
                         }
-                        ctx.fill();
                     }
                     ctx.restore();
                 }
@@ -805,6 +826,18 @@ class RealtimeBatchDrawManager {
         this.lastType = currentType;
         this.lastColor = currentColor;
         this.lastLineWidth = lastLineWidth;
+
+        // 滚动记录最近绘制耗时，节流上报给外部自适应策略
+        this._drawTimes.push(drawTime);
+        if (this._drawTimes.length > 20) {
+            this._drawTimes.shift();
+        }
+        if (this._perfHook && drawEnd - this._perfLastEmit >= 500) {
+            this._perfLastEmit = drawEnd;
+            let sum = 0;
+            for (let k = 0; k < this._drawTimes.length; k++) sum += this._drawTimes[k];
+            this._perfHook(sum / this._drawTimes.length);
+        }
 
         if (this.is_adaptive) {
             this.batch_draw_calc_adjust_fps(drawTime, count);
@@ -860,6 +893,8 @@ class RealtimeBatchDrawManager {
         this._dirtyBoundsCanvas = null;
         this._limitedTailWidth = null;
         this.ellipseMode = window.DRAW_CONFIG?.ellipseStrokeEnabled === true;
+        this._strokeActive = false;
+        this._deferredOverlayDpr = null;
         this.clear_overlay();
     }
 
@@ -869,6 +904,7 @@ class RealtimeBatchDrawManager {
         this.lastDrawTime = performance.now();
         this._penEffectMode = 'off';
         this._strokeStart = true;
+        this._strokeActive = true;
         this.ellipseMode = window.DRAW_CONFIG?.ellipseStrokeEnabled === true;
         this._strokeGroupId = (this._strokeGroupId || 0) + 1;
         this._totalSegments = 0;
@@ -964,6 +1000,14 @@ class RealtimeBatchDrawManager {
         }
 
         this.clear_overlay();
+
+        // 笔画结束：补执行绘制期间被顺延的 overlay DPR 调整
+        this._strokeActive = false;
+        if (this._deferredOverlayDpr) {
+            const d = this._deferredOverlayDpr;
+            this._deferredOverlayDpr = null;
+            this.update_overlay_dpr(d.scale, d.force);
+        }
 
         if (this.is_adaptive) {
             this.drawTimes = [];

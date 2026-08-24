@@ -196,7 +196,6 @@
     "openLogDirFailed": "開啟日誌目錄失敗",
     "noCameraPermission": "無攝影機權限",
     "noCameraDetected": "未偵測到攝影機",
-
     "getFailed": "取得失敗",
     "cannotGet": "無法取得",
     "close": "關閉",
@@ -224,7 +223,9 @@
     "pdfDefaultRemoved": "已取消 PDF 預設開啟方式設定",
     "wordDefaultSetSuccess": "Word 文件已設為預設開啟方式",
     "wordDefaultSetFailed": "設定 Word 預設開啟方式失敗",
-    "wordDefaultRemoved": "已取消 Word 文件預設開啟方式設定"
+    "wordDefaultRemoved": "已取消 Word 文件預設開啟方式設定",
+    "pinchZoomV2": "捏合縮放演算法 V2",
+    "pinchZoomV2Hint": "增量式縮放 + 中點錨點（需重啟）"
   },
   "oobe": {
     "welcome": "歡迎使用 ViewStage",
@@ -348,8 +349,6 @@
     "frameDelta": "單幀手勢位移上限",
     "tailDuration": "筆跡收尾時長",
     "ellipseStroke": "橢圓筆跡渲染",
-    "pinchZoomV2": "捏合縮放演算法 V2",
-    "pinchZoomV2Hint": "增量式縮放 + 中點錨點（需重啟）",
     "restartRequired": "需重啟應用生效",
     "experimental": "實驗性",
     "phoneConnect": "手機互聯",

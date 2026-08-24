@@ -221,7 +221,9 @@
     "pdfDefaultRemoved": "El ajuste predeterminado de PDF se ha eliminado",
     "wordDefaultSetSuccess": "Word establecido como predet.",
     "wordDefaultSetFailed": "Error al establecer Word como predet.",
-    "wordDefaultRemoved": "El ajuste predeterminado de Word se ha eliminado"
+    "wordDefaultRemoved": "El ajuste predeterminado de Word se ha eliminado",
+    "pinchZoomV2": "Pinch Zoom Algorithm V2",
+    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)"
   },
   "oobe": {
     "welcome": "Bienvenido a ViewStage",
@@ -383,8 +385,6 @@
     "presetDefault": " (predeterminado)",
     "presetDisabled": " (desactivado)",
     "displayDefault": "Mostrar predeterminado",
-    "pinchZoomV2": "Pinch Zoom Algorithm V2",
-    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)",
     "restartRequired": "Restart required",
     "backToMain": "←"
   },

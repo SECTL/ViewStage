@@ -21,7 +21,7 @@ import {
     MAX_HISTORY_STEPS
 } from './modules/history.js';
 import { DocLoader } from './modules/pdf/document_loader.js';
-import { InputSource, DragTapSource, PinchZoomSource, PinchZoomSourceV2, TOLERANCE } from './modules/gesture/index.js';
+import { InputSource, DragTapSource, PinchZoomSource, PinchZoomSourceV2, ZoomWallDamper, TOLERANCE } from './modules/gesture/index.js';
 import { CameraManager, camera_format_blob_to_data_url } from './modules/camera/camera.js';
 import { resetContextState, updateContextState } from './modules/canvas/context-state.js';
 import { renderStrokesToContext, getPenEffectMode } from './modules/canvas/stroke-renderer.js';
@@ -243,6 +243,7 @@ const DRAW_CONFIG = {
     palmEraserEnabled: false,
     palmEraserSize: 60,
     momentumEnabled: false,
+    pinchZoomV2: true,
     minScale: 0.5,
     maxScale: 3,
     maxScaleImage: 4,
@@ -618,17 +619,15 @@ let state = {
     startFinger0CX: 0,
     startFinger0CY: 0,
 
-    // 弹性 overscroll 状态
-    _isOverscrolling: false,
-    _overscrollDisplayX: 0,
-    _overscrollDisplayY: 0,
-
     // 惯性（动量）系统
     _gestureVx: 0,
     _gestureVy: 0,
     _lastCanvasX: 0,
     _lastCanvasY: 0,
     _momentumRaf: null,
+
+    // 缩放边界阻尼器（pinch 开始时创建/重置，见 ZoomWallDamper）
+    _zoomDamper: null,
 
     strokeHistory: [],
     baseImageURL: null,
@@ -1629,12 +1628,21 @@ function main_update_canvas_bg_color(color) {
 }
 
 let cachedMoveBoundScale = null;
+let cachedMoveBoundScreenW = -1;
+let cachedMoveBoundScreenH = -1;
 
 function main_update_move_bound() {
-    if (cachedMoveBoundScale === state.scale) {
+    // 缓存键必须包含屏幕尺寸：resize 只改 screenW/H 而不动 scale，
+    // 若仅按 scale 缓存，resize 后边界过期 → 画布可被拖出屏幕外。
+    // 用数值分量比较而非字符串拼接，避免 pinch/惯性每帧分配字符串
+    if (cachedMoveBoundScale === state.scale &&
+        cachedMoveBoundScreenW === DRAW_CONFIG.screenW &&
+        cachedMoveBoundScreenH === DRAW_CONFIG.screenH) {
         return;
     }
     cachedMoveBoundScale = state.scale;
+    cachedMoveBoundScreenW = DRAW_CONFIG.screenW;
+    cachedMoveBoundScreenH = DRAW_CONFIG.screenH;
     
     const screenW = DRAW_CONFIG.screenW;
     const screenH = DRAW_CONFIG.screenH;
@@ -1710,6 +1718,8 @@ function main_setup_all_events() {
     main_setup_gesture_system();
     main_setup_settings_events();
     main_setup_click_outside();
+    // 摄像头预览自适应帧率：订阅批注绘制耗时采样
+    window.batchDrawManager?.set_perf_hook(main_handle_draw_perf_sample);
     if (window.blackboardManager) {
         window.blackboardManager.setup_toolbar_events();
     }
@@ -1887,6 +1897,8 @@ function main_setup_gesture_system() {
 
     drag.onDragStarted = () => {
         if (state.isPalmErasing || state.isDrawing || state.isScaling) return;
+        // 两指及以上交给 pinch 处理，单指拖拽不介入（防止与缩放锚点冲突）
+        if (input.activeCount >= 2) return;
         state.isDragging = true;
         const lastEv = input.activeEvents[0];
         state.startDragX = (lastEv?.position.x || 0) - state.canvasX;
@@ -1900,6 +1912,8 @@ function main_setup_gesture_system() {
 
     drag.onDragDelta = (ev) => {
         if (!state.isDragging || state.isPalmErasing || state.isScaling) return;
+        // 两指手势期间 pinch 全权负责位置，拖拽增量一律忽略
+        if (input.activeCount >= 2) return;
 
         state.canvasX = ev.position.x - state.startDragX;
         state.canvasY = ev.position.y - state.startDragY;
@@ -1934,7 +1948,10 @@ function main_setup_gesture_system() {
         // 清除上一轮缩放/拖拽残留状态，防止与新 pinch 冲突
         state._pinchResidualDrag = false;
         state._pinchResidualDragFingerId = null;
-        state._isOverscrolling = false;
+        // 终止单指拖拽跟踪：若 pinch 前首指正在拖拽，其过期的抓取偏移
+        // 会在 pinch 结束（isScaling=false）后覆写画布位置导致跳变
+        state.isDragging = false;
+        drag.cancelDrag();
 
         if (state.isDrawing) {
             state.isDrawing = false;
@@ -1948,6 +1965,10 @@ function main_setup_gesture_system() {
 
         state.isScaling = true;
         state.startScale = state.scale;
+
+        // 缩放边界阻尼器：消除贴墙时的触控噪声"呼吸"抖动
+        state._zoomDamper ??= new ZoomWallDamper();
+        state._zoomDamper.reset(state.scale, DRAW_CONFIG.minScale, DRAW_CONFIG.maxScaleImage);
 
         if (useV2) {
             // V2: 以两指中点为缩放锚点
@@ -1976,9 +1997,8 @@ function main_setup_gesture_system() {
         const maxScale = DRAW_CONFIG.maxScaleImage;
 
         if (useV2) {
-            // V2: 增量式缩放 + 中点锚点
-            const newScale = state.scale * ev.scale;
-            state.scale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, newScale));
+            // V2: 增量式缩放 + 中点锚点 + 边界阻尼（贴墙吸收噪声，累计越界 2% 才脱离）
+            state.scale = state._zoomDamper.update(ev.scale);
             // 中点锚点：保持画布上初始中点位置跟随当前中点
             state.canvasX = ev.centerX - state.startMidCX * state.scale;
             state.canvasY = ev.centerY - state.startMidCY * state.scale;
@@ -2006,44 +2026,13 @@ function main_setup_gesture_system() {
         main_update_move_bound();
         main_update_canvas_position();
 
-        // 弹性 overscroll（仅显示层，不污染 state.canvasX/Y，保持 velocity 追踪准确）
-        const mb = state.moveBound;
-        state._isOverscrolling = false;
-        let displayX = state.canvasX;
-        let displayY = state.canvasY;
-
-        if (state.canvasX < mb.minX) {
-            const excess = state.canvasX - mb.minX;
-            state._isOverscrolling = true;
-            displayX = mb.minX + excess * 0.3;
-        } else if (state.canvasX > mb.maxX) {
-            const excess = state.canvasX - mb.maxX;
-            state._isOverscrolling = true;
-            displayX = mb.maxX + excess * 0.3;
-        }
-
-        if (state.canvasY < mb.minY) {
-            const excess = state.canvasY - mb.minY;
-            state._isOverscrolling = true;
-            displayY = mb.minY + excess * 0.3;
-        } else if (state.canvasY > mb.maxY) {
-            const excess = state.canvasY - mb.maxY;
-            state._isOverscrolling = true;
-            displayY = mb.maxY + excess * 0.3;
-        }
-
-        if (state._isOverscrolling) {
-            state._overscrollDisplayX = displayX;
-            state._overscrollDisplayY = displayY;
-        }
-
         main_update_gesture_velocity(true);
 
         // 脏检查 + rAF 节流（与拖拽路径对齐，避免每帧直接写 DOM）
-        if (last_canvas_transform.x !== displayX ||
-            last_canvas_transform.y !== displayY ||
+        if (last_canvas_transform.x !== state.canvasX ||
+            last_canvas_transform.y !== state.canvasY ||
             last_canvas_transform.scale !== state.scale) {
-            main_update_transform_schedule(displayX, displayY, state.scale);
+            main_update_transform_schedule(state.canvasX, state.canvasY, state.scale);
         }
 
         main_set_zooming();
@@ -2060,6 +2049,10 @@ function main_setup_gesture_system() {
         if (input.activeCount >= 1 && state.drawMode === 'move') {
             const ev = input.activeEvents[0];
             if (ev) {
+                state.isDragging = false;
+                drag.cancelDrag();
+                // 残余拖拽开始前清掉 CSS transition，避免后续逐帧直写 transform 变成补间
+                main_cancel_smooth_transform();
                 state._pinchResidualDrag = true;
                 state._pinchResidualDragFingerId = ev.id;
                 state.startDragX = ev.position.x - state.canvasX;
@@ -2074,12 +2067,7 @@ function main_setup_gesture_system() {
             main_update_move_bound();
             main_update_canvas_position();
 
-            if (state._isOverscrolling) {
-                state._isOverscrolling = false;
-                const snapX = Math.max(state.moveBound.minX, Math.min(state.moveBound.maxX, state._overscrollDisplayX));
-                const snapY = Math.max(state.moveBound.minY, Math.min(state.moveBound.maxY, state._overscrollDisplayY));
-                main_update_canvas_transform_smooth(snapX, snapY, state.scale, 250);
-            } else if (Math.abs(state._gestureVx) > 2 || Math.abs(state._gestureVy) > 2) {
+            if (Math.abs(state._gestureVx) > 2 || Math.abs(state._gestureVy) > 2) {
                 main_start_momentum('xy');
             } else {
                 main_update_canvas_transform_smooth(state.canvasX, state.canvasY, state.scale, 200);
@@ -2250,13 +2238,13 @@ async function main_update_mode(mode) {
                 if (bb.bb_wrapper) bb.bb_wrapper.style.cursor = 'crosshair';
                 bb.drawing_engine?._hide_eraser_hint();
                 main_update_pen_style();
-                main_update_camera_frame_rate(15);
+                main_enter_annotate_camera_fps();
                 break;
             case 'eraser':
                 if (dom.btnEraser) dom.btnEraser.classList.add('primary-btn');
                 bb.drawing_engine?.set_draw_mode(mode);
                 main_update_eraser_style();
-                main_update_camera_frame_rate(15);
+                main_enter_annotate_camera_fps();
                 break;
         }
 
@@ -2303,12 +2291,12 @@ async function main_update_mode(mode) {
             dom.canvasWrapper.style.cursor = 'crosshair';
             main_hide_eraser_hint();
             main_update_pen_style();
-            main_update_camera_frame_rate(15);
+            main_enter_annotate_camera_fps();
             break;
         case 'eraser':
             dom.btnEraser.classList.add('primary-btn');
             main_update_eraser_style();
-            main_update_camera_frame_rate(15);
+            main_enter_annotate_camera_fps();
             break;
     }
     
@@ -2332,8 +2320,8 @@ function main_setup_tool_events() {
             window.__TAURI__.event.listen('camera-light-changed', (event) => {
                 const isOn = event.payload?.isOn;
                 if (isOn === undefined) return;
-                __lightOn = isOn;
-                __savedLightState = isOn;
+                window.__lightOn = isOn;
+                window.__savedLightState = isOn;
                 const img = dom.btnLight?.querySelector('img');
                 if (isOn) {
                     dom.btnLight?.classList.add('active');
@@ -2426,38 +2414,47 @@ function main_handle_menu_outside_click(e) {
 }
 
 // 展台灯开关
-let __lightOn = false;
-let __savedLightState = false;
+// 状态统一存放在 window 上：camera.js / document_reader.js 通过
+// window.__savedLightState / window.__lightOn 读写同一份状态，
+// 模块级变量会与之割裂导致重开摄像头/关闭阅读器后灯状态无法恢复
+window.__lightOn = window.__lightOn === true;
+window.__savedLightState = window.__savedLightState === true;
+let __lightToggleBusy = false;
 
 async function main_handle_light_toggle() {
     if (!window.__TAURI__ || !window.__lightAvailable) return;
+    // in-flight 防抖：上次 HID 写入未完成前忽略重复点击，防止并发 invoke 状态翻转
+    if (__lightToggleBusy) return;
+    __lightToggleBusy = true;
     try {
         const { invoke } = window.__TAURI__.core;
-        const img = dom.btnLight.querySelector('img');
-        if (__lightOn) {
+        const img = dom.btnLight?.querySelector('img');
+        if (window.__lightOn) {
             await invoke('camera_light_off');
-            __lightOn = false;
-            dom.btnLight.classList.remove('active');
+            window.__lightOn = false;
+            dom.btnLight?.classList.remove('active');
             if (img) img.src = ThemeManager.theme_fetch_icon_path('light-off');
         } else {
             await invoke('camera_light_on');
-            __lightOn = true;
-            dom.btnLight.classList.add('active');
+            window.__lightOn = true;
+            dom.btnLight?.classList.add('active');
             if (img) img.src = ThemeManager.theme_fetch_icon_path('light');
         }
-        __savedLightState = __lightOn;
+        window.__savedLightState = window.__lightOn;
     } catch (e) {
         console.error('展台灯控制失败:', e);
+    } finally {
+        __lightToggleBusy = false;
     }
 }
 
 async function main_light_off() {
-    if (!window.__TAURI__ || !window.__lightAvailable || !__lightOn) return;
+    if (!window.__TAURI__ || !window.__lightAvailable || !window.__lightOn) return;
     try {
         await window.__TAURI__.core.invoke('camera_light_off');
-        __lightOn = false;
-        dom.btnLight.classList.remove('active');
-        const img = dom.btnLight.querySelector('img');
+        window.__lightOn = false;
+        dom.btnLight?.classList.remove('active');
+        const img = dom.btnLight?.querySelector('img');
         if (img) img.src = ThemeManager.theme_fetch_icon_path('light-off');
     } catch (e) {
         console.error('展台灯关闭失败:', e);
@@ -2952,7 +2949,10 @@ function main_flush_last_segment(clientX, clientY) {
 
 function main_handle_wheel(e) {
     if (window.tileRenderer) window.tileRenderer.cancel_idle_shrink();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    // 步长随滚动增量自适应：鼠标滚轮每格 ≈0.1（与原固定步长一致），
+    // 触控板的高频小增量事件获得细腻的渐进缩放而非跳变
+    const step = Math.min(0.1, Math.max(0.01, Math.abs(e.deltaY) * 0.001));
+    const delta = e.deltaY > 0 ? -step : step;
     const maxScale = DRAW_CONFIG.maxScaleImage;
     const newScale = Math.max(DRAW_CONFIG.minScale, Math.min(maxScale, state.scale + delta));
     
@@ -3731,7 +3731,7 @@ async function main_update_image_selection(index) {
             await main_update_camera_state(false);
         }
         if (window.__lightAvailable) {
-            __savedLightState = __lightOn;
+            window.__savedLightState = window.__lightOn;
             main_light_off();
             dom.btnLight.style.display = 'none';
         }
@@ -4327,6 +4327,43 @@ function main_update_camera_video_style() { cameraManager.updateVideoStyle(); }
 function main_apply_camera_filters() { cameraManager.applyFilters(); }
 async function main_save_camera_image() { await cameraManager.saveImage(); }
 function main_update_camera_frame_rate(idealFps) { cameraManager.updateFrameRate(idealFps); }
+
+// ===== 摄像头预览自适应帧率 =====
+// 批注模式下预览以 30fps 起步；绘制 flush 平均耗时持续超预算时降回 15fps，
+// 负载消失并保持一段时间后恢复（滞回 + 冷却防抖动）。
+let _camPreviewFpsHigh = true;
+let _camFpsRecoverAt = 0;
+
+/** 进入批注模式：重置自适应状态并以 30fps 预览 */
+function main_enter_annotate_camera_fps() {
+    _camPreviewFpsHigh = true;
+    _camFpsRecoverAt = 0;
+    main_update_camera_frame_rate(30);
+}
+
+/** 批注绘制性能采样回调（最近 20 次 overlay flush 平均耗时，节流 500ms） */
+function main_handle_draw_perf_sample(avgMs) {
+    if (!state.isCameraOpen || state.drawMode === 'move') return;
+    const now = performance.now();
+    if (_camPreviewFpsHigh) {
+        if (avgMs > 10) {
+            _camPreviewFpsHigh = false;
+            _camFpsRecoverAt = 0;
+            main_update_camera_frame_rate(15);
+        }
+    } else if (avgMs <= 5) {
+        if (_camFpsRecoverAt === 0) {
+            _camFpsRecoverAt = now;
+        } else if (now - _camFpsRecoverAt >= 1000) {
+            _camPreviewFpsHigh = true;
+            _camFpsRecoverAt = 0;
+            main_update_camera_frame_rate(30);
+        }
+    } else {
+        // 仍高负载：重置恢复计时
+        _camFpsRecoverAt = 0;
+    }
+}
 
 function main_delete_sidebar_selection() {
     document.querySelectorAll('.sidebar:not(.file-sidebar) .sidebar-image-item').forEach(item => {

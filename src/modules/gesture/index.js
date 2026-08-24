@@ -11,3 +11,5 @@ export { DragTapSource } from './drag-tap-source.js';
 export { PinchZoomSource } from './pinch-zoom.js';
 
 export { PinchZoomSourceV2 } from './pinch-zoom-v2.js';
+
+export { ZoomWallDamper } from './zoom-wall-damper.js';

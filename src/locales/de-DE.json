@@ -221,7 +221,9 @@
     "pdfDefaultRemoved": "PDF-Standardeinstellung wurde entfernt",
     "wordDefaultSetSuccess": "Word wurde als Standard festgelegt",
     "wordDefaultSetFailed": "Word konnte nicht als Standard festgelegt werden",
-    "wordDefaultRemoved": "Word-Standardeinstellung wurde entfernt"
+    "wordDefaultRemoved": "Word-Standardeinstellung wurde entfernt",
+    "pinchZoomV2": "Pinch Zoom Algorithm V2",
+    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)"
   },
   "oobe": {
     "welcome": "Willkommen bei ViewStage",
@@ -383,8 +385,6 @@
     "presetDefault": " (Standard)",
     "presetDisabled": " (deaktiviert)",
     "displayDefault": "Standard anzeigen",
-    "pinchZoomV2": "Pinch Zoom Algorithm V2",
-    "pinchZoomV2Hint": "Incremental scaling + midpoint anchor (restart required)",
     "restartRequired": "Restart required",
     "backToMain": "←"
   },

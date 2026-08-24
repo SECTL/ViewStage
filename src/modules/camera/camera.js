@@ -118,13 +118,20 @@ export class CameraManager {
             this.d.dom.btnLight.style.display = '';
             if (window.__savedLightState) {
                 try {
-                    window.__TAURI__.core.invoke('camera_light_on');
+                    // 等待 HID 写入成功后再更新 UI；失败则回滚状态，
+                    // 避免下次开摄像头误恢复一盏实际没开的灯
+                    await window.__TAURI__.core.invoke('camera_light_on');
                     window.__lightOn = true;
                     this.d.dom.btnLight.classList.add('active');
                     const img = this.d.dom.btnLight.querySelector('img');
                     if (img) img.src = this.d.ThemeManager.theme_fetch_icon_path('light');
                 } catch (e) {
                     console.error('展台灯自动开启失败:', e);
+                    window.__lightOn = false;
+                    window.__savedLightState = false;
+                    this.d.dom.btnLight.classList.remove('active');
+                    const img = this.d.dom.btnLight.querySelector('img');
+                    if (img) img.src = this.d.ThemeManager.theme_fetch_icon_path('light-off');
                 }
             }
         }

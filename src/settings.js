@@ -312,6 +312,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (momentumToggle) {
                     momentumToggle.checked = momentumEnabled;
                 }
+                const pinchZoomV2Enabled = settings.pinchZoomV2 !== false;
+                const pinchZoomV2Toggle = document.getElementById('pinchZoomV2Toggle');
+                if (pinchZoomV2Toggle) {
+                    pinchZoomV2Toggle.checked = pinchZoomV2Enabled;
+                }
                 const palmEraserEnabled = settings.palmEraserEnabled !== undefined ? settings.palmEraserEnabled : (window.DRAW_CONFIG?.palmEraserEnabled ?? false);
                 const palmEraserToggle = document.getElementById('palmEraserToggle');
                 if (palmEraserToggle) {
@@ -1089,6 +1094,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (momentumToggle) {
         momentumToggle.addEventListener('change', async () => {
             await settings_save_all_local({ momentumEnabled: momentumToggle.checked });
+        });
+    }
+
+    const pinchZoomV2Toggle = document.getElementById('pinchZoomV2Toggle');
+    if (pinchZoomV2Toggle) {
+        pinchZoomV2Toggle.addEventListener('change', async () => {
+            await settings_save_all_local({ pinchZoomV2: pinchZoomV2Toggle.checked });
+            const restartModal = document.getElementById('restartModal');
+            const modalMessage = restartModal?.querySelector('.modal-message');
+            if (modalMessage) {
+                modalMessage.textContent = window.i18n?.format_translate('developer.restartRequired') || '需重启应用生效';
+            }
+            if (restartModal) restartModal.classList.add('active');
         });
     }
 
