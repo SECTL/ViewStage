@@ -18,11 +18,15 @@
         window.__TAURI__?.core.invoke('main_signal_loaded').catch(()=>{});
         (async()=>{
             try {
+                // theme.js 须在 main.js 之前求值（main.js 顶层使用 window.ThemeManager）
                 await import('./themes/theme.js');
-                await import('./modules/canvas/pen_tessellator.js');
                 await import('./main.js');
-                await import('./modules/pdf/document_reader_page.js');
-                await import('./modules/pdf/document_reader.js');
+                // 以下模块互不依赖且都依赖 main.js 全局，可并行求值以缩短启动耗时
+                await Promise.all([
+                    import('./modules/canvas/pen_tessellator.js'),
+                    import('./modules/pdf/document_reader_page.js'),
+                    import('./modules/pdf/document_reader.js')
+                ]);
 
                 // 手机互联：按配置条件加载
                 try {
