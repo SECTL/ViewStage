@@ -276,23 +276,27 @@ export class CameraManager {
 
         const rotation = state.cameraRotation;
         const videoRatio = videoW / videoH;
-        const screenRatio = DRAW_CONFIG.screenW / DRAW_CONFIG.screenH;
+        const fill2x = DRAW_CONFIG.canvasFill2x;
+        const baseW = fill2x ? DRAW_CONFIG.canvasW : DRAW_CONFIG.screenW;
+        const baseH = fill2x ? DRAW_CONFIG.canvasH : DRAW_CONFIG.screenH;
+        const baseRatio = baseW / baseH;
 
         let drawW, drawH;
-        if (videoRatio > screenRatio) {
-            drawW = DRAW_CONFIG.screenW;
-            drawH = DRAW_CONFIG.screenW / videoRatio;
+        if (videoRatio > baseRatio) {
+            drawW = baseW;
+            drawH = baseW / videoRatio;
         } else {
-            drawH = DRAW_CONFIG.screenH;
-            drawW = DRAW_CONFIG.screenH * videoRatio;
+            drawH = baseH;
+            drawW = baseH * videoRatio;
         }
         const offsetX = (DRAW_CONFIG.canvasW - drawW) / 2;
         const offsetY = (DRAW_CONFIG.canvasH - drawH) / 2;
 
         const cache = this._lastVideoStyleCache;
         if (cache.drawW === drawW && cache.drawH === drawH && cache.offsetX === offsetX &&
-            cache.offsetY === offsetY && cache.rotation === rotation && cache.isMirrored === state.isMirrored) return;
-        this._lastVideoStyleCache = { drawW, drawH, offsetX, offsetY, rotation, isMirrored: state.isMirrored };
+            cache.offsetY === offsetY && cache.rotation === rotation && cache.isMirrored === state.isMirrored &&
+            cache.fill2x === fill2x) return;
+        this._lastVideoStyleCache = { drawW, drawH, offsetX, offsetY, rotation, isMirrored: state.isMirrored, fill2x };
 
         const transforms = [];
         if (rotation !== 0) transforms.push(`rotate(${rotation}deg)`);

@@ -247,6 +247,7 @@ const DRAW_CONFIG = {
     minScale: 0.5,
     maxScale: 3,
     maxScaleImage: 4,
+    canvasFill2x: false,
     canvasW: 1000,
     canvasH: 600,
     screenW: 0,
@@ -844,7 +845,7 @@ function main_load_source_data(sourceId) {
         console.log(`[源管理] 加载数据: ${sourceId}, 缩放: ${state.scale.toFixed(2)}, 笔画: ${state.strokeHistory.length}`);
     } else {
         // 新源，使用默认值
-        state.scale = 1;
+        state.scale = main_default_scale();
         state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
         state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
         state.strokeHistory = [];
@@ -1601,7 +1602,10 @@ async function main_update_canvas_size(newScreenW, newScreenH) {
     if (state.currentImage) {
         main_render_image_centered(state.currentImage);
     }
-    
+
+    // 修复：窗口缩放时摄像头未重排（开启 2x 满铺后会错位）
+    if (state.isCameraOpen) main_update_camera_video_style();
+
     if (state.strokeHistory.length > 0 || state.baseImageObj) {
         await main_render_all_strokes();
     }
@@ -4456,7 +4460,7 @@ async function main_load_image() {
                 strokeHistory: [],
                 baseImageURL: null,
                 viewState: {
-                    scale: 1,
+                    scale: main_default_scale(),
                     canvasX: -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2,
                     canvasY: -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2
                 },
@@ -4474,7 +4478,7 @@ async function main_load_image() {
             state.baseImageURL = null;
             state.baseImageObj = null;
             history_delete_all();
-            state.scale = 1;
+            state.scale = main_default_scale();
             state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
             state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
             main_update_move_bound();
@@ -4523,29 +4527,36 @@ window.main_update_sidebar_content = main_update_sidebar_content;
 window.main_light_off = main_light_off;
 window.main_delete_all_drawings = main_delete_all_drawings;
 
+// 默认缩放：仅在「2x 满铺模式」开启时为 0.5，否则为 1x
+function main_default_scale() {
+    return (window.DRAW_CONFIG && window.DRAW_CONFIG.canvasFill2x) ? 0.5 : 1;
+}
+window.main_default_scale = main_default_scale;
+
 function main_render_image_centered(img) {
     main_delete_image_layer();
     main_hide_no_camera_message();
     
-    const screenW = DRAW_CONFIG.screenW;
-    const screenH = DRAW_CONFIG.screenH;
-    
+    const fill2x = DRAW_CONFIG.canvasFill2x;
+    const baseW = fill2x ? DRAW_CONFIG.canvasW : DRAW_CONFIG.screenW;
+    const baseH = fill2x ? DRAW_CONFIG.canvasH : DRAW_CONFIG.screenH;
+
     const imgRatio = img.width / img.height;
-    const screenRatio = screenW / screenH;
-    
+    const baseRatio = baseW / baseH;
+
     let drawW, drawH, drawX, drawY;
-    
-    if (imgRatio > screenRatio) {
-        drawW = screenW;
-        drawH = screenW / imgRatio;
+
+    if (imgRatio > baseRatio) {
+        drawW = baseW;
+        drawH = baseW / imgRatio;
     } else {
-        drawH = screenH;
-        drawW = screenH * imgRatio;
+        drawH = baseH;
+        drawW = baseH * imgRatio;
     }
-    
+
     const canvasW = DRAW_CONFIG.canvasW;
     const canvasH = DRAW_CONFIG.canvasH;
-    
+
     drawX = (canvasW - drawW) / 2;
     drawY = (canvasH - drawH) / 2;
     

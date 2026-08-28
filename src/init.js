@@ -122,9 +122,11 @@ function canvas_init_all() {
 
     state.canvasX = -(DRAW_CONFIG.canvasW - DRAW_CONFIG.screenW) / 2;
     state.canvasY = -(DRAW_CONFIG.canvasH - DRAW_CONFIG.screenH) / 2;
+    // 默认缩放：仅「2x 满铺模式」开启时为 0.5，否则为 1x（settings 已在 canvas_init_all 之前加载完毕）
+    state.scale = DRAW_CONFIG.canvasFill2x ? 0.5 : 1;
 
     state.cameraViewState = {
-        scale: 1,
+        scale: DRAW_CONFIG.canvasFill2x ? 0.5 : 1,
         canvasX: state.canvasX,
         canvasY: state.canvasY,
         strokeHistory: [],
@@ -185,6 +187,10 @@ async function settings_load_camera_config() {
             }
 
             // Do not load brightness/contrast from saved settings — session-only controls
+
+            if (settings.canvasFill2x !== undefined) {
+                DRAW_CONFIG.canvasFill2x = settings.canvasFill2x === true;
+            }
 
             if (settings.dprLimit !== undefined) {
                 DRAW_CONFIG.dprLimit = Number(settings.dprLimit) || 2;

@@ -534,6 +534,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 document.body.classList.toggle('blur-enabled', blurEnabled);
 
+                const canvasFill2xToggle = document.getElementById('canvasFill2xToggle');
+                if (canvasFill2xToggle) {
+                    canvasFill2xToggle.checked = settings.canvasFill2x === true;
+                }
+
                 // 文档关联状态检测（功能检测）
                 async function checkAssociation(ext, statusElId) {
                     const statusEl = document.getElementById(statusElId);
@@ -2058,6 +2063,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         blurToggle.addEventListener('change', async () => {
             document.body.classList.toggle('blur-enabled', blurToggle.checked);
             await settings_save_all_local({ blurEnabled: blurToggle.checked });
+        });
+    }
+
+    // 2x 满铺模式开关（保存后重启生效，不立即应用）
+    const canvasFill2xToggle = document.getElementById('canvasFill2xToggle');
+    if (canvasFill2xToggle) {
+        canvasFill2xToggle.addEventListener('change', async () => {
+            const saved = await settings_save_all_local({ canvasFill2x: canvasFill2xToggle.checked });
+            if (saved) {
+                const restartModal = document.getElementById('restartModal');
+                const modalMessage = restartModal?.querySelector('.modal-message');
+                if (modalMessage) modalMessage.textContent = '2x 满铺模式设置已保存，重启应用后生效。';
+                if (restartModal) restartModal.classList.add('active');
+            } else {
+                settings_show_dialog(window.i18n?.format_translate('settings.saveFailed') || '保存失败', window.i18n?.format_translate('settings.saveFailedRetry') || '保存设置失败，请重试', 'error');
+            }
         });
     }
 
