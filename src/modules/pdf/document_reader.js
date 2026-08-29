@@ -658,7 +658,7 @@ class DocumentReaderManager {
     async _load_last_doc_state() {
         try {
             if (window.__TAURI__?.core?.invoke) {
-                const result = await window.__TAURI__.core.invoke('settings_fetch_all');
+                const result = await window.getSettings();
                 return result?.settings?.lastOpenDoc || null;
             }
         } catch (err) {
@@ -2945,7 +2945,7 @@ class DocumentReaderManager {
                 }
             });
             try {
-                const result = await window.__TAURI__?.core?.invoke('settings_fetch_all');
+                const result = await window.getSettings();
                 if (result?.settings?.docReaderShowMinimize === false) {
                     minimize_btn.style.display = 'none';
                 }

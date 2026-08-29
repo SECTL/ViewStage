@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="blackboard.css">
     <link rel="stylesheet" href="modules/phone-connect/phone-connect.css">
+    <script src="modules/settings_cache.js"></script>
     <script type="module" src="modules/pdf/pdf.min.mjs"></script>
     <script src="modules/i18n.js" defer></script>
     <script>
@@ -30,7 +31,7 @@
 
                 // 手机互联：按配置条件加载
                 try {
-                    const cfg = await window.__TAURI__?.core.invoke('settings_fetch_all');
+                    const cfg = await window.getSettings();
                     if (cfg?.settings?.phoneServerEnabled) {
                         // TODO: phone-camera.js 未完成，暂不加载
                         // const { PhoneCameraManager } = await import('./modules/camera/phone-camera.js');

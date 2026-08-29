@@ -9,6 +9,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>ViewStage</title>
     <script>document.addEventListener('contextmenu', e => e.preventDefault());</script>
+    <script src="modules/settings_cache.js"></script>
     <style>
         * {
             margin: 0;
@@ -195,7 +196,7 @@
             console.log('[splash] loadTheme start, hasInvoke:', !!invoke);
             if (invoke) {
                 try {
-                    const result = await invoke('settings_fetch_all');
+                    const result = await window.getSettings();
                     console.log('[splash] settings loaded:', result.settings?.theme);
                     const themeName = result.settings?.theme || 'com.viewstage.theme.simplify';
                     splash_apply_theme(themeName);

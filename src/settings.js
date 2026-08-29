@@ -215,7 +215,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (window.__TAURI__) {
             try {
                 const { invoke } = window.__TAURI__.core;
-                const result = await invoke('settings_fetch_all');
+                const result = await window.getSettings();
                 const settings = (result && typeof result === 'object' && result.settings)
                     ? result.settings : {};
                 
@@ -1757,7 +1757,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const { save } = window.__TAURI__.dialog;
                 const { writeTextFile } = window.__TAURI__.fs;
                 
-                const result = await invoke('settings_fetch_all');
+                const result = await window.getSettings();
                 const jsonStr = JSON.stringify(result.settings, null, 2);
                 
                 const filePath = await save({
@@ -2091,7 +2091,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 try {
                     const exists = await invoke('memreduct_check_skipuac');
                     if (exists) {
-                        const r = await invoke('settings_fetch_all');
+                        const r = await window.getSettings();
                         memreductCleanToggle.checked = r.settings?.memreductCleanEnabled !== false;
                     } else {
                         memreductCleanToggle.checked = false;

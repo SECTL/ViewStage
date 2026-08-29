@@ -17,7 +17,7 @@ async function developer_options_init() {
 
     if (invoke) {
         try {
-            const result = await invoke('settings_fetch_all');
+            const result = await window.getSettings();
             const s = result?.settings || {};
             // 优先使用 DRAW_CONFIG（主窗口），否则用后端保存值，最后用硬编码默认
             savedWidthRatio = window.DRAW_CONFIG?.penMinWidthRatio
@@ -390,7 +390,7 @@ function developer_options_show_main(currentWidthRatio, currentMaxScale, perfMon
         // 从 config 读取持久化设置，同时检查运行状态
         if (invoke) {
             Promise.all([
-                invoke('settings_fetch_all'),
+                window.getSettings(),
                 invoke('phone_server_status')
             ]).then(([settingsResult, statusResult]) => {
                 const settings = settingsResult?.settings || {};

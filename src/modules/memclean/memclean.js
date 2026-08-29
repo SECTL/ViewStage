@@ -16,7 +16,7 @@ function _mqs(id) { return document.getElementById(id); }
 async function _memclean_load_mask() {
   if (!_memclean_invoke) return;
   try {
-    const result = await _memclean_invoke('settings_fetch_all');
+    const result = await window.getSettings();
     _memclean_mask = result.settings?.memclean?.mask ?? 231;
   } catch {
     _memclean_mask = 231;

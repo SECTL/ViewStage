@@ -24,7 +24,7 @@ const i18n = {
         if (window.__TAURI__) {
             try {
                 const { invoke } = window.__TAURI__.core;
-                const result = await invoke('settings_fetch_all');
+                const result = await window.getSettings();
                 return result.settings.language || null;
             } catch (e) {
                 console.error('Failed to get saved locale:', e);

@@ -11,7 +11,7 @@ export async function telemetryInit() {
     // 检查遥测设置
     try {
         const { invoke } = window.__TAURI__.core;
-        const result = await invoke('settings_fetch_all');
+        const result = await window.getSettings();
         const telemetryEnabled = result?.settings?.telemetryEnabled !== false;
         if (!telemetryEnabled) {
             console.log('[telemetry] disabled by user settings');

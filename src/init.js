@@ -162,7 +162,7 @@ async function settings_load_camera_config() {
             const state = window.state;
             const DRAW_CONFIG = window.DRAW_CONFIG;
             const t0 = performance.now();
-            const result = await invoke('settings_fetch_all');
+            const result = await window.getSettings();
             console.log(`[init] settings_fetch_all done in ${(performance.now() - t0).toFixed(0)}ms`);
 
             // 容错：后端返回异常时使用空对象，避免 settings 访问崩溃
@@ -589,7 +589,7 @@ async function main_init_all() {
         if (window.documentReaderManager) {
             setTimeout(() => {
                 // 检查是否启用了恢复上次文档状态
-                window.__TAURI__.core.invoke('settings_fetch_all').then(result => {
+                window.getSettings().then(result => {
                     const settings = (result && typeof result === 'object' && result.settings)
                         ? result.settings : {};
                     window.__restoreLastDocEnabled = settings.restoreLastDoc !== false;

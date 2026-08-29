@@ -27,7 +27,7 @@ const ThemeManager = {
     if (window.__TAURI__) {
       try {
         const { invoke } = window.__TAURI__.core;
-        const result = await invoke('settings_fetch_all');
+        const result = await window.getSettings();
         return result.settings?.theme || 'com.viewstage.theme.simplify';
       } catch (e) {
         console.warn('无法获取保存的主题设置:', e);
