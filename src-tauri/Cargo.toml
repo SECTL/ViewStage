@@ -1,6 +1,6 @@
 [package]
 name = "viewstage"
-version = "0.23.0"
+version = "0.23.1"
 description = "An application for video presentation and document annotation"
 authors = ["SECTL"]
 edition = "2021"
