@@ -1,0 +1,8 @@
+# 前端源码统一 CRLF（Windows 项目），避免编辑工具改写行尾产生伪 diff
+# 仅针对文本类扩展名；二进制（png/jpg/字体/exe 等）不匹配任何 text 规则，保持 binary 不受影响
+src/**/*.css text eol=crlf
+src/**/*.html text eol=crlf
+src/**/*.js text eol=crlf
+src/**/*.mjs text eol=crlf
+src/**/*.json text eol=crlf
+src/**/*.svg text eol=crlf
