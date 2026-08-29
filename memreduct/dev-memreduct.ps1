@@ -43,22 +43,24 @@ if (-not $vcvarsall) {
 Write-Host "[INFO] vcvarsall: $vcvarsall" -ForegroundColor Cyan
 Write-Host "[INFO] Building $Arch..." -ForegroundColor Cyan
 
+$msbuildLog = Join-Path $memreductDir "msbuild_log.txt"
+
 $msbuildCmd = @"
 call "$vcvarsall" $Arch >nul 2>&1
-msbuild "$memreductDir\memreduct.vcxproj" -property:Configuration=Release -property:Platform=$Arch -verbosity:minimal
+msbuild "$memreductDir\memreduct.vcxproj" -property:Configuration=Release -property:Platform=$Arch -verbosity:minimal > "$msbuildLog" 2>&1
 if errorlevel 1 exit /b 1
 "@
 
 cmd /c $msbuildCmd
 if ($LASTEXITCODE -ne 0) {
-    Write-Host '[ERROR] Build failed' -ForegroundColor Red
+    Write-Host '[ERROR] Build failed; see msbuild_log.txt' -ForegroundColor Red
     exit 1
 }
 
 if (Test-Path $outExe) {
     $size = (Get-Item $outExe).Length / 1KB
-    Write-Host "[OK] $outExe  ({0:N0} KB)" -f $size -ForegroundColor Green
+    Write-Host ("[OK] {0}  ({1:N0} KB)" -f $outExe, $size) -ForegroundColor Green
 } else {
-    Write-Host "[ERROR] Build succeeded but $outExe not found" -ForegroundColor Red
+    Write-Host ("[ERROR] Build succeeded but {0} not found" -f $outExe) -ForegroundColor Red
     exit 1
 }

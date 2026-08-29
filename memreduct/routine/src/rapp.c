@@ -4407,6 +4407,8 @@ HRESULT _r_skipuac_enable (
 		ITaskSettings_put_AllowDemandStart (task_settings, VARIANT_TRUE);
 		ITaskSettings_put_Priority (task_settings, 1); // HIGH_PRIORITY_CLASS
 
+		ITaskSettings_put_Hidden (task_settings, VARIANT_TRUE); // hidden: no console window at startup
+
 		// win7+
 		status = ITaskSettings_QueryInterface (task_settings, &IID_ITaskSettings2, &task_settings2);
 
