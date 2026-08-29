@@ -1355,6 +1355,7 @@ fn config_backup_corrupted(config_path: &std::path::Path) {
 
 /// 生成默认配置（各字段均设初始值）
 fn config_fetch_default() -> serde_json::Value {
+    // canvasFill2x: 2x 满铺模式开关（默认关闭），前端 init.js 读取并应用
     serde_json::json!({
         "language": "zh-CN",
         "defaultCamera": "",
@@ -1367,6 +1368,7 @@ fn config_fetch_default() -> serde_json::Value {
         "dprMin": 1,
         "dprMax": 4,
         "dprStep": 0.5,
+        "canvasFill2x": false,
         "penSizePresets": [2, 5, 10, 15, 21],
         "penColors": [
             {"r": 52, "g": 152, "b": 219},
