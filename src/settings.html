@@ -19,7 +19,10 @@
     <div class="aurora-bg" id="auroraBg"></div>
     
     <div class="topbar" data-tauri-drag-region>
-        <button class="btn-close" id="btnClose">×</button>
+        <div class="traffic-lights" id="trafficLights">
+            <button class="traffic-light traffic-close" id="btnClose" type="button" title="关闭" aria-label="关闭"></button>
+            <button class="traffic-light traffic-min" id="btnMin" type="button" title="最小化" aria-label="最小化"></button>
+        </div>
         <div class="setting-title" data-tauri-drag-region data-i18n="settings.title">设置</div>
         <div class="topbar-placeholder"></div>
     </div>

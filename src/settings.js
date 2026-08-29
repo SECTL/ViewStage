@@ -2273,6 +2273,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // macOS 风格红绿灯：红=关闭，黄=最小化
+    const btnMin = document.getElementById('btnMin');
+    if (btnMin) {
+        btnMin.addEventListener('click', async () => {
+            try {
+                if (window.__TAURI__?.window?.getCurrentWindow) {
+                    await window.__TAURI__.window.getCurrentWindow().minimize();
+                }
+            } catch (e) {
+                console.warn('[settings] 最小化失败:', e);
+            }
+        });
+    }
+
+
     const sidebarBtns = document.querySelectorAll('.sidebar-btn');
     const pages = document.querySelectorAll('.page');
     
