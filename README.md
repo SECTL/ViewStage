@@ -3,6 +3,8 @@
    <h1>ViewStage</h1>
    <p>基于 <strong>Tauri v2</strong> 构建的桌面实物展台与演示批注应用，适用于教学、会议、产品展示等多种场景。</p>
    <p>无需 Node.js 构建前端 — 原生 ES Module 直接加载，零 bundler 依赖。</p>
+   <p>此项目目前进入维护模式暂缓更新，只进行必要功能修复</p>
+   <p>目前此项目计划迁移到自研ZephyraUI，预计于2027年2月发布第一个Pre-release版本</p>
 </div>
 
 <p align="center">
@@ -11,8 +13,6 @@
     <img src="https://img.shields.io/github/license/SECTL/ViewStage" alt="许可证">
 </p>
 
->由于开发者高三了，所以开发计划暂停，后续仅进行功能修复，与2027年6月后继续
->截至目前，项目正在全力推进转向纯rust+iced开发，旨在提供更好的性能，此项目将主要进行功能修复
 
 ## 功能概览
 
